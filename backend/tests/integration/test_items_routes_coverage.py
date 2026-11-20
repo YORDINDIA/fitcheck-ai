@@ -22,6 +22,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from app.api.v1 import items as items_module
+from app.services import item_service
 from app.services import item_save_service as save_service
 from app.core.exceptions import (
     AIServiceError,
@@ -599,7 +600,7 @@ async def test_list_items_applies_every_filter_and_normalizes_rows(monkeypatch):
         jsonb_calls.append((column, values))
         return builder
 
-    monkeypatch.setattr(items_module, "jsonb_contains", fake_jsonb_contains)
+    monkeypatch.setattr(item_service, "jsonb_contains", fake_jsonb_contains)
 
     result = await items_module.list_items(
         page=1,
@@ -785,7 +786,7 @@ async def test_get_item_raises_not_found():
 @pytest.mark.asyncio
 async def test_get_item_wraps_unexpected_errors(monkeypatch):
     monkeypatch.setattr(
-        items_module,
+        item_service,
         "execute_with_reconnect",
         AsyncMock(side_effect=RuntimeError("boom")),
     )
@@ -806,7 +807,7 @@ async def test_get_item_maps_pgrst116_to_not_found(monkeypatch):
     from postgrest.exceptions import APIError as PostgrestAPIError
 
     monkeypatch.setattr(
-        items_module,
+        item_service,
         "execute_with_reconnect",
         AsyncMock(
             side_effect=PostgrestAPIError(
@@ -2568,13 +2569,13 @@ async def test_list_items_escapes_ilike_wildcards(monkeypatch):
     """The list-items search filter escapes the term's own %/_ before the
     or_() pattern is built."""
     seen = []
-    real = items_module.escape_ilike_literal
+    real = item_service.escape_ilike_literal
 
     def spy(value):
         seen.append(value)
         return real(value)
 
-    monkeypatch.setattr(items_module, "escape_ilike_literal", spy)
+    monkeypatch.setattr(item_service, "escape_ilike_literal", spy)
     db = FakeDB(rows={"items": []})
 
     # Pass every filter kwarg explicitly: the route's Query(...) defaults are

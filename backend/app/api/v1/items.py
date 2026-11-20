@@ -7,7 +7,6 @@ stores items/images and maintains embeddings for recommendations.
 """
 
 import asyncio
-import json
 import uuid
 from app.utils.datetime_util import utc_today, utcnow_iso
 from typing import Any, Dict, List, Optional
@@ -42,6 +41,7 @@ from app.models.item import (
     VALID_CONDITIONS,
     normalize_tag_list,
 )
+from app.services import item_service
 from app.services.ai_service import AIService
 from app.services.ai_settings_service import AISettingsService
 from app.services.storage_service import MAX_FILE_SIZE, StorageService
@@ -50,7 +50,6 @@ from app.utils.db import (
     execute_with_reconnect,
     escape_ilike_literal,
     is_pgrst202_missing_rpc,
-    jsonb_contains,
     safe_search_term,
     unwrap_rpc_result,
 )
@@ -400,67 +399,24 @@ async def list_items(
                 ignored_filters["condition"] = invalid_conditions
                 return _empty_item_page(page, page_size, ignored_filters)
 
-        def _apply_filters(q):
-            """Apply every optional filter to a base query builder."""
-            if category:
-                categories = [c.strip().lower() for c in category.split(",") if c.strip()]
-                q = q.in_("category", categories) if len(categories) > 1 else q.eq("category", categories[0])
-            if condition:
-                condition_values = [c.strip().lower() for c in condition.split(",") if c.strip()]
-                q = (
-                    q.in_("condition", condition_values)
-                    if len(condition_values) > 1
-                    else q.eq("condition", condition_values[0])
-                )
-            if is_favorite is not None:
-                q = q.eq("is_favorite", is_favorite)
-            if brand:
-                q = q.ilike("brand", f"%{brand}%")
-            if color:
-                # JSONB array contains: jsonb_contains emits a JSON array
-                # literal (["red"]) - plain contains(list) would send a
-                # Postgres array literal ({red}) and PostgREST answers 22P02
-                # "invalid input syntax for type jsonb" (2026-08-07 /items
-                # 500 burst). A comma-joined value (multi-select) ORs the
-                # containments so an item matching ANY chosen color shows
-                # (A10b-12).
-                colors = [c.strip().lower() for c in color.split(",") if c.strip()]
-                if len(colors) > 1:
-                    q = q.or_(
-                        ",".join(f"colors.cs.{json.dumps([c])}" for c in colors)
-                    )
-                elif colors:
-                    q = jsonb_contains(q, "colors", [colors[0]])
-            if occasion_filter:
-                q = jsonb_contains(q, "occasion_tags", [occasion_filter])
-            if search:
-                # escape_ilike_literal AFTER safe_search_term: a term's own
-                # %/_ must match literally, not widen into wildcards (A2-19).
-                like = f"%{escape_ilike_literal(safe_search_term(search))}%"
-                q = q.or_(f"name.ilike.{like},brand.ilike.{like}")
-            return q
-
         async def _list_and_count(d):
             """Run count + page queries concurrently against client `d` (rebuilt on retry)."""
-            # The two reads are independent; running them in parallel halves
-            # the page-load latency (count is often the slower of the two on
-            # large wardrobes).
             start = (page - 1) * page_size
             end = start + page_size - 1
-            count_res, list_res = await asyncio.gather(
-                asyncio.to_thread(
-                    _apply_filters(
-                        d.table("items").select("id", count="exact").eq("user_id", user_id).eq("is_deleted", False)
-                    ).execute
-                ),
-                asyncio.to_thread(
-                    _apply_filters(
-                        d.table("items").select("*, item_images(*)").eq("user_id", user_id).eq("is_deleted", False)
-                    )
-                    .order(effective_sort_by, desc=(effective_sort_order == "desc"))
-                    .range(start, end)
-                    .execute
-                ),
+            count_res, list_res = await item_service.list_and_count_items(
+                d,
+                user_id=user_id,
+                category=category,
+                condition=condition,
+                is_favorite=is_favorite,
+                brand=brand,
+                color=color,
+                occasion_filter=occasion_filter,
+                search=search,
+                effective_sort_by=effective_sort_by,
+                effective_sort_order=effective_sort_order,
+                start=start,
+                end=end,
             )
             total = getattr(count_res, "count", len(count_res.data or []))
             return total, list_res
@@ -520,19 +476,7 @@ async def get_item(
         # (406/PGRST116) when the query matches zero rows, so the not-found
         # branch below was dead code and a deleted or not-owned item 500'd
         # instead of 404ing (observed 2026-08-09 on GET /items/{id}).
-        result = await execute_with_reconnect(
-            lambda d: (
-                d.table("items")
-                .select("*, item_images(*)")
-                .eq("id", item_id_str)
-                .eq("user_id", user_id)
-                .maybe_single()
-                .execute()
-            ),
-            db,
-            extra={"operation": "get_item", "user_id": user_id, "item_id": item_id_str},
-            max_retries=2,
-        )
+        result = await item_service.fetch_item_with_images(db, item_id_str=item_id_str, user_id=user_id)
         if not result or not result.data:
             raise ItemNotFoundError(item_id=item_id_str)
         item = _normalize_item_images(result.data)
@@ -563,18 +507,7 @@ async def update_item(
         # Both writes below go through execute_with_reconnect like the rest of
         # this file: a dead pooled HTTP/2 connection must not turn the update
         # into a permanent 500 until a process restart (A2-11).
-        existing = await execute_with_reconnect(
-            lambda d: (
-                d.table("items")
-                .select("id")
-                .eq("id", item_id_str)
-                .eq("user_id", user_id)
-                .maybe_single()
-                .execute()
-            ),
-            db,
-            extra={"operation": "update_item.exists", "user_id": user_id, "item_id": item_id_str},
-        )
+        existing = await item_service.fetch_item_id_for_update(db, item_id_str=item_id_str, user_id=user_id)
         if not existing or not existing.data:
             raise ItemNotFoundError(item_id=item_id_str)
 
@@ -586,30 +519,13 @@ async def update_item(
             update_dict["purchase_date"] = update_dict["purchase_date"].date().isoformat()
         update_dict["updated_at"] = _now()
 
-        result = await execute_with_reconnect(
-            lambda d: (
-                d.table("items")
-                .update(update_dict)
-                .eq("id", item_id_str)
-                .eq("user_id", user_id)
-                .execute()
-            ),
-            db,
-            extra={"operation": "update_item.update", "user_id": user_id, "item_id": item_id_str},
-        )
+        result = await item_service.update_item_row(db, item_id_str=item_id_str, user_id=user_id, update_dict=update_dict)
         row = (result.data or [None])[0]
         if not row:
             raise DatabaseError("Failed to update item", operation="update")
 
         # Refresh item with images
-        item_result = await asyncio.to_thread(
-            db.table("items")
-            .select("*, item_images(*)")
-            .eq("id", item_id_str)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
-        )
+        item_result = await item_service.fetch_item_with_images_for_update(db, item_id_str=item_id_str, user_id=user_id)
         if not item_result or not item_result.data:
             raise ItemNotFoundError(item_id_str)
         item = item_result.data
@@ -679,7 +595,7 @@ async def delete_item(
     """Delete an item (hard delete)."""
     try:
         item_id_str = str(item_id)
-        existing = await asyncio.to_thread(db.table("items").select("id").eq("id", item_id_str).eq("user_id", user_id).maybe_single().execute)
+        existing = await item_service.fetch_item_id_for_delete(db, item_id_str=item_id_str, user_id=user_id)
         if not existing or not existing.data:
             raise ItemNotFoundError(item_id=item_id_str)
 
@@ -707,7 +623,7 @@ async def delete_item(
         except Exception as e:
             logger.warning("Failed to delete item embedding", item_id=item_id_str, error=str(e))
 
-        await asyncio.to_thread(db.table("items").delete().eq("id", item_id_str).eq("user_id", user_id).execute)
+        await item_service.delete_item_row(db, item_id_str=item_id_str, user_id=user_id)
 
         if storage_paths:
             try:
@@ -740,11 +656,11 @@ async def toggle_favorite(
 ):
     try:
         item_id_str = str(item_id)
-        existing = await asyncio.to_thread(db.table("items").select("is_favorite").eq("id", item_id_str).eq("user_id", user_id).maybe_single().execute)
+        existing = await item_service.fetch_item_favorite_state(db, item_id_str=item_id_str, user_id=user_id)
         if not existing or not existing.data:
             raise ItemNotFoundError(item_id=item_id_str)
         new_value = not bool(existing.data.get("is_favorite", False))
-        result = await asyncio.to_thread(db.table("items").update({"is_favorite": new_value, "updated_at": _now()}).eq("id", item_id_str).eq("user_id", user_id).execute)
+        result = await item_service.set_item_favorite(db, item_id_str=item_id_str, user_id=user_id, new_value=new_value)
         row = (result.data or [None])[0]
         if not row:
             raise DatabaseError("Failed to update item", operation="update")
@@ -771,12 +687,7 @@ async def mark_worn(
         # (RETURNING *), so the response's count is the true post-increment
         # value with no second read.
         try:
-            result = await asyncio.to_thread(
-                db.rpc(
-                    "increment_item_worn",
-                    {"item_uuid": item_id_str, "user_uuid": user_id},
-                ).execute
-            )
+            result = await item_service.increment_item_worn_rpc(db, item_id_str=item_id_str, user_id=user_id)
         except Exception as e:
             if not is_pgrst202_missing_rpc(e):
                 raise
@@ -791,19 +702,12 @@ async def mark_worn(
                 item_id=item_id_str,
                 user_id=user_id,
             )
-            existing = await asyncio.to_thread(
-                db.table("items")
-                .select("usage_times_worn")
-                .eq("id", item_id_str)
-                .eq("user_id", user_id)
-                .maybe_single()
-                .execute
-            )
+            existing = await item_service.fetch_item_usage_worn(db, item_id_str=item_id_str, user_id=user_id)
             if not existing or not existing.data:
                 raise ItemNotFoundError(item_id=item_id_str)
             current = int(existing.data.get("usage_times_worn", 0))
             update = {"usage_times_worn": current + 1, "usage_last_worn": _now(), "updated_at": _now()}
-            await asyncio.to_thread(db.table("items").update(update).eq("id", item_id_str).eq("user_id", user_id).execute)
+            await item_service.update_item_usage_worn(db, item_id_str=item_id_str, user_id=user_id, update=update)
             return {"data": {"id": item_id_str, "usage_times_worn": current + 1}, "message": "OK"}
 
         row = (getattr(result, "data", None) or [None])[0]
@@ -839,7 +743,7 @@ async def upload_item_image(
     """Upload an additional image for an existing item."""
     try:
         item_id_str = str(item_id)
-        item = await asyncio.to_thread(db.table("items").select("id").eq("id", item_id_str).eq("user_id", user_id).maybe_single().execute)
+        item = await item_service.fetch_item_id_for_upload(db, item_id_str=item_id_str, user_id=user_id)
         if not item or not item.data:
             raise ItemNotFoundError(item_id=item_id_str)
 
@@ -877,17 +781,12 @@ async def upload_item_image(
         # flips every flag for the item inside ONE statement/transaction:
         # is_primary = (id = image_uuid). The two-step clear survives only as
         # the fallback for the migration gap (RPC missing -> PGRST202).
-        insert_result = await asyncio.to_thread(db.table("item_images").insert(img_row).execute)
+        insert_result = await item_service.insert_item_image_row(db, img_row=img_row)
         new_image_id = insert_result.data[0]["id"] if insert_result.data else None
 
         if is_primary and new_image_id:
             try:
-                await asyncio.to_thread(
-                    db.rpc(
-                        "set_primary_item_image",
-                        {"item_uuid": item_id_str, "image_uuid": new_image_id},
-                    ).execute
-                )
+                await item_service.set_primary_item_image_rpc(db, item_id_str=item_id_str, new_image_id=new_image_id)
             except Exception as e:
                 if not is_pgrst202_missing_rpc(e):
                     # A2-04: the image row was already inserted with
@@ -896,12 +795,7 @@ async def upload_item_image(
                     # just-inserted row (best-effort) before raising, so the
                     # item can never be left with two primary images.
                     try:
-                        await asyncio.to_thread(
-                            db.table("item_images")
-                            .update({"is_primary": False})
-                            .eq("id", new_image_id)
-                            .execute
-                        )
+                        await item_service.clear_inserted_image_primary(db, new_image_id=new_image_id)
                     except Exception:
                         logger.error(
                             "Failed to clear is_primary on inserted image after "
@@ -917,7 +811,7 @@ async def upload_item_image(
                     image_id=new_image_id,
                 )
                 # Clear is_primary on all OTHER images for this item
-                await asyncio.to_thread(db.table("item_images").update({"is_primary": False}).eq("item_id", item_id_str).neq("id", new_image_id).execute)
+                await item_service.clear_other_primary_images(db, item_id_str=item_id_str, new_image_id=new_image_id)
 
         return {"data": img_row, "message": "Created"}
     except (ItemNotFoundError, ImageNotFoundError, ValidationError, UnsupportedMediaTypeError, StorageServiceError, DatabaseError):
@@ -940,19 +834,12 @@ async def delete_item_image(
     try:
         item_id_str = str(item_id)
         image_id_str = str(image_id)
-        img = await asyncio.to_thread(
-            db.table("item_images")
-            .select("id, storage_path")
-            .eq("id", image_id_str)
-            .eq("item_id", item_id_str)
-            .maybe_single()
-            .execute
-        )
+        img = await item_service.fetch_item_image_row(db, image_id_str=image_id_str, item_id_str=item_id_str)
         if not img or not img.data:
             raise ImageNotFoundError(image_id=image_id_str)
 
         # Ensure the item belongs to the current user
-        item = await asyncio.to_thread(db.table("items").select("id").eq("id", item_id_str).eq("user_id", user_id).maybe_single().execute)
+        item = await item_service.fetch_item_id_for_image_delete(db, item_id_str=item_id_str, user_id=user_id)
         if not item or not item.data:
             raise ItemNotFoundError(item_id=item_id_str)
 
@@ -962,7 +849,7 @@ async def delete_item_image(
         # object) with no recovery path. With the row gone first, a storage
         # failure only orphans an object, which the weekly temp/bucket cleanup
         # can reclaim.
-        await asyncio.to_thread(db.table("item_images").delete().eq("id", image_id_str).eq("item_id", item_id_str).execute)
+        await item_service.delete_item_image_row(db, image_id_str=image_id_str, item_id_str=item_id_str)
 
         storage_path = img.data.get("storage_path")
         if storage_path:
@@ -1032,7 +919,7 @@ async def batch_delete_items(
         # the rows pointing at already-deleted objects — permanently broken
         # tiles with no recovery. With the rows gone first, a cleanup failure
         # only orphans objects, which bucket cleanup can reclaim.
-        delete_res = await asyncio.to_thread(db.table("items").delete().eq("user_id", user_id).in_("id", item_ids).execute)
+        delete_res = await item_service.delete_items_by_ids(db, user_id=user_id, item_ids=item_ids)
         deleted_count = len(delete_res.data or [])
 
         # Storage and vector cleanup are independent; both are best-effort
@@ -1055,14 +942,7 @@ async def _legacy_item_stats_rollup(db: Client, user_id: str) -> Dict[str, Any]:
     the fallback produces the same population as the aggregate: up to 1000
     rows, active (non-deleted) items only.
     """
-    agg_res = await asyncio.to_thread(
-        db.table("items")
-        .select("category,colors,condition,price")
-        .eq("user_id", user_id)
-        .eq("is_deleted", False)
-        .limit(1000)  # Limit to prevent fetching thousands of items
-        .execute
-    )
+    agg_res = await item_service.fetch_legacy_stats_rows(db, user_id=user_id)
     items_by_category: Dict[str, int] = {}
     items_by_condition: Dict[str, int] = {}
     items_by_color: Dict[str, int] = {}
@@ -1109,40 +989,15 @@ async def get_item_stats(
         # the wear extremes cover exactly the population the RPC aggregates —
         # a soft-deleted row must not shift the count or the extrema.
         count_res, most_res, least_res = await asyncio.gather(
-            asyncio.to_thread(
-                db.table("items").select("id", count="exact").eq("user_id", user_id).eq("is_deleted", False).execute
-            ),
-            asyncio.to_thread(
-                db.table("items")
-                .select("id,name,usage_times_worn")
-                .eq("user_id", user_id)
-                .eq("is_deleted", False)
-                # nullslast: a NULL wear count must rank as "never worn"
-                # (Postgres puts NULLs first under DESC by default).
-                .order("usage_times_worn", desc=True, nullsfirst=False)
-                .limit(5)
-                .execute
-            ),
-            asyncio.to_thread(
-                db.table("items")
-                .select("id,name,usage_times_worn")
-                .eq("user_id", user_id)
-                .eq("is_deleted", False)
-                .order("usage_times_worn", nullsfirst=False)
-                .limit(5)
-                .execute
-            ),
+            item_service.count_active_items(db, user_id=user_id),
+            item_service.fetch_most_worn_items(db, user_id=user_id),
+            item_service.fetch_least_worn_items(db, user_id=user_id),
         )
 
         count = getattr(count_res, "count", None)
         agg: Dict[str, Any] = {}
         try:
-            agg_res = await asyncio.to_thread(
-                db.rpc(
-                    "get_item_stats_aggregate",
-                    {"user_uuid": user_id},
-                ).execute
-            )
+            agg_res = await item_service.get_item_stats_aggregate_rpc(db, user_id=user_id)
             # JSONB-returning RPC. PostgREST versions disagree on the payload
             # shape for a scalar function: older releases key the single row by
             # the function name ([{"get_item_stats_aggregate": {...}}]), while
@@ -1220,14 +1075,7 @@ async def get_items_by_category(
     if cat not in VALID_CATEGORIES:
         raise ValidationError("Invalid category", details={"category": cat, "valid_categories": list(VALID_CATEGORIES)})
     try:
-        res = await asyncio.to_thread(
-            db.table("items")
-            .select("*, item_images(*)")
-            .eq("user_id", user_id)
-            .eq("category", cat)
-            .order("created_at", desc=True)
-            .execute
-        )
+        res = await item_service.fetch_items_by_category(db, user_id=user_id, cat=cat)
         items = [_normalize_item_images(i) for i in (res.data or [])]
         # Private buckets: materialize fresh presigned URLs at read time.
         items = await materialize_parent_images(items, owner_user_id=user_id)
@@ -1251,14 +1099,7 @@ async def search_items(
         # escape_ilike_literal AFTER safe_search_term: a term's own %/_ must
         # match literally, not widen into wildcards (A2-19).
         like = f"%{escape_ilike_literal(safe_search_term(q))}%"
-        res = await asyncio.to_thread(
-            db.table("items")
-            .select("*, item_images(*)")
-            .eq("user_id", user_id)
-            .or_(f"name.ilike.{like},brand.ilike.{like},notes.ilike.{like}")
-            .limit(limit)
-            .execute
-        )
+        res = await item_service.search_items_by_term(db, user_id=user_id, like=like, limit=limit)
         items = [_normalize_item_images(i) for i in (res.data or [])]
         # Private buckets: materialize fresh presigned URLs at read time.
         items = await materialize_parent_images(items, owner_user_id=user_id)
@@ -1288,14 +1129,7 @@ async def categorize_item(
     """
     try:
         item_id_str = str(item_id)
-        item = await asyncio.to_thread(
-            db.table("items")
-            .select("*")
-            .eq("id", item_id_str)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
-        )
+        item = await item_service.fetch_item_row_for_categorize(db, item_id_str=item_id_str, user_id=user_id)
         if not item or not item.data:
             raise ItemNotFoundError(item_id=item_id_str)
 
@@ -1328,7 +1162,7 @@ async def categorize_item(
             "materials": materials,
             "updated_at": _now(),
         }
-        await asyncio.to_thread(db.table("items").update(update).eq("id", item_id_str).eq("user_id", user_id).execute)
+        await item_service.update_item_metadata(db, item_id_str=item_id_str, user_id=user_id, update=update)
 
         return {
             "data": {
@@ -1359,7 +1193,7 @@ async def update_item_categories(
     """Update item category-related fields (user override)."""
     try:
         item_id_str = str(item_id)
-        existing = await asyncio.to_thread(db.table("items").select("id").eq("id", item_id_str).eq("user_id", user_id).maybe_single().execute)
+        existing = await item_service.fetch_item_id_for_categories(db, item_id_str=item_id_str, user_id=user_id)
         if not existing or not existing.data:
             raise ItemNotFoundError(item_id=item_id_str)
 
@@ -1385,19 +1219,12 @@ async def update_item_categories(
                 update[list_field] = normalize_tag_list(update[list_field])
 
         update["updated_at"] = _now()
-        res = await asyncio.to_thread(db.table("items").update(update).eq("id", item_id_str).eq("user_id", user_id).execute)
+        res = await item_service.update_item_categories_row(db, item_id_str=item_id_str, user_id=user_id, update=update)
         row = (res.data or [None])[0]
         if not row:
             raise DatabaseError("Failed to update item", operation="update")
 
-        item = await asyncio.to_thread(
-            db.table("items")
-            .select("*, item_images(*)")
-            .eq("id", item_id_str)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
-        )
+        item = await item_service.fetch_item_with_images_for_categories(db, item_id_str=item_id_str, user_id=user_id)
         # Private buckets: materialize fresh presigned URLs at read time.
         item = _normalize_item_images((item.data if item else None) or {})
         item = (await materialize_parent_images([item], owner_user_id=user_id))[0]
@@ -1471,14 +1298,7 @@ async def check_duplicates(
     try:
         # Empty wardrobe: no duplicates possible. Skip embedding + Pinecone
         # (observed 6–10s per check during first-time batch saves).
-        wardrobe_count_result = await asyncio.to_thread(
-            db.table("items")
-            .select("id", count="exact")
-            .eq("user_id", user_id)
-            .eq("is_deleted", False)
-            .limit(1)
-            .execute
-        )
+        wardrobe_count_result = await item_service.count_wardrobe_items(db, user_id=user_id)
         wardrobe_count = getattr(wardrobe_count_result, "count", None)
         if wardrobe_count is None:
             wardrobe_count = len(wardrobe_count_result.data or [])
@@ -1571,15 +1391,7 @@ async def check_duplicates(
             # gateway-restart window as the other ConnectionTerminated
             # bursts).
             item_ids = [item["item_id"] for item in similar_items]
-            items_result = await execute_with_reconnect(
-                lambda d: d.table("items")
-                .select("*, item_images(*)")
-                .in_("id", item_ids)
-                .eq("user_id", user_id)
-                .execute(),
-                db,
-                extra={"operation": "check_duplicates_items", "user_id": user_id},
-            )
+            items_result = await item_service.fetch_duplicate_candidates(db, item_ids=item_ids, user_id=user_id)
 
             normalized_items = [
                 _normalize_item_images(item) for item in (items_result.data or [])
@@ -1685,15 +1497,7 @@ async def find_similar_items(
         # detail surface anymore, so asking for its similar items is a 404 —
         # and its vector may still be live in the store, which must not leak
         # into other users' strips either (results query below).
-        item_result = await asyncio.to_thread(
-            db.table("items")
-            .select("*")
-            .eq("id", item_id_str)
-            .eq("user_id", user_id)
-            .eq("is_deleted", False)
-            .maybe_single()
-            .execute
-        )
+        item_result = await item_service.fetch_active_source_item(db, item_id_str=item_id_str, user_id=user_id)
 
         if not item_result or not item_result.data:
             raise ItemNotFoundError(item_id=item_id_str)
@@ -1760,14 +1564,7 @@ async def find_similar_items(
             # lag a delete, so a soft-deleted row may still be returned by the
             # search — the DB read is the source of truth and drops it here.
             similar_ids = [item["item_id"] for item in similar_items]
-            items_result = await asyncio.to_thread(
-                db.table("items")
-                .select("*, item_images(*)")
-                .in_("id", similar_ids)
-                .eq("user_id", user_id)
-                .eq("is_deleted", False)
-                .execute
-            )
+            items_result = await item_service.fetch_similar_item_rows(db, similar_ids=similar_ids, user_id=user_id)
 
             normalized_items = [
                 _normalize_item_images(item) for item in (items_result.data or [])
@@ -1823,14 +1620,12 @@ async def _fallback_duplicate_check(
         # a name containing %/_ must match literally (A2-19).
         name_pattern = f"%{escape_ilike_literal(request.name)}%"
 
-        items_result = await asyncio.to_thread(
-            db.table("items")
-            .select("*, item_images(*)")
-            .eq("user_id", user_id)
-            .eq("category", request.category.lower())
-            .ilike("name", name_pattern)
-            .limit(limit)
-            .execute
+        items_result = await item_service.fetch_fallback_candidates(
+            db,
+            user_id=user_id,
+            request=request,
+            name_pattern=name_pattern,
+            limit=limit,
         )
 
         rows = [_normalize_item_images(item) for item in (items_result.data or [])]

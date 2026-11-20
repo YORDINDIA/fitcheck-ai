@@ -17,6 +17,7 @@ import pytest
 from supabase import create_client
 
 from app.api.v1 import items as items_module
+from app.services import item_service
 from app.utils.db import jsonb_contains
 
 USER_ID = "11111111-1111-1111-1111-111111111111"
@@ -78,9 +79,9 @@ async def test_list_items_occasion_and_color_filters_build_valid_contains(monkey
         return await fn(db)
 
     class _ScopedAsyncio:
-        """Fake `asyncio.to_thread` ONLY for items.py's lookups.
+        """Fake `asyncio.to_thread` ONLY for item_service.py's lookups.
 
-        Patching `items_module.asyncio.to_thread` directly would mutate the
+        Patching `item_service.asyncio.to_thread` directly would mutate the
         shared `asyncio` module for the whole test process; delegating every
         other attribute keeps the fake scoped to this module under test."""
 
@@ -89,7 +90,7 @@ async def test_list_items_occasion_and_color_filters_build_valid_contains(monkey
                 return fake_to_thread
             return getattr(asyncio, name)
 
-    monkeypatch.setattr(items_module, "asyncio", _ScopedAsyncio())
+    monkeypatch.setattr(item_service, "asyncio", _ScopedAsyncio())
     monkeypatch.setattr(items_module, "execute_with_reconnect", fake_execute_with_reconnect)
 
     await items_module.list_items(
