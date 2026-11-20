@@ -53,7 +53,7 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 
 | # | Route file | Calls | Service module | Commit |
 |---|------------|-------|----------------|--------|
-| 1 | outfits.py | 65 | outfit_service.py | pending |
+| 1 | outfits.py | 65 | outfit_service.py | 419384e |
 | 2 | users.py | 51 | user_service.py | |
 | 3 | items.py | 36 | item_service.py | |
 | 4 | auth.py | 18 | auth_service.py | |
@@ -89,6 +89,8 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 | 2026-11-20 | Knot 2 (outfit generation state) done. Vitest 80 files, 558 tests pass (was 555). Lint pass. Build pass, 42 routes prerendered. Root architecture and docs pass. Commit: `refactor: derive outfit generation state from the job map`. |
 | 2026-11-20 | Knot 3 (profile fields) done. Helper `app/services/profile_fields.py` serves `oauth_sync` and `_provision_profile`. Ruff and architecture pass. Backend pytest 4426 passed, 4 skipped (10 new tests). Three existing `oauth_sync` tests returned a bare Mock for `user_metadata`. Supabase returns a dict, so those fixtures now return `{}`. The insert failure for names over 255 characters is not reproduced. The limit comes from `users.full_name VARCHAR(255)` in migration 001. Commit: `refactor: share first-login profile fields between auth and deps`. |
 | 2026-11-20 | Knot 4 sub-step 1 (outfits.py, 65 calls) done. Route has 0 `.table(` calls. Ruff, architecture, and docs pass. Backend pytest 4426 passed, 4 skipped. Left for later: two alias imports kept for tests (`_collection_counts`, `_normalize_item_images`), and the route still imports `materialize_*` from `app.api.v1.images`. Commit: `refactor: move outfit route queries into outfit_service`. |
+| 2026-11-20 | Knot 4 sub-step 1 query check. `output/untangle/check_moves.py --old-rev 419384e~1` reports 20 structure differences and 7 new chains. All come from call-site parameters (`columns`, `limit`, `profile_id`, `completed_at`, `image_url`, `outfit_id`) or from reads merged into `fetch_owned_outfit_row`. Its `operation` argument keeps `execute_with_reconnect` and the same `extra` labels. Each call site was checked against the old literal. No runtime change found. |
+| 2026-11-20 | Knot 4 sub-step 2 (users.py, 51 calls) done. Route went from 1448 to 1086 lines and has 0 `.table(` calls. New `app/services/user_service.py` (536 lines) holds the queries. `_get_weather_suggestion` and `_get_outfit_of_the_day` stay in the route, and only their queries moved. Checks: ruff pass; backend pytest 4426 passed, 4 skipped, coverage 94.64%; architecture and docs pass; `check_moves.py` structure 51/51 and names 51/51, no differences. Commit: `refactor: move user route queries into user_service`. |
 
 ## Decision log
 
@@ -105,6 +107,8 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 | 2026-11-20 | Knot 2: the `generatingOutfits` map is the only generation record. `isGenerating` and `generationStatus` are removed from `outfitStore`. | TD-049: the two records could disagree. Side effect: a pane job now shows the spinner on its outfit card, which it did not before. |
 | 2026-11-20 | Knot 3: `oauth_sync` now cuts `full_name` to 255 and `avatar_url` to 500, as `_provision_profile` already did. One helper serves both. | One set of limits. `full_name` is `VARCHAR(255)`, so a longer name fails the insert. `avatar_url` is `TEXT`, so the 500 cap is app policy only. A URL cut at 500 characters stops working. |
 | 2026-11-20 | Knot 4: each route file's queries move into one service module, with the same query chains and log labels. Routes keep HTTP work only. | ARCHITECTURE.md keeps routes thin. Tests patch the service module where the moved name is now looked up. Moved log records carry the service logger name. |
+| 2026-11-20 | Knot 4 move check. The AST check compares each `.table(` chain: table, calls, literals, and wrapper must match. Variable renames are allowed. Parameters and merged helpers need a call-site check. | Counting `.table(` calls cannot show that a query changed. The AST check can. |
+| 2026-11-20 | Knot 4 users: body-profile writes (count, default clear, users link, create or update) moved into the service in their original order. The route keeps the per-user lock, `_now()`, the response envelope, and error mapping. Tests patch `user_service` where a moved name is looked up. | Write order sets the default profile, so the move keeps it. |
 
 ## Verification
 
