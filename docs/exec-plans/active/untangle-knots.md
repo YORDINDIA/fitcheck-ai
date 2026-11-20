@@ -34,7 +34,7 @@ Knots run worst first. The order is fixed in the table below.
 |---|------|-------|------|--------|
 | 1 | Plan limits copied into three apps | A | TD-032 | 2dfed3e |
 | 2 | Outfit generation state in two channels | A | TD-049 | c6f3f46 |
-| 3 | Profile fields copied twice | A | | 470305f |
+| 3 | Profile fields copied twice | A | | 470305f, c604077 |
 | 4 | Routes run database queries directly | A | TD-013, TD-107, TD-112 | |
 | 5 | Storage key shim kept as a workaround | A | | |
 | 6 | `complete` vs `completed` photoshoot status | B | TD-021 (first half) | |
@@ -55,7 +55,7 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 |---|------------|-------|----------------|--------|
 | 1 | outfits.py | 65 | outfit_service.py | 419384e |
 | 2 | users.py | 51 | user_service.py | d0f4cdf |
-| 3 | items.py | 36 | item_service.py | |
+| 3 | items.py | 36 | item_service.py | 651e58b |
 | 4 | auth.py | 18 | auth_service.py | |
 | 5 | recommendations.py | 17 | recommendation_service.py | |
 | 6 | calendar.py | 17 | calendar_service.py | |
@@ -93,6 +93,7 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 | 2026-11-20 | Knot 4 sub-step 2 (users.py, 51 calls) done. Route went from 1448 to 1086 lines and has 0 `.table(` calls. New `app/services/user_service.py` (536 lines) holds the queries. `_get_weather_suggestion` and `_get_outfit_of_the_day` stay in the route, and only their queries moved. Checks: ruff pass; backend pytest 4426 passed, 4 skipped, coverage 94.64%; architecture and docs pass; `check_moves.py` structure 51/51 and names 51/51, no differences. Commit: `refactor: move user route queries into user_service`. |
 | 2026-11-20 | Knot 4 sub-step 3 (items.py, 36 calls, 18 functions) done. Route has 0 `.table(` calls and went from 1953 to 1748 lines. New `app/services/item_service.py` (523 lines) holds 38 query functions. Three RPC calls move with their queries: `increment_item_worn`, `set_primary_item_image`, `get_item_stats_aggregate`. Checks: ruff pass; backend pytest 4426 passed, 4 skipped, coverage 94.66%; architecture and docs pass; `check_moves.py` structure 36/36 and names 36/36. Logger calls stay in the route (42 before and after). Left for later: the route and the service each define `_now`. Commit: `refactor: move item route queries into item_service`. |
 | 2026-11-20 | Knot 3 follow-up (decision 10) done. `avatar_url` is stored whole. The 500-character cut is removed from `app/services/profile_fields.py`, so both first-login paths keep the full provider URL. `full_name` keeps its 255-character cut. Three tests that asserted the 500-character cut now assert the full value: `test_profile_fields.py`, `test_deps_get_current_user_coverage.py`, and `test_auth_routes_coverage.py`. Checks: ruff pass; backend pytest 4426 passed, 4 skipped (count unchanged); architecture and docs pass. Commit: `fix: store full avatar URLs at first login`. |
+| 2026-11-20 | Knot 4 sub-step 4 (auth.py, 18 calls) done. Route has 0 `.table(` calls and went from 1056 to 976 lines. New `app/services/auth_service.py` (189 lines) holds 18 query functions. Checks: ruff pass; backend pytest 4426 passed, 4 skipped, coverage 94.67%; architecture and docs pass; `check_moves.py` structure 18/18. Names review shows one parameter rename (`profile_updates` to `updates`) with no runtime change. No test changed, and no patch needed a retarget: the register patches at `test_auth.py` lines 363 and 420 still reach the route wrapper. Commit: `refactor: move auth route queries into auth_service`. |
 
 ## Decision log
 
@@ -113,6 +114,7 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 | 2026-11-20 | Knot 4 users: body-profile writes (count, default clear, users link, create or update) moved into the service in their original order. The route keeps the per-user lock, `_now()`, the response envelope, and error mapping. Tests patch `user_service` where a moved name is looked up. | Write order sets the default profile, so the move keeps it. |
 | 2026-11-20 | Knot 4 items: each query keeps its wrapper (`execute_with_reconnect` or `asyncio.to_thread`) and its `extra` labels. The list read keeps its route-level `execute_with_reconnect` wrapper around the service call. `_apply_filters` moves from a closure to a module function with the same body. The move check does not compare RPC names, so each RPC call was checked by hand. Tests that patched moved names now patch `app.services.item_service`. Tests for list-level calls still patch `items_module`. | The checker cannot see RPC names or where a wrapper sits. A patch on a name the code no longer uses passes but tests nothing, so each retarget was checked to hit the call it names. |
 | 2026-11-20 | Knot 3 follow-up (owner decision): `avatar_url` is stored whole. `full_name` keeps the 255-character cut. This supersedes the 500-character limit in the knot 3 row above. | A URL cut at 500 characters stops working. Migration 036 widened `avatar_url` to TEXT. The 2026-08-07 RCA plan lists 036 as pending on hosted Supabase, so confirm it is applied before this change deploys. Until then, a URL over 500 characters can fail the first-login insert. |
+| 2026-11-20 | Knot 4 auth: each query keeps its order, wrapper, and log label. Login and fallback helpers take the user or payload object and read the id inside the chain. Register and login default chains stay separate functions. Register and OAuth sync keep their route-level `execute_with_reconnect` around `_upsert_user_profile`. | The move check compares chains, so each chain must read the same values in the same places. Tests patch `execute_with_reconnect` on the route module for register, so that patch must keep reaching a call in the route. |
 
 ## Verification
 

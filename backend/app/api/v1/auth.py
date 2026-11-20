@@ -28,6 +28,7 @@ from app.core.exceptions import (
 from app.core.ip_rate_limit import auth_rate_limited_operation
 from app.utils.db import execute_with_reconnect, run_sync_with_reconnect
 from app.utils.datetime_util import utcnow_iso
+from app.services import auth_service
 from app.services.referral_service import ReferralService
 from app.services.profile_fields import profile_fields_from_metadata
 from app.models.subscription import RedeemReferralResponse
@@ -74,10 +75,7 @@ def _check_schema_tables(db: Client) -> None:
     """The four schema probes. Separate function so the reconnect wrapper can
     re-run them against a rebuilt client."""
     try:
-        db.table("users").select("id").limit(1).execute()
-        db.table("user_preferences").select("preferred_occasions").limit(1).execute()
-        db.table("items").select("material").limit(1).execute()
-        db.table("outfits").select("is_public").limit(1).execute()
+        auth_service.probe_schema_tables(db)
     except PostgrestAPIError as e:
         code = getattr(e, "code", None)
         if code in {"PGRST205", "42703"}:
@@ -95,10 +93,7 @@ async def _upsert_user_profile(
     last_fk_error = False
     for attempt in range(max_attempts):
         try:
-            # Query built outside the callable so the retry loop can't capture a
-            # stale binding; to_thread keeps the sync client off the event loop.
-            upsert = db.table("users").upsert(payload, on_conflict="id")
-            await asyncio.to_thread(upsert.execute)
+            await auth_service.upsert_user_profile_once(db, payload)
             return True
         except PostgrestAPIError as e:
             error_info = getattr(e, "json", lambda: {})() or {}
@@ -118,13 +113,7 @@ async def _upsert_user_profile(
             f"FK constraint error persisted after {max_attempts} attempts for user {payload.get('id')}"
         )
         try:
-            existing = await asyncio.to_thread(
-                db.table("users")
-                .select("id")
-                .eq("id", payload.get("id"))
-                .limit(1)
-                .execute
-            )
+            existing = await auth_service.fetch_user_id_for_fallback(db, payload)
             if existing.data:
                 return True
         except Exception as e:
@@ -325,28 +314,13 @@ async def register(
 
                 # Create default user preferences (upsert to handle trigger-created records)
                 try:
-                    await asyncio.to_thread(db.table("user_preferences").upsert({
-                        "user_id": user_id,
-                        "favorite_colors": [],
-                        "preferred_styles": [],
-                        "liked_brands": [],
-                        "disliked_patterns": [],
-                        "preferred_occasions": [],
-                        "data_points_collected": 0,
-                    }, on_conflict="user_id").execute)
+                    await auth_service.upsert_default_preferences(db, user_id)
                 except Exception as e:
                     logger.debug(f"User preferences upsert skipped (may exist from trigger): {e}")
 
                 # Create default user settings (upsert to handle trigger-created records)
                 try:
-                    await asyncio.to_thread(db.table("user_settings").upsert({
-                        "user_id": user_id,
-                        "language": "en",
-                        "measurement_units": "imperial",
-                        "notifications_enabled": True,
-                        "email_marketing": False,
-                        "dark_mode": False
-                    }, on_conflict="user_id").execute)
+                    await auth_service.upsert_default_settings(db, user_id)
                 except Exception as e:
                     logger.debug(f"User settings upsert skipped (may exist from trigger): {e}")
 
@@ -516,7 +490,7 @@ async def login(
 
             # Ensure user profile exists in public.users (handles missing trigger case)
             try:
-                existing = await asyncio.to_thread(db.table("users").select("id").eq("id", user.id).execute)
+                existing = await auth_service.fetch_user_id_row(db, user)
                 if not existing.data:
                     # Profile doesn't exist - create it
                     profile_payload = {
@@ -532,25 +506,10 @@ async def login(
                     await _upsert_user_profile(db, profile_payload)
 
                     # Create default user_preferences
-                    await asyncio.to_thread(db.table("user_preferences").upsert({
-                        "user_id": user.id,
-                        "favorite_colors": [],
-                        "preferred_styles": [],
-                        "liked_brands": [],
-                        "disliked_patterns": [],
-                        "preferred_occasions": [],
-                        "data_points_collected": 0,
-                    }, on_conflict="user_id").execute)
+                    await auth_service.upsert_login_default_preferences(db, user)
 
                     # Create default user_settings
-                    await asyncio.to_thread(db.table("user_settings").upsert({
-                        "user_id": user.id,
-                        "language": "en",
-                        "measurement_units": "imperial",
-                        "notifications_enabled": True,
-                        "email_marketing": False,
-                        "dark_mode": False,
-                    }, on_conflict="user_id").execute)
+                    await auth_service.upsert_login_default_settings(db, user)
 
                     logger.info("Created missing user profile on login", user_id=user.id)
                 else:
@@ -566,15 +525,13 @@ async def login(
                     confirmed_at = getattr(user, "email_confirmed_at", None)
                     if confirmed_at is not None:
                         profile_updates["email_verified"] = True
-                    await asyncio.to_thread(
-                        db.table("users").update(profile_updates).eq("id", user.id).execute
-                    )
+                    await auth_service.update_user_profile(db, user, profile_updates)
             except Exception as e:
                 logger.warning("Failed to ensure user profile", user_id=user.id, error=str(e))
 
             # Get user profile data from database (not auth metadata) to ensure
             # avatar_url and other profile fields are returned correctly
-            profile_result = await asyncio.to_thread(db.table("users").select("*").eq("id", user.id).execute)
+            profile_result = await auth_service.fetch_user_profile_row(db, user)
             if profile_result.data and len(profile_result.data) > 0:
                 profile = profile_result.data[0]
                 # Suspended accounts must not receive fresh tokens (A1-14):
@@ -865,11 +822,7 @@ async def oauth_sync(
         _require_schema(db)
 
         # Check if user profile already exists
-        existing = await execute_with_reconnect(
-            lambda d: d.table("users").select("*").eq("id", user_id).execute(),
-            db,
-            extra={"operation": "oauth_sync.lookup", "user_id": user_id},
-        )
+        existing = await auth_service.fetch_user_row_for_sync_lookup(db, user_id)
         is_new_user = not existing.data
 
         if is_new_user:
@@ -919,36 +872,13 @@ async def oauth_sync(
 
             # Create default user_preferences
             try:
-                await execute_with_reconnect(
-                    lambda d: d.table("user_preferences").upsert({
-                        "user_id": user_id,
-                        "favorite_colors": [],
-                        "preferred_styles": [],
-                        "liked_brands": [],
-                        "disliked_patterns": [],
-                        "preferred_occasions": [],
-                        "data_points_collected": 0,
-                    }, on_conflict="user_id").execute(),
-                    db,
-                    extra={"operation": "oauth_sync.upsert_preferences", "user_id": user_id},
-                )
+                await auth_service.upsert_oauth_default_preferences(db, user_id)
             except Exception as e:
                 logger.debug(f"User preferences upsert skipped: {e}")
 
             # Create default user_settings
             try:
-                await execute_with_reconnect(
-                    lambda d: d.table("user_settings").upsert({
-                        "user_id": user_id,
-                        "language": "en",
-                        "measurement_units": "imperial",
-                        "notifications_enabled": True,
-                        "email_marketing": False,
-                        "dark_mode": False,
-                    }, on_conflict="user_id").execute(),
-                    db,
-                    extra={"operation": "oauth_sync.upsert_settings", "user_id": user_id},
-                )
+                await auth_service.upsert_oauth_default_settings(db, user_id)
             except Exception as e:
                 logger.debug(f"User settings upsert skipped: {e}")
 
@@ -987,21 +917,11 @@ async def oauth_sync(
             logger.info("Created user profile via OAuth sync", user_id=user_id)
 
             # Fetch the created profile
-            profile_result = await execute_with_reconnect(
-                lambda d: d.table("users").select("*").eq("id", user_id).execute(),
-                db,
-                extra={"operation": "oauth_sync.fetch_profile", "user_id": user_id},
-            )
+            profile_result = await auth_service.fetch_user_row_after_create(db, user_id)
             user_data = profile_result.data[0] if (profile_result.data and len(profile_result.data) > 0) else profile_payload
         else:
             # Profile exists - update last_login_at
-            await execute_with_reconnect(
-                lambda d: d.table("users").update({
-                    "last_login_at": utcnow_iso()
-                }).eq("id", user_id).execute(),
-                db,
-                extra={"operation": "oauth_sync.touch_login", "user_id": user_id},
-            )
+            await auth_service.touch_oauth_last_login(db, user_id)
 
             user_data = existing.data[0] if (existing.data and len(existing.data) > 0) else {}
             logger.info("OAuth sync for existing user", user_id=user_id)
