@@ -25,7 +25,7 @@ Knots run worst first. The order is fixed in the table below.
 - [ ] Knot 6 has two commits. Commit B ships only after the new app build is live.
 - [x] Knot 4 has one commit per route file, heaviest first. The `.table(` architecture rule comes last.
 - [ ] Each commit passes the checks for the apps it touches.
-- [ ] `output/untangle/wiring-after.html` and `output/untangle/before-after.png` exist. Both stay local.
+- [x] `output/untangle/wiring-after.html` and `output/untangle/before-after.png` exist. Both stay local.
 - [x] Nothing is pushed or merged.
 
 ## Knots
@@ -126,6 +126,12 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 | 2026-11-21 | Avatar repair drafted, not committed or applied. `backend/scripts/repair_avatar_links.py` and `test_repair_avatar_links.py` (45 tests pass). Dry run of 2,446 users, writes nothing: 2,263 empty, 57 current, 4 external, 57 legacy (repoint), 26 copy then repoint, 39 clear. Total 2,446. Read-only check: each candidate's compare-and-set filter matches one row. Mutants: 17 of 18 caught. The survivor (owner check off in verify) is equivalent, because a key that matches the target already implies the owner matches. |
 | 2026-11-21 | Blocker for `--delete`. All 57 repoint targets, and their 57 `_thumb.webp` siblings, are unreferenced today. The inventory lists them as deletable orphans. A delete run now would remove the only copies of those 57 avatars after the 2 h grace. `--delete` stays off until the avatar repair is applied and verified. Runbooks now say so. |
 | 2026-11-21 | Migration 036 check. `users.avatar_url` is `text` on hosted Supabase, read from the REST schema with a GET request. The column gate for `c604077` is clear. |
+| 2026-11-21 | Avatar repair committed as `5881abd`: `backend/scripts/repair_avatar_links.py` and its unit tests. Checks: 45 unit tests pass (`--no-cov`; a single-file run misses the 90% coverage gate by design); ruff pass; `check_architecture.py` pass; the script has no delete call. |
+| 2026-11-21 | Avatar repair applied on hosted Supabase after the owner approved "Commit and apply". A fresh dry run matched the approved counts: 57 repoint, 26 copy then repoint, 39 clear, 0 review. Apply: 83 rows repointed (26 of them copied), 39 cleared, 0 skipped, 0 failed, 122 of 122 verified. The audit has 148 key-only records. Logs are local in `output/untangle/runs/avatar-fix/`. |
+| 2026-11-21 | Post-apply dry run: 0 to repoint, 0 to copy, 0 to clear, 0 to review. Current 140 (57 existing and 83 repointed), external 4, empty 2,302 (2,263 and 39 cleared). |
+| 2026-11-21 | Post-apply inventory, read-only, `--delete` not used: 13,528 bucket objects, 3,643 DB keys, 6,689 orphans (6,590 deletable, 99 protected), 209 missing. No user row points at a missing object. The 52 legacy-layout avatar orphans are the 26 original avatars and their 26 thumbnails that the copies replaced. The 2 `users/` avatar orphans are an older avatar of one user, which the repair did not touch. The mapping is correct: the inventory and the repair both read each row through `storage_keys.key_from_path`, and a repointed row reduces to the key the audit recorded. |
+| 2026-11-21 | The after diagram showed 15 red knot files. They were knot 6 sites. The generator still listed knot 6 as open, from before commit `b523479`. Fixed in `output/untangle/build_wiring.py`: knot 6 is resolved on the branch (`8b52992`, `b523479`), and its status line keeps the owner gate for migration 066. After: 0 red knot files, 14 of 14 knots resolved. |
+| 2026-11-21 | Rebuilt `wiring-after.html` from a clean `git archive` export of `5881abd`. Both screenshots are 1440x900, fit one screen, and have no page errors. Composed `output/untangle/before-after.png` (2960x1000). Both outputs stay local and gitignored. |
 
 ## Decision log
 
@@ -180,6 +186,9 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 | 2026-11-20 | Avatar repair, owner decision. Copy the 26 originals to `users/{uid}/avatars/` with no thumbnail, then repoint those rows. Repoint the 57 legacy rows to their existing objects. Clear the 39 rows with no avatar object. Delete nothing. | The 26 have an original at the legacy key and no object at the new key. The 57 already have their object at the new key. The 39 have no avatar object for that user. |
 | 2026-11-21 | The bucket listing helper raises on failure (`099a8fb`). The inventory exits 2 before any report or deletion. | An empty or partial map let cleanup, migration, and recompress exit 0 with "nothing to do". A partial map could also hide an existing migration target. |
 | 2026-11-21 | `storage_inventory.py --delete` stays off until the avatar repair is applied and verified, and the remaining orphans are reviewed. | All 57 repoint targets are unreferenced today. A delete run would remove them after the 2 h grace. |
+| 2026-11-21 | Avatar repair: the owner approved "Commit and apply" after a fresh dry run. | The dry run matched the approved counts. The script re-reads each row after the writes, and it deletes nothing. |
+| 2026-11-21 | `storage_inventory.py --delete` stays off after the repair. The 52 legacy avatar objects and 2 older avatar files are unreferenced. | A delete run would remove them after the 2 h grace. Deleting unreferenced objects is an owner decision (TD-146). |
+| 2026-11-21 | Knot 6 shows as resolved on the branch. Its status line keeps the owner gate: apply migration 066 before the backend that writes `completed` deploys. | Both commits are on the branch. The gate is a deploy and migration step, not a code change. The acceptance box for commit B stays open until the owner ships it. |
 
 ## Verification
 

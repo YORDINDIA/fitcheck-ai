@@ -25,7 +25,7 @@
 - [ ] Weekly storage routine: dry-run `backend/scripts/storage_inventory.py`
       (orphan/missing-object report) and `backend/scripts/cleanup_temp_assets.py`
       (temp-preview cleanup), review the report, then re-run both with
-      `--delete` (both default to dry-run). **Exception:** do not pass `--delete` to `storage_inventory.py` until TD-146 is closed. Run the avatar repair first, or the run deletes the 57 avatar images and 57 thumbnails that are still needed.
+      `--delete` (both default to dry-run). **Exception:** do not pass `--delete` to `storage_inventory.py` until TD-146 is closed. The avatar repair ran on 2026-11-21. The 54 unreferenced avatar objects and the other orphans still need an owner decision.
 - [ ] Confirm `IMAGE_SERVING_MODE` (`presigned` | `worker`) and thumbnail
       state: `THUMBNAIL_SERVING` / `THUMBNAILS_BACKFILLED` in
       `backend/app/core/config.py` — run
