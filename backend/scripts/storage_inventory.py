@@ -63,9 +63,10 @@ SAFETY GUARANTEES
 4) AUDIT LOG. Every deleted key is appended to ``AUDIT_FILE`` (JSONL). The
    audit file is the source of truth for what was deleted and when.
 
-5) FAIL CLOSED. If any DB table read fails, the run exits with code 2 before it
-   reports or deletes anything. A partial key set would make live objects look
-   like orphans.
+5) FAIL CLOSED. If any DB table read or the bucket listing fails, the run exits
+   with code 2 before it reports or deletes anything. A partial DB key set would
+   make live objects look like orphans. A partial bucket listing would give a
+   wrong report.
 
 =============================================================================
 NOTES
@@ -463,26 +464,18 @@ async def _list_with_mtime(backend) -> Dict[str, datetime]:
     Paginates ``list_objects_v2`` directly so the object mtime is captured in
     the same listing pass — no per-object HEAD. Uses the backend's aioboto3
     client via the same script-only reach-in as ``_measure_bytes`` (we must not
-    edit ``app/services/object_storage.py``). On any failure the map is empty,
-    which makes every orphan ``protected`` (nothing is deleted this run) — the
-    safe failure mode for a one-time cleanup.
+    edit ``app/services/object_storage.py``). A failed listing raises. ``_run``
+    then stops, because a partial key set would make the report wrong.
     """
     mtimes: Dict[str, datetime] = {}
-    try:
-        client = await backend._get_client()  # noqa: SLF001 - script-only
-        paginator = client.get_paginator("list_objects_v2")
-        async for page in paginator.paginate(Bucket=backend.bucket, Prefix=""):
-            for obj in page.get("Contents", []):
-                key = obj.get("Key")
-                mtime = obj.get("LastModified")
-                if key and mtime is not None:
-                    mtimes[key] = mtime
-    except Exception as e:  # noqa: BLE001
-        print(
-            f"WARNING: mtime-aware listing failed (age-based protection "
-            f"disabled; all orphans will be protected): {e}",
-            file=sys.stderr,
-        )
+    client = await backend._get_client()  # noqa: SLF001 - script-only
+    paginator = client.get_paginator("list_objects_v2")
+    async for page in paginator.paginate(Bucket=backend.bucket, Prefix=""):
+        for obj in page.get("Contents", []):
+            key = obj.get("Key")
+            mtime = obj.get("LastModified")
+            if key and mtime is not None:
+                mtimes[key] = mtime
     return mtimes
 
 
@@ -571,7 +564,14 @@ async def _run(
         db = SupabaseDB.get_service_client()
 
         print("Listing bucket objects (with mtime for age-based protection)...")
-        mtime_map = await _list_with_mtime(backend)
+        try:
+            mtime_map = await _list_with_mtime(backend)
+        except Exception as e:  # noqa: BLE001 - a partial listing is never used
+            print(
+                f"ERROR: the bucket listing failed ({e}). Stopping with no report and no deletion.",
+                file=sys.stderr,
+            )
+            return 2
         bucket_keys = list(mtime_map.keys())
         bucket_set = set(bucket_keys)
         print(f"  {len(bucket_set)} object(s) in bucket")

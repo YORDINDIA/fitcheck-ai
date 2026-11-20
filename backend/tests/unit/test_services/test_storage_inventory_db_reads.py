@@ -195,3 +195,49 @@ def test_delete_removes_only_the_orphan_when_reads_succeed(script, monkeypatch, 
     # Referenced items stay. Only the unreferenced orphan is deleted.
     assert backend.deleted == [ORPHAN]
     assert audit.exists()
+
+
+class _MidwayFailClient:
+    """Lists one page of bucket objects, then fails the listing."""
+
+    def get_paginator(self, _name):
+        return self
+
+    async def paginate(self, **_kwargs):
+        yield {"Contents": [{"Key": ORPHAN, "LastModified": OLD}]}
+        raise RuntimeError("listing dropped mid-way")
+
+
+class _MidwayFailBackend:
+    bucket = "fitcheck-test"
+
+    def __init__(self):
+        self.deleted = []
+
+    async def _get_client(self):
+        return _MidwayFailClient()
+
+    async def delete_many(self, keys):
+        self.deleted.extend(keys)
+        return len(keys)
+
+    async def close(self):
+        return None
+
+
+def test_failed_bucket_listing_stops_before_any_report_or_delete(script, monkeypatch, tmp_path):
+    # A partial bucket listing gives a wrong report and can hide live objects
+    # from the orphan math. The run stops before it reads the DB or deletes.
+    db = _FakeDB({"item_images": _item_rows(3)})
+    backend = _MidwayFailBackend()
+
+    def db_read_after_failed_listing(*_args, **_kwargs):
+        pytest.fail("the DB was read after the bucket listing failed")
+
+    monkeypatch.setattr(script, "SupabaseDB", SimpleNamespace(get_service_client=lambda: db))
+    monkeypatch.setattr(script, "collect_db_keys", db_read_after_failed_listing)
+    audit = tmp_path / "audit.jsonl"
+    code = asyncio.run(script._run(delete=True, audit_path=audit, orphan_list=None, min_age_hours=2, backend=backend))
+    assert code == 2
+    assert backend.deleted == []
+    assert not audit.exists()

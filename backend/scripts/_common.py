@@ -60,22 +60,16 @@ async def list_keys_with_mtime(backend) -> Dict[str, datetime]:
     ``list_objects_v2`` directly so the object mtime is captured in the same
     listing pass (no per-object HEAD), via the backend's aioboto3 client. The
     backend's public ``scan_keys`` is page-bounded for admin calls, while the
-    cleanup/migration scripts need the whole bucket. On any failure the map is
-    empty — callers must treat "nothing known" as "delete nothing".
+    cleanup/migration scripts need the whole bucket. A failed listing raises.
+    A partial map would look like a complete bucket to the caller.
     """
     mtimes: Dict[str, datetime] = {}
-    try:
-        client = await backend._get_client()  # noqa: SLF001 - script-only reach-in
-        paginator = client.get_paginator("list_objects_v2")
-        async for page in paginator.paginate(Bucket=backend.bucket, Prefix=""):
-            for obj in page.get("Contents", []):
-                key = obj.get("Key")
-                mtime = obj.get("LastModified")
-                if key and mtime is not None:
-                    mtimes[key] = mtime
-    except Exception as e:  # noqa: BLE001
-        print(
-            f"WARNING: mtime-aware listing failed (no keys listed): {e}",
-            file=sys.stderr,
-        )
+    client = await backend._get_client()  # noqa: SLF001 - script-only reach-in
+    paginator = client.get_paginator("list_objects_v2")
+    async for page in paginator.paginate(Bucket=backend.bucket, Prefix=""):
+        for obj in page.get("Contents", []):
+            key = obj.get("Key")
+            mtime = obj.get("LastModified")
+            if key and mtime is not None:
+                mtimes[key] = mtime
     return mtimes
