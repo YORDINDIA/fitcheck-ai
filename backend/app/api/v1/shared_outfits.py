@@ -4,7 +4,6 @@ Shared outfit feedback routes.
 Enables public or authenticated feedback on shared outfits.
 """
 
-import asyncio
 from datetime import datetime, timezone
 from app.utils.datetime_util import utcnow
 from typing import Any, Dict, Optional
@@ -24,6 +23,10 @@ from app.core.ip_rate_limit import auth_rate_limited_operation
 from app.core.logging_config import get_context_logger
 from app.core.security import get_optional_user_id
 from app.db.connection import get_db
+from app.services.shared_outfit_service import (
+    fetch_shared_outfit_feedback_gate,
+    insert_share_feedback_row,
+)
 
 logger = get_context_logger(__name__)
 
@@ -82,13 +85,7 @@ async def _insert_share_feedback(
 ) -> Dict[str, Any]:
     try:
         share_id_str = str(share_id)
-        share = await asyncio.to_thread(
-            db.table("shared_outfits")
-            .select("id, allow_feedback, expires_at")
-            .eq("id", share_id_str)
-            .maybe_single()
-            .execute
-        )
+        share = await fetch_shared_outfit_feedback_gate(db, share_id_str)
         if not share or not share.data:
             raise SharedOutfitNotFoundError(share_id=share_id_str)
 
@@ -108,7 +105,7 @@ async def _insert_share_feedback(
             "rating": request.rating,
             "comment": request.comment,
         }
-        res = await asyncio.to_thread(db.table("share_feedback").insert(insert).execute)
+        res = await insert_share_feedback_row(db, insert)
         row = (res.data or [None])[0]
         if not row:
             raise DatabaseError(
