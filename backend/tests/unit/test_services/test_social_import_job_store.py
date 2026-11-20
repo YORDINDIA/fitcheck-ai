@@ -228,6 +228,51 @@ async def test_set_job_status_with_completed_flag(fake_db):
     assert updated["completed_at"]
 
 
+@pytest.mark.asyncio
+async def test_set_job_status_exclude_statuses_blocks_terminal_overwrite(fake_db):
+    """A status write with exclude_statuses must not match a terminal row."""
+    fake_db.rows["social_import_jobs"] = [_job_row(status=SocialImportJobStatus.COMPLETED.value)]
+    excluded = [
+        SocialImportJobStatus.COMPLETED,
+        SocialImportJobStatus.CANCELLED,
+        SocialImportJobStatus.FAILED,
+    ]
+
+    updated = await SocialImportJobStore.set_job_status(
+        fake_db,
+        job_id=JOB_ID,
+        user_id=USER_ID,
+        status=SocialImportJobStatus.CANCELLED,
+        completed=True,
+        exclude_statuses=excluded,
+    )
+
+    assert updated is None
+    assert fake_db.rows["social_import_jobs"][0]["status"] == SocialImportJobStatus.COMPLETED.value
+    assert (
+        "social_import_jobs",
+        "not_in",
+        "status",
+        [s.value for s in excluded],
+    ) in fake_db.filters
+
+
+@pytest.mark.asyncio
+async def test_set_job_status_exclude_statuses_allows_active_job(fake_db):
+    fake_db.rows["social_import_jobs"] = [_job_row(status=SocialImportJobStatus.PROCESSING.value)]
+
+    updated = await SocialImportJobStore.set_job_status(
+        fake_db,
+        job_id=JOB_ID,
+        user_id=USER_ID,
+        status=SocialImportJobStatus.CANCELLED,
+        completed=True,
+        exclude_statuses=[SocialImportJobStatus.COMPLETED],
+    )
+
+    assert updated["status"] == SocialImportJobStatus.CANCELLED.value
+
+
 # =============================================================================
 # Photos
 # =============================================================================

@@ -2219,6 +2219,7 @@ async def test_cancel_job(monkeypatch):
 
     async def fake_set_job_status(db, *, job_id, user_id, status, completed=None, **kwargs):
         calls.append(("set_status", status, completed))
+        return make_job(id=job_id, status=status.value)
 
     async def fake_cleanup_assets(job_id):
         calls.append(("cleanup",))
@@ -2248,6 +2249,107 @@ async def test_cancel_job(monkeypatch):
     assert ("cancel_scheduled",) in calls
     cancelled_events = [e for e in events if e["event_type"] == "job_cancelled"]
     assert cancelled_events
+
+
+def _guarded_job_status(monkeypatch, current_status):
+    """Fake set_job_status that applies the DB terminal filter.
+
+    Mirrors ``.not_.in_("status", exclude_statuses)``: when the stored status
+    is excluded, the write matches no row and the fake returns None.
+    """
+    state = {"status": current_status, "exclude_seen": None, "writes": 0}
+
+    async def fake_set_job_status(
+        db, *, job_id, user_id, status, completed=None, exclude_statuses=None, **kwargs
+    ):
+        state["exclude_seen"] = exclude_statuses
+        if exclude_statuses and state["status"] in {s.value for s in exclude_statuses}:
+            return None
+        state["writes"] += 1
+        state["status"] = status.value
+        return make_job(id=job_id, status=status.value)
+
+    return state, fake_set_job_status
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal", ["completed", "failed", "cancelled"])
+async def test_cancel_job_on_terminal_status_is_noop(monkeypatch, terminal):
+    """A cancel on a finished job must not overwrite status, clean up
+    artifacts, or publish job_cancelled."""
+    events = patch_event(monkeypatch)
+    cleanup_calls = []
+    artifact_calls = []
+    cancel_scheduled_calls = []
+    state, fake_set_job_status = _guarded_job_status(monkeypatch, terminal)
+
+    async def fake_cleanup_assets(job_id):
+        cleanup_calls.append(job_id)
+
+    async def fake_delete_artifacts(db, *, job_id, user_id):
+        artifact_calls.append(job_id)
+
+    async def fake_cancel_scheduled(cls, job_id):
+        cancel_scheduled_calls.append(job_id)
+
+    patch_store(
+        monkeypatch,
+        set_job_status=fake_set_job_status,
+        delete_job_artifacts=fake_delete_artifacts,
+    )
+    service = make_service()
+    monkeypatch.setattr(service, "_cleanup_unsaved_temp_assets", fake_cleanup_assets)
+    monkeypatch.setattr(
+        SocialImportPipelineService, "cancel_scheduled_job", classmethod(fake_cancel_scheduled)
+    )
+
+    result = await service.cancel_job("job-1")
+
+    assert result is None
+    assert state["status"] == terminal
+    assert state["writes"] == 0
+    assert {s.value for s in state["exclude_seen"]} == {"completed", "cancelled", "failed"}
+    assert cleanup_calls == []
+    assert artifact_calls == []
+    assert cancel_scheduled_calls == []
+    assert [e for e in events if e["event_type"] == "job_cancelled"] == []
+
+
+@pytest.mark.asyncio
+async def test_cancel_job_on_processing_still_cancels_and_cleans(monkeypatch):
+    events = patch_event(monkeypatch)
+    cleanup_calls = []
+    artifact_calls = []
+    state, fake_set_job_status = _guarded_job_status(
+        monkeypatch, SocialImportJobStatus.PROCESSING.value
+    )
+
+    async def fake_cleanup_assets(job_id):
+        cleanup_calls.append(job_id)
+
+    async def fake_delete_artifacts(db, *, job_id, user_id):
+        artifact_calls.append(job_id)
+
+    async def fake_cancel_scheduled(cls, job_id):
+        return None
+
+    patch_store(
+        monkeypatch,
+        set_job_status=fake_set_job_status,
+        delete_job_artifacts=fake_delete_artifacts,
+    )
+    service = make_service()
+    monkeypatch.setattr(service, "_cleanup_unsaved_temp_assets", fake_cleanup_assets)
+    monkeypatch.setattr(
+        SocialImportPipelineService, "cancel_scheduled_job", classmethod(fake_cancel_scheduled)
+    )
+
+    await service.cancel_job("job-1")
+
+    assert state["status"] == SocialImportJobStatus.CANCELLED.value
+    assert cleanup_calls == ["job-1"]
+    assert artifact_calls == ["job-1"]
+    assert [e["event_type"] for e in events] == ["job_cancelled"]
 
 
 # ---------------------------------------------------------------------------

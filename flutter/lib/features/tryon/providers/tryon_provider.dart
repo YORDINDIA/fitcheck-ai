@@ -106,6 +106,35 @@ class TryOnAvatarNotifier extends AsyncNotifier<TryOnAvatar> {
 
 const _unset = Object();
 
+/// Status of the one try-on run. An enum, not a bool: the view and the
+/// notifier read this single field, so no second flag can drift from it.
+enum TryOnStatus { idle, generating }
+
+/// Events that move the try-on run between statuses.
+enum TryOnEvent { changeGarment, changeOptions, start, succeed, fail }
+
+/// The status after [event] from [from], or null when the event is illegal
+/// there. The notifier ignores illegal events.
+///
+/// | from       | changeGarment, changeOptions | start      | succeed, fail |
+/// |------------|------------------------------|------------|---------------|
+/// | idle       | idle                         | generating | ignored       |
+/// | generating | ignored                      | ignored    | idle          |
+@visibleForTesting
+TryOnStatus? tryOnTransition(TryOnStatus from, TryOnEvent event) =>
+    switch (from) {
+      TryOnStatus.idle => switch (event) {
+        TryOnEvent.changeGarment ||
+        TryOnEvent.changeOptions => TryOnStatus.idle,
+        TryOnEvent.start => TryOnStatus.generating,
+        TryOnEvent.succeed || TryOnEvent.fail => null,
+      },
+      TryOnStatus.generating => switch (event) {
+        TryOnEvent.succeed || TryOnEvent.fail => TryOnStatus.idle,
+        _ => null,
+      },
+    };
+
 @immutable
 class TryOnState {
   const TryOnState({
@@ -113,7 +142,7 @@ class TryOnState {
     this.style = 'casual',
     this.background = 'studio white',
     this.pose = 'standing front',
-    this.generating = false,
+    this.status = TryOnStatus.idle,
     this.resultUrl,
     this.resultBytes,
   });
@@ -123,7 +152,10 @@ class TryOnState {
   final String style;
   final String background;
   final String pose;
-  final bool generating;
+  final TryOnStatus status;
+
+  /// True while a run is in flight. Derived from [status]; not stored.
+  bool get generating => status == TryOnStatus.generating;
 
   final String? resultUrl;
 
@@ -137,7 +169,7 @@ class TryOnState {
     String? style,
     String? background,
     String? pose,
-    bool? generating,
+    TryOnStatus? status,
     Object? resultUrl = _unset,
     Object? resultBytes = _unset,
   }) => TryOnState(
@@ -145,7 +177,7 @@ class TryOnState {
     style: style ?? this.style,
     background: background ?? this.background,
     pose: pose ?? this.pose,
-    generating: generating ?? this.generating,
+    status: status ?? this.status,
     resultUrl: identical(resultUrl, _unset)
         ? this.resultUrl
         : resultUrl as String?,
@@ -186,13 +218,24 @@ class TryOnNotifier extends Notifier<TryOnState> {
   @override
   TryOnState build() => const TryOnState();
 
+  /// True when [event] is legal from the current status. Illegal events are
+  /// ignored, never thrown.
+  bool _allows(TryOnEvent event) =>
+      tryOnTransition(state.status, event) != null;
+
+  /// Applies [event] through the transition table. Does nothing when illegal.
+  void _advance(TryOnEvent event) {
+    final next = tryOnTransition(state.status, event);
+    if (next != null) state = state.copyWith(status: next);
+  }
+
   /// Picks one garment photo from the gallery.
   Future<void> pickGarment() => _pick(ImageSource.gallery);
 
   Future<void> pickGarmentFromCamera() => _pick(ImageSource.camera);
 
   Future<void> _pick(ImageSource source) async {
-    if (state.generating) return;
+    if (!_allows(TryOnEvent.changeGarment)) return;
     final camera = source == ImageSource.camera;
     final allowed = camera
         ? await PermissionHelper.confirmCameraRationale()
@@ -219,16 +262,28 @@ class TryOnNotifier extends Notifier<TryOnState> {
 
   /// Sets or clears the garment. A new garment drops the old result.
   void setGarment(File? file) {
-    if (!state.generating) state = state.withGarment(file);
+    if (!_allows(TryOnEvent.changeGarment)) return;
+    state = state.withGarment(file);
   }
 
-  void setStyle(String v) => state = state.copyWith(style: v);
-  void setBackground(String v) => state = state.copyWith(background: v);
-  void setPose(String v) => state = state.copyWith(pose: v);
+  void setStyle(String v) {
+    if (!_allows(TryOnEvent.changeOptions)) return;
+    state = state.copyWith(style: v);
+  }
+
+  void setBackground(String v) {
+    if (!_allows(TryOnEvent.changeOptions)) return;
+    state = state.copyWith(background: v);
+  }
+
+  void setPose(String v) {
+    if (!_allows(TryOnEvent.changeOptions)) return;
+    state = state.copyWith(pose: v);
+  }
 
   Future<void> generate() async {
     final garment = state.garment;
-    if (state.generating) return;
+    if (!_allows(TryOnEvent.start)) return;
     if (garment == null) {
       ErrorHandler.showValidation(
         ErrorHandler.l10n?.tryonChooseGarmentFirstBody ??
@@ -257,8 +312,10 @@ class TryOnNotifier extends Notifier<TryOnState> {
     // Third-party AI consent (Apple 5.1.2(i)) before any image is read.
     if (!await _aiConsent(ref)) return;
     if (!ref.mounted) return;
-
-    state = state.copyWith(generating: true);
+    // Re-check after the consent await: a second call may have started meanwhile.
+    if (!_allows(TryOnEvent.start)) return;
+    _advance(TryOnEvent.start);
+    var outcome = TryOnEvent.fail;
     try {
       final bytes = await garment.readAsBytes();
       final encoded = await compute(base64Encode, bytes);
@@ -281,6 +338,7 @@ class TryOnNotifier extends Notifier<TryOnState> {
         resultUrl: (url == null || url.isEmpty) ? null : url,
         resultBytes: bytesOut,
       );
+      outcome = TryOnEvent.succeed;
       ErrorHandler.showSuccess(
         ErrorHandler.l10n?.tryonReadyBody ?? 'Your try-on is ready.',
         title: ErrorHandler.l10n?.actionDone ?? 'Done',
@@ -292,7 +350,7 @@ class TryOnNotifier extends Notifier<TryOnState> {
         stackTrace: stack,
       );
     } finally {
-      if (ref.mounted) state = state.copyWith(generating: false);
+      if (ref.mounted) _advance(outcome);
     }
   }
 

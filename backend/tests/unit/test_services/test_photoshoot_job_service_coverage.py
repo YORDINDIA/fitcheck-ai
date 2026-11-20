@@ -521,3 +521,45 @@ async def test_cleanup_loop_logs_and_continues_on_error(monkeypatch):
 
     assert task.done()
     assert sweep.call_count >= 1
+
+
+# =============================================================================
+# Terminal guard: late writes after CANCELLED
+# =============================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "late_status",
+    [
+        PhotoshootJobStatus.PENDING,
+        PhotoshootJobStatus.PROCESSING,
+        PhotoshootJobStatus.COMPLETE,
+        PhotoshootJobStatus.FAILED,
+    ],
+)
+async def test_late_status_write_does_not_overwrite_cancelled(late_status):
+    job = await _make_job()
+    await PhotoshootJobService.update_status(job.job_id, PhotoshootJobStatus.CANCELLED)
+
+    await PhotoshootJobService.update_status(job.job_id, late_status)
+
+    assert PhotoshootJobService._jobs[job.job_id].status is PhotoshootJobStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_late_error_image_and_progress_writes_after_cancelled_are_ignored():
+    job = await _make_job()
+    await PhotoshootJobService.update_status(job.job_id, PhotoshootJobStatus.CANCELLED)
+
+    await PhotoshootJobService.set_error(job.job_id, "late provider error")
+    await PhotoshootJobService.mark_image_failed(job.job_id, 0, "late image error")
+    await PhotoshootJobService.add_generated_image(job.job_id, "img-late", 1, image_url="https://x/y.png")
+    await PhotoshootJobService.update_current_batch(job.job_id, 3)
+
+    stored = PhotoshootJobService._jobs[job.job_id]
+    assert stored.status is PhotoshootJobStatus.CANCELLED
+    assert stored.error_message is None
+    assert stored.failed_indices == set()
+    assert stored.generated_images == []
+    assert stored.current_batch == 0

@@ -25,6 +25,14 @@ logger = logging.getLogger(__name__)
 EVENTS_PER_JOB_MAX = 200
 REPLAY_EVENTS_MAX = 200
 
+# Statuses a job never leaves. Writes that must not overwrite a finished job
+# (for example cancel) pass this as exclude_statuses.
+TERMINAL_JOB_STATUSES = (
+    SocialImportJobStatus.COMPLETED,
+    SocialImportJobStatus.CANCELLED,
+    SocialImportJobStatus.FAILED,
+)
+
 
 def _utc_now_iso() -> str:
     return utcnow_iso()
@@ -97,16 +105,21 @@ class SocialImportJobStore:
         job_id: str,
         user_id: str,
         updates: Dict[str, Any],
+        exclude_statuses: Optional[Iterable[SocialImportJobStatus]] = None,
     ) -> Optional[Dict[str, Any]]:
+        """Update one job row. When exclude_statuses is given, the row is only
+        updated if its current status is not in that set; otherwise None."""
         payload = dict(updates)
         payload["updated_at"] = _utc_now_iso()
-        result = await asyncio.to_thread(
+        query = (
             db.table("social_import_jobs")
             .update(payload)
             .eq("id", job_id)
             .eq("user_id", user_id)
-            .execute
         )
+        if exclude_statuses:
+            query = query.not_.in_("status", [s.value for s in exclude_statuses])
+        result = await asyncio.to_thread(query.execute)
         rows = result.data or []
         return rows[0] if rows else None
 
@@ -120,6 +133,7 @@ class SocialImportJobStore:
         status: SocialImportJobStatus,
         error_message: Optional[str] = None,
         completed: bool = False,
+        exclude_statuses: Optional[Iterable[SocialImportJobStatus]] = None,
     ) -> Optional[Dict[str, Any]]:
         updates: Dict[str, Any] = {
             "status": status.value,
@@ -127,7 +141,13 @@ class SocialImportJobStore:
         }
         if completed:
             updates["completed_at"] = _utc_now_iso()
-        return await cls.update_job(db, job_id=job_id, user_id=user_id, updates=updates)
+        return await cls.update_job(
+            db,
+            job_id=job_id,
+            user_id=user_id,
+            updates=updates,
+            exclude_statuses=exclude_statuses,
+        )
 
     @staticmethod
     async def add_discovered_photos(

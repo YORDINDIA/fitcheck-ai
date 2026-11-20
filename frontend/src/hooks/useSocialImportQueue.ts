@@ -14,11 +14,15 @@ import {
 } from '@/api/socialImport'
 import type { SocialImportJobData, SocialImportItem, SocialImportSSEEvent } from '@/types'
 import { useUpgradePromptStore } from '@/stores/upgradePromptStore'
+import {
+  canTransition,
+  isTerminalSocialImportStatus,
+  resolveSocialImportStatus,
+} from './socialImportMachine'
 
 const SOCIAL_IMPORT_ACTIVE_JOB_KEY = 'fitcheck.socialImport.activeJobId'
 const SOCIAL_IMPORT_OAUTH_MESSAGE_SOURCE = 'fitcheck-social-oauth'
 const SOCIAL_IMPORT_OAUTH_WINDOW_NAME = 'fitcheck-social-import-oauth'
-const TERMINAL_JOB_STATUSES: SocialImportJobData['status'][] = ['completed', 'cancelled', 'failed']
 
 interface SocialImportQueueState {
   jobId: string | null
@@ -46,11 +50,6 @@ const initialState: SocialImportQueueState = {
   lastEventId: null,
   isLoading: false,
   error: null,
-}
-
-function isTerminalStatus(status: SocialImportJobData['status'] | null | undefined): boolean {
-  if (!status) return false
-  return TERMINAL_JOB_STATUSES.includes(status)
 }
 
 function setActiveJobId(jobId: string | null): void {
@@ -90,15 +89,22 @@ export function useSocialImportQueue(): UseSocialImportQueue {
   // Tracks whether we've already shown the plan-limit upgrade prompt for the
   // current paused_rate_limited period (avoids re-prompting on each status poll).
   const rateLimitPromptedRef = useRef(false)
+  // Mirrors state.status synchronously so callbacks read the status that was
+  // last applied, not a stale render closure.
+  const statusRef = useRef<SocialImportJobData['status'] | null>(null)
 
-  const applyJobData = useCallback((job: SocialImportJobData) => {
-    const terminal = isTerminalStatus(job.status)
+  const applyJobData = useCallback((incoming: SocialImportJobData) => {
+    // Terminal states are sticky: a late snapshot cannot revive a finished job.
+    const status = resolveSocialImportStatus(statusRef.current, incoming.status)
+    const job: SocialImportJobData = status === incoming.status ? incoming : { ...incoming, status }
+    statusRef.current = status
+    const terminal = isTerminalSocialImportStatus(status)
     setActiveJobId(terminal ? null : job.id)
     // paused_rate_limited = the user hit THEIR OWN plan limit (app-level daily
     // cap). That's the "show upgrade" condition. Dedupe so repeated status
     // polls don't re-open the dialog. (Upstream AI capacity is a different,
     // non-upsell path handled in the batch flow.)
-    if (job.status === 'paused_rate_limited') {
+    if (status === 'paused_rate_limited') {
       if (!rateLimitPromptedRef.current) {
         rateLimitPromptedRef.current = true
         useUpgradePromptStore.getState().open('rate_limit', job.error_message)
@@ -110,12 +116,27 @@ export function useSocialImportQueue(): UseSocialImportQueue {
       ...prev,
       jobId: job.id,
       job,
-      status: job.status,
-      authRequired: job.auth_required || job.status === 'awaiting_auth',
+      status,
+      authRequired: job.auth_required || status === 'awaiting_auth',
       awaitingPhotoId: job.awaiting_review_photo?.id || null,
       bufferedPhotoId: job.buffered_photo?.id || null,
       processingPhotoId: job.processing_photo?.id || null,
       error: job.error_message || null,
+    }))
+  }, [])
+
+  // Applies a local, client-side transition the server has not confirmed yet
+  // (for example, OAuth success resumes the job). Illegal edges are ignored.
+  // The next server snapshot overwrites the optimistic value.
+  const applyOptimisticStatus = useCallback((next: SocialImportJobData['status']) => {
+    const current = statusRef.current
+    if (!current || !canTransition(current, next)) return
+    statusRef.current = next
+    setState((prev) => ({
+      ...prev,
+      status: next,
+      job: prev.job ? { ...prev.job, status: next } : prev.job,
+      authRequired: next === 'awaiting_auth',
     }))
   }, [])
 
@@ -166,7 +187,7 @@ export function useSocialImportQueue(): UseSocialImportQueue {
           void getSocialImportStatus(jobId)
             .then((job) => {
               applyJobData(job)
-              if (isTerminalStatus(job.status)) {
+              if (isTerminalSocialImportStatus(job.status)) {
                 disconnect()
               }
             })
@@ -299,6 +320,9 @@ export function useSocialImportQueue(): UseSocialImportQueue {
         window.addEventListener('message', onMessage)
       })
 
+      // OAuth success resumes the job on the server. Show that now; the
+      // refresh below replaces it with the server's status.
+      applyOptimisticStatus('processing')
       await refreshStatus()
       connect(jobId)
     } catch (error) {
@@ -312,7 +336,7 @@ export function useSocialImportQueue(): UseSocialImportQueue {
     } finally {
       setState((prev) => ({ ...prev, isLoading: false }))
     }
-  }, [connect, refreshStatus, state.jobId])
+  }, [applyOptimisticStatus, connect, refreshStatus, state.jobId])
 
   const submitOAuthAuth = useCallback(
     async (payload: {
@@ -396,8 +420,8 @@ export function useSocialImportQueue(): UseSocialImportQueue {
   const reset = useCallback(async (options?: { cancelActiveJob?: boolean }) => {
     const shouldCancel = options?.cancelActiveJob ?? true
     const activeJobId = state.jobId
-    const activeStatus = state.status
-    if (shouldCancel && activeJobId && !isTerminalStatus(activeStatus)) {
+    const activeStatus = statusRef.current
+    if (shouldCancel && activeJobId && !isTerminalSocialImportStatus(activeStatus)) {
       try {
         await cancelSocialImportJob(activeJobId)
       } catch {
@@ -415,9 +439,10 @@ export function useSocialImportQueue(): UseSocialImportQueue {
     // A fresh job must be able to prompt once for its own paused period; the
     // previous job's dedupe must not carry over across reset().
     rateLimitPromptedRef.current = false
+    statusRef.current = null
     setActiveJobId(null)
     setState(initialState)
-  }, [disconnect, state.jobId, state.status])
+  }, [disconnect, state.jobId])
 
   useEffect(() => {
     lastEventIdRef.current = state.lastEventId
@@ -434,7 +459,7 @@ export function useSocialImportQueue(): UseSocialImportQueue {
         applyJobData(job)
         setState((prev) => ({ ...prev, isLoading: false }))
         reconnectAttempts.current = 0
-        if (!isTerminalStatus(job.status)) {
+        if (!isTerminalSocialImportStatus(job.status)) {
           connect(job.id)
         }
       })

@@ -32,7 +32,10 @@ from app.services.ai_service import AIService
 from app.services.ai_settings_service import AISettingsService
 from app.services.social_auth_service import SocialAuthService
 from app.services.social_import_event_service import SocialImportEventService
-from app.services.social_import_job_store import SocialImportJobStore
+from app.services.social_import_job_store import (
+    TERMINAL_JOB_STATUSES,
+    SocialImportJobStore,
+)
 from app.services.social_scraper_service import SocialScraperService
 from app.services.storage_service import StorageService
 from app.services.vector_service import get_vector_service
@@ -1556,13 +1559,20 @@ class SocialImportPipelineService:
     async def cancel_job(self, job_id: str) -> None:
         lock = self._job_lock(job_id)
         async with lock:
-            await SocialImportJobStore.set_job_status(
+            # Terminal jobs are immutable. The write only matches a row whose
+            # status is not completed, cancelled, or failed. No row back means
+            # the job is already terminal (or not visible to this user), so
+            # nothing is written, cleaned up, or published.
+            cancelled = await SocialImportJobStore.set_job_status(
                 self.db,
                 job_id=job_id,
                 user_id=self.user_id,
                 status=SocialImportJobStatus.CANCELLED,
                 completed=True,
+                exclude_statuses=TERMINAL_JOB_STATUSES,
             )
+            if cancelled is None:
+                return
             await self._cleanup_unsaved_temp_assets(job_id)
             await SocialImportJobStore.delete_job_artifacts(
                 self.db,

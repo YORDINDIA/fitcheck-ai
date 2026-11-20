@@ -11,13 +11,17 @@
  * NOTE: `images` holds `File` objects + preview URLs, so this state is
  * intentionally in-memory only (never persisted to localStorage). It survives
  * SPA route changes but not a full page reload.
+ *
+ * Step moves are validated by `batchExtractionMachine`. The step type lives in
+ * `@/types` (`BatchExtractionStep`).
  */
 
 import { create } from 'zustand'
 import type { BatchExtractionState } from '@/types'
+import { BATCH_INITIAL_STEP } from './batchExtractionMachine'
 
 export const initialState: BatchExtractionState = {
-  step: 'select',
+  step: BATCH_INITIAL_STEP,
   images: [],
   jobId: null,
   allDetectedItems: [],

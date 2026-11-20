@@ -34,12 +34,18 @@ class PhotoshootContent extends ConsumerWidget {
       photoshootProvider.select((s) => _subtitle(context.l10n, s)),
     );
     final error = ref.watch(photoshootProvider.select((s) => s.error));
+    final running = ref.watch(photoshootProvider.select((s) => s.isGenerating));
     final failed = ref.watch(photoshootProvider.select((s) => s.failedCount));
     final banner = switch (step) {
       PhotoshootStep.configure when error != null => AppErrorBanner(
         error: error,
         onRetry: () => startPhotoshoot(context, ref),
       ),
+      PhotoshootStep.generating when error != null && !running =>
+        AppErrorBanner(
+          error: error,
+          onRetry: () => startPhotoshoot(context, ref),
+        ),
       PhotoshootStep.results when failed > 0 => AppErrorBanner(
         message: failed == 1
             ? context.l10n.photoshootOneFailed

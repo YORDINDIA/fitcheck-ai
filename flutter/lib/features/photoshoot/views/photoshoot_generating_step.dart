@@ -27,6 +27,7 @@ class PhotoshootGeneratingStep extends ConsumerWidget {
     final tokens = PaperTokens.of(context);
     final text = Theme.of(context).textTheme;
     final eta = _eta(s.etaSeconds);
+    final failedRun = !s.isGenerating && s.error != null;
     final byIndex = {for (final img in s.images) img.index: img};
 
     return Column(
@@ -42,7 +43,9 @@ class PhotoshootGeneratingStep extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      s.status.isEmpty
+                      failedRun
+                          ? context.l10n.photoshootGenerationFailedBody
+                          : s.status.isEmpty
                           ? context.l10n.photoshootStarting
                           : s.status,
                       maxLines: 1,
@@ -103,6 +106,16 @@ class PhotoshootGeneratingStep extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: AppConstants.spacing16),
+        if (failedRun)
+          Center(
+            child: TextButton(
+              onPressed: () =>
+                  ref.read(photoshootProvider.notifier).backToOptions(),
+              style: TextButton.styleFrom(minimumSize: const Size(120, 48)),
+              child: Text(context.l10n.actionBack),
+            ),
+          )
+        else
         Center(
           child: TextButton(
             onPressed: s.jobId.isEmpty || s.cancelling

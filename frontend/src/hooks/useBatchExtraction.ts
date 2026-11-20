@@ -11,7 +11,13 @@ import {
   cancelBatchJob,
   getBatchJobStatus,
 } from '@/api/batch';
-import { initialState, useBatchExtractionStore } from '@/stores/batchExtractionStore';
+import { resetBatchExtractionStore, useBatchExtractionStore } from '@/stores/batchExtractionStore';
+import {
+  transitionImageStatus,
+  transitionItemStatus,
+  transitionStep,
+} from '@/stores/batchExtractionMachine';
+import { logger } from '@/lib/logger';
 import { invalidateUsageCache } from '@/stores/subscriptionStore';
 import { compressImageFile } from '@/lib/image-compress';
 import { getBatchExtractionErrorMessage } from '@/lib/batch-extraction-errors';
@@ -69,14 +75,64 @@ function resolveStepWithItems(
   hasItems: boolean,
   mode: 'in_flight' | 'terminal'
 ): BatchExtractionState['step'] {
-  if (prevStep === 'saving') return 'saving';
-  if (hasItems) return 'review';
-  if (mode === 'in_flight') {
+  let target: BatchExtractionState['step'];
+  if (prevStep === 'saving') {
+    target = 'saving';
+  } else if (hasItems) {
+    target = 'review';
+  } else if (mode === 'in_flight') {
     // Still running with zero items: keep the current processing step.
-    return prevStep;
+    target = prevStep;
+  } else {
+    // Terminal, no items: leave processing UI.
+    target = 'select';
   }
-  // Terminal, no items: leave processing UI.
-  return 'select';
+  return advanceStep(prevStep, target);
+}
+
+/**
+ * Apply a step move through the transition table. A rejected move keeps the
+ * current step and is logged, so an out-of-order event is visible in Sentry.
+ */
+function advanceStep(
+  from: BatchExtractionState['step'],
+  to: BatchExtractionState['step']
+): BatchExtractionState['step'] {
+  const result = transitionStep(from, to);
+  if (!result.accepted) {
+    logger.warn(`Batch step move rejected: ${from} -> ${to}`);
+  }
+  return result.next;
+}
+
+/** Apply an image status move through the transition table. */
+function advanceImageStatus(
+  from: BatchImageInput['status'],
+  to: BatchImageInput['status']
+): BatchImageInput['status'] {
+  const result = transitionImageStatus(from, to);
+  if (!result.accepted) {
+    logger.warn(`Batch image status move rejected: ${from} -> ${to}`);
+  }
+  return result.next;
+}
+
+/** Apply an item status move through the transition table. */
+function advanceItemStatus(
+  from: DetectedItem['status'],
+  to: DetectedItem['status']
+): DetectedItem['status'] {
+  const result = transitionItemStatus(from, to);
+  if (!result.accepted) {
+    logger.warn(`Batch item status move rejected: ${from} -> ${to}`);
+  }
+  return result.next;
+}
+
+/** Return the item with its status moved, or the same object when nothing changes. */
+function withItemStatus(item: DetectedItem, to: DetectedItem['status']): DetectedItem {
+  const next = advanceItemStatus(item.status, to);
+  return next === item.status ? item : { ...item, status: next };
 }
 
 /**
@@ -202,12 +258,14 @@ function overlayServerItem(local: DetectedItem, server: DetectedItem): DetectedI
     generatedImageUrl: server.generatedImageUrl ?? local.generatedImageUrl,
     // A user-deleted item stays deleted so save skips it.
     // Keep local "generating" when the status API has no image yet.
+    // Any other server status is a move, checked against the item table so a
+    // stale snapshot cannot move generating/generated/failed back to detected.
     status:
       local.status === 'deleted'
         ? 'deleted'
         : preserveGenerating
           ? 'generating'
-          : server.status,
+          : advanceItemStatus(local.status, server.status),
   };
 }
 
@@ -315,11 +373,6 @@ function upsertDetectedItems(
       // Prefer fresher extraction fields; keep user deletes, edits, and any
       // post-extraction progress (generating/generated/failed) from local state
       // so a replayed extraction event cannot roll status backward.
-      const keepLocalStatus =
-        prev.status === 'deleted' ||
-        prev.status === 'generating' ||
-        prev.status === 'generated' ||
-        prev.status === 'failed';
       byId.set(item.tempId, {
         ...item,
         name: prev.name ?? item.name,
@@ -328,7 +381,7 @@ function upsertDetectedItems(
         occasion_tags: prev.occasion_tags ?? item.occasion_tags,
         sourcePreviewUrl: item.sourcePreviewUrl ?? prev.sourcePreviewUrl,
         generatedImageUrl: prev.generatedImageUrl ?? item.generatedImageUrl,
-        status: keepLocalStatus ? prev.status : item.status,
+        status: advanceItemStatus(prev.status, item.status),
         generationError: prev.generationError ?? item.generationError,
       });
     } else {
@@ -476,7 +529,7 @@ export function useBatchExtraction(): UseBatchExtractionReturn {
         case 'extraction_started':
           useBatchExtractionStore.setState((prev) => ({
             ...prev,
-            step: 'extracting',
+            step: advanceStep(prev.step, 'extracting'),
           }));
           break;
 
@@ -515,7 +568,11 @@ export function useBatchExtraction(): UseBatchExtractionReturn {
               ...prev,
               images: prev.images.map((img) =>
                 img.imageId === data.image_id
-                  ? { ...img, status: 'completed' as const, detectedItems: newItems }
+                  ? {
+                      ...img,
+                      status: advanceImageStatus(img.status, 'completed'),
+                      detectedItems: newItems,
+                    }
                   : img
               ),
               allDetectedItems,
@@ -547,7 +604,7 @@ export function useBatchExtraction(): UseBatchExtractionReturn {
               img.imageId === data.image_id
                 ? {
                     ...img,
-                    status: 'failed' as const,
+                    status: advanceImageStatus(img.status, 'failed'),
                     error: data.error,
                     errorKind: data.error_kind,
                   }
@@ -606,7 +663,7 @@ export function useBatchExtraction(): UseBatchExtractionReturn {
             }
             return {
               ...prev,
-              step: nextStep,
+              step: advanceStep(prev.step, nextStep),
               totalBatches: data.total_batches,
               currentBatch: 1,
               isGenerationRunning: true,
@@ -615,11 +672,7 @@ export function useBatchExtraction(): UseBatchExtractionReturn {
               // Mark items as generating, preserving terminal statuses
               // (deleted / generated / failed) so SSE replay does not revive them.
               allDetectedItems: prev.allDetectedItems.map((item) =>
-                item.status === 'deleted' ||
-                item.status === 'generated' ||
-                item.status === 'failed'
-                  ? item
-                  : { ...item, status: 'generating' as const }
+                withItemStatus(item, 'generating')
               ),
             };
           });
@@ -665,7 +718,7 @@ export function useBatchExtraction(): UseBatchExtractionReturn {
                 item.tempId === data.temp_id && item.status !== 'deleted'
                   ? {
                       ...item,
-                      status: 'generated' as const,
+                      status: advanceItemStatus(item.status, 'generated'),
                       generatedImageUrl: data.generated_image_base64
                         ? `data:image/png;base64,${data.generated_image_base64}`
                         : data.generated_image_url,
@@ -688,12 +741,14 @@ export function useBatchExtraction(): UseBatchExtractionReturn {
               generationEtaSeconds: refinedEta ?? eta,
               isGenerationRunning: true,
               // Stay on review if items exist (replay / race safety).
-              step:
+              step: advanceStep(
+                prev.step,
                 prev.step === 'saving'
                   ? 'saving'
                   : prev.allDetectedItems.length > 0 || data.completed_count > 0
                     ? 'review'
-                    : prev.step,
+                    : prev.step
+              ),
             };
           });
           break;
@@ -720,7 +775,7 @@ export function useBatchExtraction(): UseBatchExtractionReturn {
                 item.tempId === data.temp_id && item.status !== 'deleted'
                   ? {
                       ...item,
-                      status: 'failed' as const,
+                      status: advanceItemStatus(item.status, 'failed'),
                       generationError: data.error,
                     }
                   : item
@@ -783,7 +838,10 @@ export function useBatchExtraction(): UseBatchExtractionReturn {
               allDetectedItems: merged,
               images: prev.images.map((image) => ({
                 ...image,
-                status: image.status === 'failed' ? 'failed' : 'completed',
+                status: advanceImageStatus(
+                  image.status,
+                  image.status === 'failed' ? 'failed' : 'completed'
+                ),
                 detectedItems: itemsByImage[image.imageId] || image.detectedItems || [],
               })),
             };
@@ -813,7 +871,7 @@ export function useBatchExtraction(): UseBatchExtractionReturn {
           generationStartedAtRef.current = null;
           useBatchExtractionStore.setState((prev) => ({
             ...prev,
-            step: 'select',
+            step: advanceStep(prev.step, 'select'),
             isGenerationRunning: false,
             generationEtaSeconds: null,
             error: 'Job was cancelled',
@@ -1048,7 +1106,7 @@ export function useBatchExtraction(): UseBatchExtractionReturn {
     generationStartedAtRef.current = null;
     useBatchExtractionStore.setState((prev) => ({
       ...prev,
-      step: 'uploading',
+      step: advanceStep(prev.step, 'uploading'),
       uploadProgress: 0,
       extractionProgress: 0,
       generationProgress: 0,
@@ -1082,10 +1140,10 @@ export function useBatchExtraction(): UseBatchExtractionReturn {
       useBatchExtractionStore.setState((prev) => ({
         ...prev,
         jobId: job.job_id,
-        step: 'extracting',
+        step: advanceStep(prev.step, 'extracting'),
         images: prev.images.map((img) => ({
           ...img,
-          status: 'extracting' as const,
+          status: advanceImageStatus(img.status, 'extracting'),
         })),
       }));
 
@@ -1095,7 +1153,7 @@ export function useBatchExtraction(): UseBatchExtractionReturn {
     } catch (error) {
       useBatchExtractionStore.setState((prev) => ({
         ...prev,
-        step: 'select',
+        step: advanceStep(prev.step, 'select'),
         error: getBatchExtractionErrorMessage(error),
       }));
     }
@@ -1120,7 +1178,7 @@ export function useBatchExtraction(): UseBatchExtractionReturn {
 
     reconcilingRef.current = false;
     generationStartedAtRef.current = null;
-    useBatchExtractionStore.setState(initialState);
+    resetBatchExtractionStore();
   }, [disconnect]);
 
   /**
@@ -1136,7 +1194,7 @@ export function useBatchExtraction(): UseBatchExtractionReturn {
 
     reconcilingRef.current = false;
     generationStartedAtRef.current = null;
-    useBatchExtractionStore.setState(initialState);
+    resetBatchExtractionStore();
   }, [disconnect]);
 
   /**
@@ -1169,7 +1227,7 @@ export function useBatchExtraction(): UseBatchExtractionReturn {
   const proceedToSaving = useCallback(() => {
     useBatchExtractionStore.setState((prev) => ({
       ...prev,
-      step: 'saving',
+      step: advanceStep(prev.step, 'saving'),
     }));
   }, []);
 
