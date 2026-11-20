@@ -132,6 +132,7 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 | 2026-11-21 | Post-apply inventory, read-only, `--delete` not used: 13,528 bucket objects, 3,643 DB keys, 6,689 orphans (6,590 deletable, 99 protected), 209 missing. No user row points at a missing object. The 52 legacy-layout avatar orphans are the 26 original avatars and their 26 thumbnails that the copies replaced. The 2 `users/` avatar orphans are an older avatar of one user, which the repair did not touch. The mapping is correct: the inventory and the repair both read each row through `storage_keys.key_from_path`, and a repointed row reduces to the key the audit recorded. |
 | 2026-11-21 | The after diagram showed 15 red knot files. They were knot 6 sites. The generator still listed knot 6 as open, from before commit `b523479`. Fixed in `output/untangle/build_wiring.py`: knot 6 is resolved on the branch (`8b52992`, `b523479`), and its status line keeps the owner gate for migration 066. After: 0 red knot files, 14 of 14 knots resolved. |
 | 2026-11-21 | Rebuilt `wiring-after.html` from a clean `git archive` export of `5881abd`. Both screenshots are 1440x900, fit one screen, and have no page errors. Composed `output/untangle/before-after.png` (2960x1000). Both outputs stay local and gitignored. |
+| 2026-11-21 | Final lane run on `d9fa295`, all lanes in parallel. Admin tests: 2 failed under load. `PostEditorPage` "creates a post" hit the 5 s default. The `DashboardPage` lazy chart lookup hit the 1 s `findBy` default. Both pass alone (402 ms and 481 ms), and all 261 pass on a rerun. A 150 s CPU-stress run did not reproduce them. Fix: explicit timeouts on those two tests. Commit: `d9553a7`. Admin lane after the fix passes: lint, typecheck, 261 tests, schema, and build. |
 
 ## Decision log
 
@@ -189,6 +190,7 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 | 2026-11-21 | Avatar repair: the owner approved "Commit and apply" after a fresh dry run. | The dry run matched the approved counts. The script re-reads each row after the writes, and it deletes nothing. |
 | 2026-11-21 | `storage_inventory.py --delete` stays off after the repair. The 52 legacy avatar objects and 2 older avatar files are unreferenced. | A delete run would remove them after the 2 h grace. Deleting unreferenced objects is an owner decision (TD-146). |
 | 2026-11-21 | Knot 6 shows as resolved on the branch. Its status line keeps the owner gate: apply migration 066 before the backend that writes `completed` deploys. | Both commits are on the branch. The gate is a deploy and migration step, not a code change. The acceptance box for commit B stays open until the owner ships it. |
+| 2026-11-21 | Admin tests get explicit timeouts: 15 s on two tests, 5 s on one lazy-chart lookup. Retries and skips were not used. | The two tests take 0.4 to 0.5 s alone, so the limits only matter under heavy load. A retry hides slowness, and a skip drops coverage. |
 
 ## Verification
 
