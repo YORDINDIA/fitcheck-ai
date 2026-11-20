@@ -63,6 +63,10 @@ SAFETY GUARANTEES
 4) AUDIT LOG. Every deleted key is appended to ``AUDIT_FILE`` (JSONL). The
    audit file is the source of truth for what was deleted and when.
 
+5) FAIL CLOSED. If any DB table read fails, the run exits with code 2 before it
+   reports or deletes anything. A partial key set would make live objects look
+   like orphans.
+
 =============================================================================
 NOTES
 =============================================================================
@@ -85,10 +89,10 @@ NOTES
   ``outfit_``, ``avatar_``, ``source_``, ``generated_``, ``feedback_``).
   Anything else is binned as ``legacy-other``.
 
-* ``support_tickets.attachment_storage_paths`` is a TEXT[] column that the
-  serving-schema agent is adding. The script probes for it defensively: if the
-  column does not exist yet the query fails and the column is silently ignored
-  (with a warning) rather than aborting the whole report.
+* ``support_tickets.attachment_storage_paths`` is a TEXT[] column (migration
+  034). Every table is read page by page. A failed read stops the run with exit
+  code 2 before any report or deletion, because a partial key set would make
+  live objects look like orphans.
 
 =============================================================================
 ENVIRONMENT
@@ -307,26 +311,54 @@ def key_stem(key: str) -> str:
 # --------------------------------------------------------------------------- #
 # DB authoritative key collection
 # --------------------------------------------------------------------------- #
-def _probe_attachment_storage_paths(db) -> List[Tuple[str, str]]:
-    """Collect support_tickets.attachment_storage_paths (defensive).
+# PostgREST answers at most 1,000 rows per request by default. An unpaginated
+# read returns a partial table with no error, so the key set would miss most
+# rows.
+_DB_PAGE_SIZE = 1000
 
-    Returns a list of ``(key, row_id)``. The column is TEXT[] and may not exist
-    yet (the serving-schema agent is adding it); on failure we log a warning
-    and return nothing rather than abort the whole report.
+
+def _select_all(db, table: str, columns: str) -> List[dict]:
+    """Return every row of ``table``, one keyset page at a time.
+
+    ``columns`` must include ``id``. Keyset paging (``id > last seen``) stays
+    correct when rows are added or deleted during the read.
+    """
+    rows: List[dict] = []
+    last_id = None
+    while True:
+        query = db.table(table).select(columns)
+        if last_id is not None:
+            query = query.gt("id", last_id)
+        page = query.order("id").limit(_DB_PAGE_SIZE).execute().data or []
+        if not page:
+            return rows
+        rows.extend(page)
+        last_id = page[-1]["id"]
+
+
+def _read_table(db, table: str, column: str, failures: List[str]) -> List[dict]:
+    """Read ``id`` and ``column`` from every row of ``table``.
+
+    A failed read is appended to ``failures`` and yields no rows. The caller
+    then stops the run, because a partial key set makes live objects look like
+    orphans.
+    """
+    try:
+        return _select_all(db, table, f"id, {column}")
+    except Exception as e:  # noqa: BLE001 - recorded, stops the run
+        failures.append(f"{table}.{column}: {e}")
+        return []
+
+
+def _probe_attachment_storage_paths(db, failures: List[str]) -> List[Tuple[str, str]]:
+    """Collect support_tickets.attachment_storage_paths as ``(key, row_id)``.
+
+    The column is TEXT[] (migration 034). A failed read is recorded in
+    ``failures``.
     """
     rows: List[Tuple[str, str]] = []
-    try:
-        resp = db.table("support_tickets").select(
-            "id, attachment_storage_paths"
-        ).execute()
-    except Exception as e:  # noqa: BLE001 - column may not exist yet
-        print(
-            f"WARNING: could not read support_tickets.attachment_storage_paths "
-            f"(skipping that column): {e}",
-            file=sys.stderr,
-        )
-        return rows
-    for row in resp.data or []:
+    tickets = _read_table(db, "support_tickets", "attachment_storage_paths", failures)
+    for row in tickets:
         paths = row.get("attachment_storage_paths") or []
         if isinstance(paths, str):
             paths = [paths]
@@ -337,12 +369,13 @@ def _probe_attachment_storage_paths(db) -> List[Tuple[str, str]]:
     return rows
 
 
-def collect_db_keys(db) -> Dict[str, List[Tuple[str, str]]]:
+def collect_db_keys(db, failures: List[str]) -> Dict[str, List[Tuple[str, str]]]:
     """Collect the authoritative set of DB storage keys -> referencing rows.
 
     Returns a dict mapping normalized bucket key -> list of ``(table, row_id)``
     that reference it. Used both to compute orphans (keys not present here) and
-    to keep the report useful (which rows reference a key).
+    to keep the report useful (which rows reference a key). Every read is paged;
+    a failed read is appended to ``failures``.
     """
     db_keys: Dict[str, List[Tuple[str, str]]] = {}
 
@@ -352,42 +385,23 @@ def collect_db_keys(db) -> Dict[str, List[Tuple[str, str]]]:
             return
         db_keys.setdefault(key, []).append((table, row_id))
 
-    try:
-        resp = db.table("item_images").select("id, storage_path").execute()
-        for row in resp.data or []:
-            _add(row.get("storage_path"), "item_images", str(row.get("id") or ""))
-    except Exception as e:  # noqa: BLE001
-        print(f"WARNING: item_images query failed: {e}", file=sys.stderr)
+    for row in _read_table(db, "item_images", "storage_path", failures):
+        _add(row.get("storage_path"), "item_images", str(row.get("id") or ""))
 
-    try:
-        resp = db.table("outfit_images").select("id, storage_path").execute()
-        for row in resp.data or []:
-            _add(row.get("storage_path"), "outfit_images", str(row.get("id") or ""))
-    except Exception as e:  # noqa: BLE001
-        print(f"WARNING: outfit_images query failed: {e}", file=sys.stderr)
+    for row in _read_table(db, "outfit_images", "storage_path", failures):
+        _add(row.get("storage_path"), "outfit_images", str(row.get("id") or ""))
 
-    try:
-        resp = db.table("items").select("id, source_image_storage_path").execute()
-        for row in resp.data or []:
-            _add(
-                row.get("source_image_storage_path"),
-                "items",
-                str(row.get("id") or ""),
-            )
-    except Exception as e:  # noqa: BLE001
-        print(
-            f"WARNING: items.source_image_storage_path query failed: {e}",
-            file=sys.stderr,
+    for row in _read_table(db, "items", "source_image_storage_path", failures):
+        _add(
+            row.get("source_image_storage_path"),
+            "items",
+            str(row.get("id") or ""),
         )
 
-    try:
-        resp = db.table("users").select("id, avatar_url").execute()
-        for row in resp.data or []:
-            _add(row.get("avatar_url"), "users", str(row.get("id") or ""))
-    except Exception as e:  # noqa: BLE001
-        print(f"WARNING: users.avatar_url query failed: {e}", file=sys.stderr)
+    for row in _read_table(db, "users", "avatar_url", failures):
+        _add(row.get("avatar_url"), "users", str(row.get("id") or ""))
 
-    for key, row_id in _probe_attachment_storage_paths(db):
+    for key, row_id in _probe_attachment_storage_paths(db, failures):
         db_keys.setdefault(key, []).append(("support_tickets", row_id))
 
     return db_keys
@@ -562,9 +576,21 @@ async def _run(
         bucket_set = set(bucket_keys)
         print(f"  {len(bucket_set)} object(s) in bucket")
 
-        print("Collecting DB storage_path keys...")
-        db_keys = collect_db_keys(db)
+        print("Collecting DB storage_path keys (every page of every table)...")
+        db_failures: List[str] = []
+        db_keys = collect_db_keys(db, db_failures)
         print(f"  {len(db_keys)} distinct DB storage_path key(s)")
+        if db_failures:
+            # A partial key set makes live objects look like orphans. Stop before
+            # any report or deletion.
+            print(
+                f"ERROR: {len(db_failures)} DB read(s) failed; the key set is "
+                "incomplete. Stopping with no report and no deletion.",
+                file=sys.stderr,
+            )
+            for failure in db_failures:
+                print(f"  - {failure}", file=sys.stderr)
+            return 2
 
         orphans = sorted(bucket_set - set(db_keys))
         # A `_thumb` sibling is DERIVED from a DB-referenced key (read paths
