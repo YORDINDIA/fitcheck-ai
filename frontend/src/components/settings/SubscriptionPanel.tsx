@@ -58,7 +58,8 @@ import type { PlanType, PlansResponse } from "@/types";
 // the same features - only the limits differ - so both tiers are rendered
 // from one shared shape instead of hand-copied blocks. Prices come from the
 // live /plans response (env-overridable on the backend) so the panel never
-// shows stale compiled prices; PLAN_PRICES is only a loading fallback.
+// shows stale compiled prices. Limits come from the same response.
+// PLAN_PRICES and PLAN_LIMITS are only loading fallbacks.
 const offeredTiersFor = (
   plans: PlansResponse | null | undefined,
   currentPlan: string,
@@ -70,11 +71,21 @@ const offeredTiersFor = (
       const prices = fromApi
         ? { monthly: fromApi.price_monthly, yearly: fromApi.price_yearly }
         : PLAN_PRICES[tier];
+      const limits = fromApi
+        ? {
+            monthlyExtractions: fromApi.limits.monthly_extractions,
+            monthlyGenerations: fromApi.limits.monthly_generations,
+            monthlyEmbeddings: fromApi.limits.monthly_embeddings,
+            dailyPhotoshootImages:
+              fromApi.limits.daily_photoshoot_images ??
+              PLAN_LIMITS[tier].dailyPhotoshootImages,
+          }
+        : PLAN_LIMITS[tier];
       return {
         tier,
         name: tier === "plus" ? "Plus" : "Pro",
         recommended: tier === "plus",
-        limits: PLAN_LIMITS[tier],
+        limits,
         prices,
         savings: prices.monthly * 12 - prices.yearly,
         monthlyPlanType: `${tier}_monthly` as PlanType,

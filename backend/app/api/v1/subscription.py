@@ -162,16 +162,19 @@ async def get_plans():
         "monthly_extractions": settings.PLAN_FREE_MONTHLY_EXTRACTIONS,
         "monthly_generations": settings.PLAN_FREE_MONTHLY_GENERATIONS,
         "monthly_embeddings": settings.PLAN_FREE_MONTHLY_EMBEDDINGS,
+        "daily_photoshoot_images": settings.PLAN_FREE_DAILY_PHOTOSHOOT_IMAGES,
     }
     plus_limits = {
         "monthly_extractions": settings.PLAN_PLUS_MONTHLY_EXTRACTIONS,
         "monthly_generations": settings.PLAN_PLUS_MONTHLY_GENERATIONS,
         "monthly_embeddings": settings.PLAN_PLUS_MONTHLY_EMBEDDINGS,
+        "daily_photoshoot_images": settings.PLAN_PLUS_DAILY_PHOTOSHOOT_IMAGES,
     }
     pro_limits = {
         "monthly_extractions": settings.PLAN_PRO_MONTHLY_EXTRACTIONS,
         "monthly_generations": settings.PLAN_PRO_MONTHLY_GENERATIONS,
         "monthly_embeddings": settings.PLAN_PRO_MONTHLY_EMBEDDINGS,
+        "daily_photoshoot_images": settings.PLAN_PRO_DAILY_PHOTOSHOOT_IMAGES,
     }
 
     return {

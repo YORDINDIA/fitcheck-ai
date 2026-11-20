@@ -1200,6 +1200,7 @@ export interface PlanDetails {
     monthly_extractions: number;
     monthly_generations: number;
     monthly_embeddings: number;
+    daily_photoshoot_images?: number;
   };
   features: string[];
 }

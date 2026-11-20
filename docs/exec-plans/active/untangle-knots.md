@@ -60,6 +60,7 @@ Knots run worst first. The order is fixed in the table below.
 | 2026-11-20 | Wiring diagram built. Fits one screen at 1440x900. Every knot panel lists file, line, and method. |
 | 2026-11-20 | Baseline run on `8ddf190`. Results below. |
 | 2026-11-20 | Branch `refactor/untangle-knots` created from `8ddf190`. |
+| 2026-11-20 | Knot 1 (plan limits) done. Backend 4416 passed, 4 skipped. Vitest 80 files, 555 tests. Frontend build pass. Flutter analyze clean; test 654 passed, 2 skipped. Commit: `refactor: serve plan limits from /plans`. |
 
 ## Decision log
 
@@ -72,6 +73,7 @@ Knots run worst first. The order is fixed in the table below.
 | 2026-11-20 | Frontend and admin checks run on Node 20.20.2. | CI pins Node 20. Node 26 exposes an experimental `localStorage` global that is undefined, so jsdom suites fail. |
 | 2026-11-20 | Backend tests run as `backend/.venv/bin/python -m pytest`. | The venv `pytest` script has a stale shebang from another checkout path. The venv itself works. |
 | 2026-11-20 | Flutter `analyze`, `test`, and `build_runner` run with the local SDK (3.47.4). | Owner approved. SDK writes stay in the SDK cache. |
+| 2026-11-20 | Prerendered marketing pages keep the constants in `plan-limits.ts`. `docs/generated/plan-limits.json` is checked by a backend test and a vitest test. | Prerender runs at build time and cannot call `/plans`. The snapshot makes drift fail a test. |
 
 ## Verification
 

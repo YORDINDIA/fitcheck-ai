@@ -296,7 +296,9 @@ class _SubscriptionPageState extends ConsumerState<SubscriptionPage> {
           FreeForeverCard(
             monthlyUploads: paywall.plan('free')?.monthlyExtractions ?? 50,
             monthlyOutfits: paywall.plan('free')?.monthlyGenerations ?? 50,
-            dailyPhotoshootImages: kFreeDailyPhotoshootImages,
+            dailyPhotoshootImages:
+                paywall.plan('free')?.dailyPhotoshootImages ??
+                kFreeDailyPhotoshootImages,
           ),
           const SizedBox(height: AppConstants.spacing20),
         ],

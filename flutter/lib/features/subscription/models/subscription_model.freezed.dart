@@ -1430,7 +1430,7 @@ as int,
 /// @nodoc
 mixin _$PlanDetailsModel {
 
- String get id; String get name; String? get description;@JsonKey(name: 'price_monthly') double get priceMonthly;@JsonKey(name: 'price_yearly') double get priceYearly;@JsonKey(name: 'monthly_extractions') int get monthlyExtractions;@JsonKey(name: 'monthly_generations') int get monthlyGenerations; List<String> get features;
+ String get id; String get name; String? get description;@JsonKey(name: 'price_monthly') double get priceMonthly;@JsonKey(name: 'price_yearly') double get priceYearly;@JsonKey(name: 'monthly_extractions') int get monthlyExtractions;@JsonKey(name: 'monthly_generations') int get monthlyGenerations;@JsonKey(name: 'daily_photoshoot_images') int? get dailyPhotoshootImages; List<String> get features;
 /// Create a copy of PlanDetailsModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1443,16 +1443,16 @@ $PlanDetailsModelCopyWith<PlanDetailsModel> get copyWith => _$PlanDetailsModelCo
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlanDetailsModel&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.description, description) || other.description == description)&&(identical(other.priceMonthly, priceMonthly) || other.priceMonthly == priceMonthly)&&(identical(other.priceYearly, priceYearly) || other.priceYearly == priceYearly)&&(identical(other.monthlyExtractions, monthlyExtractions) || other.monthlyExtractions == monthlyExtractions)&&(identical(other.monthlyGenerations, monthlyGenerations) || other.monthlyGenerations == monthlyGenerations)&&const DeepCollectionEquality().equals(other.features, features));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlanDetailsModel&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.description, description) || other.description == description)&&(identical(other.priceMonthly, priceMonthly) || other.priceMonthly == priceMonthly)&&(identical(other.priceYearly, priceYearly) || other.priceYearly == priceYearly)&&(identical(other.monthlyExtractions, monthlyExtractions) || other.monthlyExtractions == monthlyExtractions)&&(identical(other.monthlyGenerations, monthlyGenerations) || other.monthlyGenerations == monthlyGenerations)&&(identical(other.dailyPhotoshootImages, dailyPhotoshootImages) || other.dailyPhotoshootImages == dailyPhotoshootImages)&&const DeepCollectionEquality().equals(other.features, features));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,description,priceMonthly,priceYearly,monthlyExtractions,monthlyGenerations,const DeepCollectionEquality().hash(features));
+int get hashCode => Object.hash(runtimeType,id,name,description,priceMonthly,priceYearly,monthlyExtractions,monthlyGenerations,dailyPhotoshootImages,const DeepCollectionEquality().hash(features));
 
 @override
 String toString() {
-  return 'PlanDetailsModel(id: $id, name: $name, description: $description, priceMonthly: $priceMonthly, priceYearly: $priceYearly, monthlyExtractions: $monthlyExtractions, monthlyGenerations: $monthlyGenerations, features: $features)';
+  return 'PlanDetailsModel(id: $id, name: $name, description: $description, priceMonthly: $priceMonthly, priceYearly: $priceYearly, monthlyExtractions: $monthlyExtractions, monthlyGenerations: $monthlyGenerations, dailyPhotoshootImages: $dailyPhotoshootImages, features: $features)';
 }
 
 
@@ -1463,7 +1463,7 @@ abstract mixin class $PlanDetailsModelCopyWith<$Res>  {
   factory $PlanDetailsModelCopyWith(PlanDetailsModel value, $Res Function(PlanDetailsModel) _then) = _$PlanDetailsModelCopyWithImpl;
 @useResult
 $Res call({
- String id, String name, String? description,@JsonKey(name: 'price_monthly') double priceMonthly,@JsonKey(name: 'price_yearly') double priceYearly,@JsonKey(name: 'monthly_extractions') int monthlyExtractions,@JsonKey(name: 'monthly_generations') int monthlyGenerations, List<String> features
+ String id, String name, String? description,@JsonKey(name: 'price_monthly') double priceMonthly,@JsonKey(name: 'price_yearly') double priceYearly,@JsonKey(name: 'monthly_extractions') int monthlyExtractions,@JsonKey(name: 'monthly_generations') int monthlyGenerations,@JsonKey(name: 'daily_photoshoot_images') int? dailyPhotoshootImages, List<String> features
 });
 
 
@@ -1480,7 +1480,7 @@ class _$PlanDetailsModelCopyWithImpl<$Res>
 
 /// Create a copy of PlanDetailsModel
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? description = freezed,Object? priceMonthly = null,Object? priceYearly = null,Object? monthlyExtractions = null,Object? monthlyGenerations = null,Object? features = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? description = freezed,Object? priceMonthly = null,Object? priceYearly = null,Object? monthlyExtractions = null,Object? monthlyGenerations = null,Object? dailyPhotoshootImages = freezed,Object? features = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -1489,7 +1489,8 @@ as String?,priceMonthly: null == priceMonthly ? _self.priceMonthly : priceMonthl
 as double,priceYearly: null == priceYearly ? _self.priceYearly : priceYearly // ignore: cast_nullable_to_non_nullable
 as double,monthlyExtractions: null == monthlyExtractions ? _self.monthlyExtractions : monthlyExtractions // ignore: cast_nullable_to_non_nullable
 as int,monthlyGenerations: null == monthlyGenerations ? _self.monthlyGenerations : monthlyGenerations // ignore: cast_nullable_to_non_nullable
-as int,features: null == features ? _self.features : features // ignore: cast_nullable_to_non_nullable
+as int,dailyPhotoshootImages: freezed == dailyPhotoshootImages ? _self.dailyPhotoshootImages : dailyPhotoshootImages // ignore: cast_nullable_to_non_nullable
+as int?,features: null == features ? _self.features : features // ignore: cast_nullable_to_non_nullable
 as List<String>,
   ));
 }
@@ -1575,10 +1576,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String? description, @JsonKey(name: 'price_monthly')  double priceMonthly, @JsonKey(name: 'price_yearly')  double priceYearly, @JsonKey(name: 'monthly_extractions')  int monthlyExtractions, @JsonKey(name: 'monthly_generations')  int monthlyGenerations,  List<String> features)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String? description, @JsonKey(name: 'price_monthly')  double priceMonthly, @JsonKey(name: 'price_yearly')  double priceYearly, @JsonKey(name: 'monthly_extractions')  int monthlyExtractions, @JsonKey(name: 'monthly_generations')  int monthlyGenerations, @JsonKey(name: 'daily_photoshoot_images')  int? dailyPhotoshootImages,  List<String> features)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PlanDetailsModel() when $default != null:
-return $default(_that.id,_that.name,_that.description,_that.priceMonthly,_that.priceYearly,_that.monthlyExtractions,_that.monthlyGenerations,_that.features);case _:
+return $default(_that.id,_that.name,_that.description,_that.priceMonthly,_that.priceYearly,_that.monthlyExtractions,_that.monthlyGenerations,_that.dailyPhotoshootImages,_that.features);case _:
   return orElse();
 
 }
@@ -1596,10 +1597,10 @@ return $default(_that.id,_that.name,_that.description,_that.priceMonthly,_that.p
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String? description, @JsonKey(name: 'price_monthly')  double priceMonthly, @JsonKey(name: 'price_yearly')  double priceYearly, @JsonKey(name: 'monthly_extractions')  int monthlyExtractions, @JsonKey(name: 'monthly_generations')  int monthlyGenerations,  List<String> features)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String? description, @JsonKey(name: 'price_monthly')  double priceMonthly, @JsonKey(name: 'price_yearly')  double priceYearly, @JsonKey(name: 'monthly_extractions')  int monthlyExtractions, @JsonKey(name: 'monthly_generations')  int monthlyGenerations, @JsonKey(name: 'daily_photoshoot_images')  int? dailyPhotoshootImages,  List<String> features)  $default,) {final _that = this;
 switch (_that) {
 case _PlanDetailsModel():
-return $default(_that.id,_that.name,_that.description,_that.priceMonthly,_that.priceYearly,_that.monthlyExtractions,_that.monthlyGenerations,_that.features);case _:
+return $default(_that.id,_that.name,_that.description,_that.priceMonthly,_that.priceYearly,_that.monthlyExtractions,_that.monthlyGenerations,_that.dailyPhotoshootImages,_that.features);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -1616,10 +1617,10 @@ return $default(_that.id,_that.name,_that.description,_that.priceMonthly,_that.p
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String? description, @JsonKey(name: 'price_monthly')  double priceMonthly, @JsonKey(name: 'price_yearly')  double priceYearly, @JsonKey(name: 'monthly_extractions')  int monthlyExtractions, @JsonKey(name: 'monthly_generations')  int monthlyGenerations,  List<String> features)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String? description, @JsonKey(name: 'price_monthly')  double priceMonthly, @JsonKey(name: 'price_yearly')  double priceYearly, @JsonKey(name: 'monthly_extractions')  int monthlyExtractions, @JsonKey(name: 'monthly_generations')  int monthlyGenerations, @JsonKey(name: 'daily_photoshoot_images')  int? dailyPhotoshootImages,  List<String> features)?  $default,) {final _that = this;
 switch (_that) {
 case _PlanDetailsModel() when $default != null:
-return $default(_that.id,_that.name,_that.description,_that.priceMonthly,_that.priceYearly,_that.monthlyExtractions,_that.monthlyGenerations,_that.features);case _:
+return $default(_that.id,_that.name,_that.description,_that.priceMonthly,_that.priceYearly,_that.monthlyExtractions,_that.monthlyGenerations,_that.dailyPhotoshootImages,_that.features);case _:
   return null;
 
 }
@@ -1631,7 +1632,7 @@ return $default(_that.id,_that.name,_that.description,_that.priceMonthly,_that.p
 @JsonSerializable()
 
 class _PlanDetailsModel implements PlanDetailsModel {
-  const _PlanDetailsModel({required this.id, required this.name, this.description, @JsonKey(name: 'price_monthly') this.priceMonthly = 0.0, @JsonKey(name: 'price_yearly') this.priceYearly = 0.0, @JsonKey(name: 'monthly_extractions') this.monthlyExtractions = 50, @JsonKey(name: 'monthly_generations') this.monthlyGenerations = 50, final  List<String> features = const []}): _features = features;
+  const _PlanDetailsModel({required this.id, required this.name, this.description, @JsonKey(name: 'price_monthly') this.priceMonthly = 0.0, @JsonKey(name: 'price_yearly') this.priceYearly = 0.0, @JsonKey(name: 'monthly_extractions') this.monthlyExtractions = 50, @JsonKey(name: 'monthly_generations') this.monthlyGenerations = 50, @JsonKey(name: 'daily_photoshoot_images') this.dailyPhotoshootImages, final  List<String> features = const []}): _features = features;
   factory _PlanDetailsModel.fromJson(Map<String, dynamic> json) => _$PlanDetailsModelFromJson(json);
 
 @override final  String id;
@@ -1641,6 +1642,7 @@ class _PlanDetailsModel implements PlanDetailsModel {
 @override@JsonKey(name: 'price_yearly') final  double priceYearly;
 @override@JsonKey(name: 'monthly_extractions') final  int monthlyExtractions;
 @override@JsonKey(name: 'monthly_generations') final  int monthlyGenerations;
+@override@JsonKey(name: 'daily_photoshoot_images') final  int? dailyPhotoshootImages;
  final  List<String> _features;
 @override@JsonKey() List<String> get features {
   if (_features is EqualUnmodifiableListView) return _features;
@@ -1662,16 +1664,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlanDetailsModel&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.description, description) || other.description == description)&&(identical(other.priceMonthly, priceMonthly) || other.priceMonthly == priceMonthly)&&(identical(other.priceYearly, priceYearly) || other.priceYearly == priceYearly)&&(identical(other.monthlyExtractions, monthlyExtractions) || other.monthlyExtractions == monthlyExtractions)&&(identical(other.monthlyGenerations, monthlyGenerations) || other.monthlyGenerations == monthlyGenerations)&&const DeepCollectionEquality().equals(other._features, _features));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlanDetailsModel&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.description, description) || other.description == description)&&(identical(other.priceMonthly, priceMonthly) || other.priceMonthly == priceMonthly)&&(identical(other.priceYearly, priceYearly) || other.priceYearly == priceYearly)&&(identical(other.monthlyExtractions, monthlyExtractions) || other.monthlyExtractions == monthlyExtractions)&&(identical(other.monthlyGenerations, monthlyGenerations) || other.monthlyGenerations == monthlyGenerations)&&(identical(other.dailyPhotoshootImages, dailyPhotoshootImages) || other.dailyPhotoshootImages == dailyPhotoshootImages)&&const DeepCollectionEquality().equals(other._features, _features));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,description,priceMonthly,priceYearly,monthlyExtractions,monthlyGenerations,const DeepCollectionEquality().hash(_features));
+int get hashCode => Object.hash(runtimeType,id,name,description,priceMonthly,priceYearly,monthlyExtractions,monthlyGenerations,dailyPhotoshootImages,const DeepCollectionEquality().hash(_features));
 
 @override
 String toString() {
-  return 'PlanDetailsModel(id: $id, name: $name, description: $description, priceMonthly: $priceMonthly, priceYearly: $priceYearly, monthlyExtractions: $monthlyExtractions, monthlyGenerations: $monthlyGenerations, features: $features)';
+  return 'PlanDetailsModel(id: $id, name: $name, description: $description, priceMonthly: $priceMonthly, priceYearly: $priceYearly, monthlyExtractions: $monthlyExtractions, monthlyGenerations: $monthlyGenerations, dailyPhotoshootImages: $dailyPhotoshootImages, features: $features)';
 }
 
 
@@ -1682,7 +1684,7 @@ abstract mixin class _$PlanDetailsModelCopyWith<$Res> implements $PlanDetailsMod
   factory _$PlanDetailsModelCopyWith(_PlanDetailsModel value, $Res Function(_PlanDetailsModel) _then) = __$PlanDetailsModelCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String name, String? description,@JsonKey(name: 'price_monthly') double priceMonthly,@JsonKey(name: 'price_yearly') double priceYearly,@JsonKey(name: 'monthly_extractions') int monthlyExtractions,@JsonKey(name: 'monthly_generations') int monthlyGenerations, List<String> features
+ String id, String name, String? description,@JsonKey(name: 'price_monthly') double priceMonthly,@JsonKey(name: 'price_yearly') double priceYearly,@JsonKey(name: 'monthly_extractions') int monthlyExtractions,@JsonKey(name: 'monthly_generations') int monthlyGenerations,@JsonKey(name: 'daily_photoshoot_images') int? dailyPhotoshootImages, List<String> features
 });
 
 
@@ -1699,7 +1701,7 @@ class __$PlanDetailsModelCopyWithImpl<$Res>
 
 /// Create a copy of PlanDetailsModel
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? description = freezed,Object? priceMonthly = null,Object? priceYearly = null,Object? monthlyExtractions = null,Object? monthlyGenerations = null,Object? features = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? description = freezed,Object? priceMonthly = null,Object? priceYearly = null,Object? monthlyExtractions = null,Object? monthlyGenerations = null,Object? dailyPhotoshootImages = freezed,Object? features = null,}) {
   return _then(_PlanDetailsModel(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -1708,7 +1710,8 @@ as String?,priceMonthly: null == priceMonthly ? _self.priceMonthly : priceMonthl
 as double,priceYearly: null == priceYearly ? _self.priceYearly : priceYearly // ignore: cast_nullable_to_non_nullable
 as double,monthlyExtractions: null == monthlyExtractions ? _self.monthlyExtractions : monthlyExtractions // ignore: cast_nullable_to_non_nullable
 as int,monthlyGenerations: null == monthlyGenerations ? _self.monthlyGenerations : monthlyGenerations // ignore: cast_nullable_to_non_nullable
-as int,features: null == features ? _self._features : features // ignore: cast_nullable_to_non_nullable
+as int,dailyPhotoshootImages: freezed == dailyPhotoshootImages ? _self.dailyPhotoshootImages : dailyPhotoshootImages // ignore: cast_nullable_to_non_nullable
+as int?,features: null == features ? _self._features : features // ignore: cast_nullable_to_non_nullable
 as List<String>,
   ));
 }

@@ -4,12 +4,12 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/i18n/l10n.dart';
 import '../../../../core/widgets/app_ui.dart';
 
-/// Photoshoot images per day on the free plan.
+/// Photoshoot images per day on the free plan. Loading fallback only.
 ///
-/// Mirrors the backend's `PLAN_FREE_DAILY_PHOTOSHOOT_IMAGES`
-/// (`backend/app/core/config.py`), which is the number that actually enforces
-/// the limit. It is not on the `/plans` payload, so it is stated here; keep the
-/// two in sync or the paywall promises a limit the API does not honour.
+/// The paywall reads `daily_photoshoot_images` from `/plans`, which carries the
+/// value the backend enforces (`PLAN_FREE_DAILY_PHOTOSHOOT_IMAGES`). This
+/// constant shows only until `/plans` loads. Keep it equal to
+/// `docs/generated/plan-limits.json`.
 const int kFreeDailyPhotoshootImages = 10;
 
 /// The free month, as the loudest thing on the paywall.

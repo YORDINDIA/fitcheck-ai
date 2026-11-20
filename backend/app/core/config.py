@@ -378,8 +378,9 @@ class Settings(BaseSettings):
 
     # Plan Limits (monthly)
     # Item extraction limits doubled on 2026-08-05 (Free 25->50, Plus 100->200,
-    # Pro 200->400); generations/embeddings unchanged. Keep frontend
-    # src/lib/plan-limits.ts and flutter model defaults in sync.
+    # Pro 200->400); generations/embeddings unchanged. Apps read these from
+    # /plans. Marketing copy in src/lib/plan-limits.ts must match
+    # docs/generated/plan-limits.json (backend and vitest tests check it).
     PLAN_FREE_MONTHLY_EXTRACTIONS: int = 50
     PLAN_FREE_MONTHLY_GENERATIONS: int = 50
     PLAN_FREE_MONTHLY_EMBEDDINGS: int = 200
