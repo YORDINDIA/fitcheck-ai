@@ -35,10 +35,9 @@ describe('DashboardPage', () => {
     expect(screen.getByText('321')).toBeInTheDocument()
     expect(screen.getByText('301 succeeded · 20 failed')).toBeInTheDocument()
 
-    // Trend charts mount lazily (recharts chunk), compact layout. The chunk can
-    // take longer than findBy's 1 s default when the machine is busy.
+    // Trend charts mount lazily (recharts chunk), compact layout
     expect(
-      await screen.findByRole('img', { name: 'Signups & Active users' }, { timeout: 5000 }),
+      await screen.findByRole('img', { name: 'Signups & Active users' }),
     ).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'Total' })).toBeInTheDocument()
 
@@ -93,7 +92,7 @@ describe('DashboardPage', () => {
 
     // Refresh control shows a relative updated timestamp
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
-  }, 15000) // Many async reads; the 5 s default is too tight under load.
+  })
 
   it('shows an error state with retry when the overview request fails', async () => {
     authedAs(['*'])

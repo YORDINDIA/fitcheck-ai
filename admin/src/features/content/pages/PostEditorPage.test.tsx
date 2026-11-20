@@ -88,7 +88,7 @@ describe('PostEditorPage', () => {
     expect(created?.slug).toBe('summer-style-guide')
     expect(created?.is_published).toBe(false)
     expect(created?.keywords).toEqual(['summer'])
-  }, 15000) // Types about 100 keystrokes; the 5 s default is too tight under load.
+  })
 
   it('loads an existing post into the form for editing', async () => {
     const { handlers } = createBlogHandlers()
