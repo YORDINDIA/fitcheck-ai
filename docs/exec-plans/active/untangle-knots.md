@@ -134,6 +134,7 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 | 2026-11-21 | Rebuilt `wiring-after.html` from a clean `git archive` export of `5881abd`. Both screenshots are 1440x900, fit one screen, and have no page errors. Composed `output/untangle/before-after.png` (2960x1000). Both outputs stay local and gitignored. |
 | 2026-11-21 | Final lane run on `d9fa295`, all lanes in parallel. Admin tests: 2 failed under load. `PostEditorPage` "creates a post" hit the 5 s default. The `DashboardPage` lazy chart lookup hit the 1 s `findBy` default. Both pass alone (402 ms and 481 ms), and all 261 pass on a rerun. A 150 s CPU-stress run did not reproduce them. Fix: explicit timeouts on those two tests. Commit: `d9553a7`. Admin lane after the fix passes: lint, typecheck, 261 tests, schema, and build. |
 | 2026-11-21 | Second final run on `15f0345`, all lanes in parallel. Admin tests failed again. A different test, `PostEditorPage` "surfaces a duplicate-slug validation error", hit the 5 s default. Per-test timeouts cannot cover tests that change between runs. Suite-level defaults now apply: `testTimeout` 20 s in `admin/vite.config.ts` and `asyncUtilTimeout` 5 s in `admin/src/test/setup.ts`. The per-test overrides from `d9553a7` are removed. Commit: `fdba87f`. Admin lane after the change passes: lint, typecheck, 261 tests, schema, and build. |
+| 2026-11-21 | Runbook fix. `docs/BACKEND.md` said migration 066 needs no app release. That conflicts with the spec hold on commit B. The runbook now waits for the new app build, then applies 066 and deploys the backend in one short window. The migration SQL is unchanged. |
 
 ## Decision log
 
@@ -193,6 +194,7 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 | 2026-11-21 | Knot 6 shows as resolved on the branch. Its status line keeps the owner gate: apply migration 066 before the backend that writes `completed` deploys. | Both commits are on the branch. The gate is a deploy and migration step, not a code change. The acceptance box for commit B stays open until the owner ships it. |
 | 2026-11-21 | Admin tests get explicit timeouts: 15 s on two tests, 5 s on one lazy-chart lookup. Retries and skips were not used. Superseded by the suite-level row below. | The two tests take 0.4 to 0.5 s alone, so the limits only matter under heavy load. A retry hides slowness, and a skip drops coverage. |
 | 2026-11-21 | Admin test timeouts are set for the whole suite: `testTimeout` 20 s, `asyncUtilTimeout` 5 s. This supersedes the per-test rows above. | Timeouts hit different tests from run to run under heavy load, so a per-test list would miss the next failure. A failing assertion still fails. The limit only changes how long a slow test may run. |
+| 2026-11-21 | Migration 066 waits for the new app build. It runs in the same short window as the backend deploy that writes `completed`. | The spec holds commit B until the new app build is live. Installed Flutter builds from before `8b52992` read only `complete`. |
 
 ## Verification
 
