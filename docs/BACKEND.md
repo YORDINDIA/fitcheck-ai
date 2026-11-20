@@ -580,6 +580,14 @@ The same migration-gap class also breaks **durable job creation**: batch (`extra
 
 The same policy covers **item writes** (observed 2026-08-08: opaque 500s on `POST /items` when the hosted schema lacked migration 019's `source_image_url` / `source_image_storage_path` columns, and 22001 "value too long" while 036's wider `image_url` columns were pending). `create_item` detects the gap via `items_schema_migration_hint` (`app/utils/db.py`), logs the hint with the exception type in the message text, and raises `SchemaNotInitializedError` → friendly 503; readiness fails closed on the two 019 columns. All `items.py` catch-alls embed the exception type in the log message so the cause survives plain-text drains.
 
+**Migration 066 is written but NOT applied.** It changes the photoshoot job status from `complete` to `completed` (knot 6, commit B). Apply it to hosted Supabase right before the backend that writes `completed` is deployed. Until it runs, that backend fails its job writes against the old CHECK constraint. After it runs, a backend instance that still runs the old code fails its photoshoot job writes until it is replaced. The app builds accept both values, so this step needs no app release.
+
+```bash
+psql "$SUPABASE_DB_URL" -f backend/db/supabase/migrations/066_photoshoot_status_completed.sql
+```
+
+Afterwards, `SELECT count(*) FROM photoshoot_jobs WHERE status = 'complete';` must return 0.
+
 ## Billing: subscriptions (Stripe web + store IAP)
 
 Three billing rails share one `subscriptions` row, identified by `billing_provider` (`stripe` | `apple` | `google`):

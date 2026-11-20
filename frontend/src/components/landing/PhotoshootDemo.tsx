@@ -167,7 +167,7 @@ export function PhotoshootDemo() {
       const failedIndices = final.failed_indices ?? [];
       const response: DemoPhotoshootResult = {
         session_id: final.job_id,
-        status: isPhotoshootComplete(final.status) ? 'complete' : 'failed',
+        status: isPhotoshootComplete(final.status) ? 'completed' : 'failed',
         images: (final.images ?? []).sort((a, b) => a.index - b.index),
         generated_count: final.generated_count,
         failed_count: final.failed_count,

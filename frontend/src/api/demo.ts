@@ -47,7 +47,7 @@ export interface DemoTryOnResult {
 
 export interface DemoPhotoshootResult {
   session_id: string;
-  status: 'pending' | 'generating' | 'complete' | 'failed';
+  status: 'pending' | 'generating' | 'complete' | 'completed' | 'failed';
   images: GeneratedImage[];
   generated_count?: number;
   failed_count?: number;

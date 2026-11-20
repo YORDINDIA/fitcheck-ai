@@ -218,7 +218,6 @@
     "genStatusFilter": "Filter by status",
     "genStatusAll": "All statuses",
     "genStatus_completed": "Completed",
-    "genStatus_complete": "Completed",
     "genStatus_extracting": "Extracting",
     "genStatus_generating": "Generating",
     "genStatus_cancelled": "Cancelled",

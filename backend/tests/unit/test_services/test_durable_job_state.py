@@ -205,7 +205,7 @@ async def test_photoshoot_db_create_and_hydrate_preserves_final_result_without_r
     persisted = {
         "id": job.job_id,
         "user_id": USER_ID,
-        "status": "complete",
+        "status": "completed",
         "session_id": job.session_id,
         "use_case": "aesthetic",
         "num_images": 1,

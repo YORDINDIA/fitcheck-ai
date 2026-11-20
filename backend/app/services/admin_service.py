@@ -1914,7 +1914,7 @@ async def dashboard_overview(db: Any) -> Dict[str, Any]:
         _count(lambda d: d.table("extraction_jobs").select("id", count="exact").gte("created_at", d7).in_("status", ["completed"])),
         _count(lambda d: d.table("extraction_jobs").select("id", count="exact").gte("created_at", d7).eq("status", "failed")),
         _count(lambda d: d.table("photoshoot_jobs").select("id", count="exact").gte("created_at", d7)),
-        _count(lambda d: d.table("photoshoot_jobs").select("id", count="exact").gte("created_at", d7).in_("status", ["complete"])),
+        _count(lambda d: d.table("photoshoot_jobs").select("id", count="exact").gte("created_at", d7).in_("status", ["completed"])),
         _count(lambda d: d.table("photoshoot_jobs").select("id", count="exact").gte("created_at", d7).eq("status", "failed")),
         # trials_ending_7d: status=trial and trial_end between now and now+7d
         _count_optional(

@@ -372,12 +372,12 @@ async def test_get_job_status_returns_the_status_payload():
     ), patch.object(
         PhotoshootJobService,
         "get_job_status",
-        new=AsyncMock(return_value={"status": "complete", "generated_count": 2}),
+        new=AsyncMock(return_value={"status": "completed", "generated_count": 2}),
     ):
         result = await ps.get_photoshoot_job_status(job_id="job-1", user={"id": USER_ID}, db=Mock())
 
     assert result["message"] == "OK"
-    assert result["data"]["status"] == "complete"
+    assert result["data"]["status"] == "completed"
 
 
 @pytest.mark.asyncio

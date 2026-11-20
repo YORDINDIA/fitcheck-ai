@@ -1,6 +1,6 @@
 # Database schema (generated)
 
-Generated: 2026-10-26
+Generated: 2026-11-20
 
 Source: `backend/db/supabase/migrations/`.
 Regenerate: `python scripts/generate_db_schema_doc.py`.
@@ -84,6 +84,7 @@ This is an orientation index for agents, not a substitute for reading migrations
 - `063_gift_occasion_and_trial_guards.sql`
 - `064_efficiency_indexes.sql`
 - `065_language_explicit.sql`
+- `066_photoshoot_status_completed.sql`
 
 ## Tables (CREATE TABLE)
 
@@ -275,6 +276,8 @@ These columns are added after their table's CREATE TABLE and are required (NOT N
 - `063_gift_occasion_and_trial_guards.sql` → `gift_vouchers`
 - `064_efficiency_indexes.sql` → `items`
 - `065_language_explicit.sql` → `user_settings`
+- `066_photoshoot_status_completed.sql` → `photoshoot_jobs`
+- `066_photoshoot_status_completed.sql` → `photoshoot_jobs`
 
 ## Related
 

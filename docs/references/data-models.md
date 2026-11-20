@@ -200,7 +200,7 @@ not expanded here — see the DDL for details:
 | `promo_codes`, `promo_redemptions` | 031 (+ 032 fix) |
 | `support_tickets` | 009 (+ 034, 037) |
 | `extraction_jobs` | 016 (+ 023, 029, 053) |
-| `photoshoot_jobs` | 023 (+ 035) |
+| `photoshoot_jobs` | 023 (+ 035, 066) |
 | `stripe_webhook_events` | 022 (+ 027) |
 | `apple_iap_events`, `google_rtdn_events` | 030 |
 | `audit_events` | 038 |
