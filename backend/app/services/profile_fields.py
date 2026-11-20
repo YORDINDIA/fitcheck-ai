@@ -9,7 +9,6 @@ from collections.abc import Mapping
 from typing import Any, Optional
 
 FULL_NAME_MAX_LENGTH = 255  # public.users.full_name is VARCHAR(255), migration 001
-AVATAR_URL_MAX_LENGTH = 500  # app limit; public.users.avatar_url is TEXT, migration 036
 
 
 def profile_fields_from_metadata(
@@ -22,13 +21,13 @@ def profile_fields_from_metadata(
 
     Explicit values win over provider metadata. An empty value falls through to
     the next source. Google sends ``name`` and ``picture`` where other providers
-    send ``full_name`` and ``avatar_url``. A missing avatar stays ``None``. Both
-    values are cut to their limits.
+    send ``full_name`` and ``avatar_url``. A missing avatar stays ``None``. The
+    name is cut to its column width. The avatar URL is kept whole.
     """
     metadata = user_metadata or {}
     name = full_name or metadata.get("full_name") or metadata.get("name") or ""
     picture = avatar_url or metadata.get("avatar_url") or metadata.get("picture")
     return (
         name[:FULL_NAME_MAX_LENGTH],
-        picture[:AVATAR_URL_MAX_LENGTH] if picture is not None else None,
+        picture,
     )

@@ -1093,8 +1093,8 @@ async def test_oauth_sync_new_user_creates_profile_and_redeems_referral(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_oauth_sync_new_user_cuts_long_profile_fields(monkeypatch):
-    """A name over the VARCHAR(255) column is cut before the insert."""
+async def test_oauth_sync_new_user_cuts_name_and_keeps_avatar(monkeypatch):
+    """A name over the VARCHAR(255) column is cut before the insert. The avatar URL is kept whole."""
     admin_client = Mock()
     admin_client.auth.admin.get_user_by_id.return_value = SimpleNamespace(
         user=SimpleNamespace(
@@ -1108,7 +1108,7 @@ async def test_oauth_sync_new_user_cuts_long_profile_fields(monkeypatch):
     result = await auth_module.oauth_sync(request=None, db=db, token_data=_token_data())
 
     assert result["data"]["user"]["full_name"] == "N" * 255
-    assert result["data"]["user"]["avatar_url"] == "p" * 500
+    assert result["data"]["user"]["avatar_url"] == "p" * 600
     assert db.rows["users"][0]["full_name"] == "N" * 255
 
 

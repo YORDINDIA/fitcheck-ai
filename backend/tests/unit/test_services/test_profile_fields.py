@@ -1,7 +1,6 @@
 """Unit tests for the first-login profile field helper."""
 
 from app.services.profile_fields import (
-    AVATAR_URL_MAX_LENGTH,
     FULL_NAME_MAX_LENGTH,
     profile_fields_from_metadata,
 )
@@ -46,6 +45,7 @@ def test_name_at_exact_limit_is_kept_whole():
     assert name == "B" * FULL_NAME_MAX_LENGTH
 
 
-def test_avatar_url_is_cut_to_limit():
-    _, avatar = profile_fields_from_metadata({"picture": "h" * (AVATAR_URL_MAX_LENGTH + 10)})
-    assert avatar == "h" * AVATAR_URL_MAX_LENGTH
+def test_avatar_url_is_kept_whole():
+    url = "https://cdn.example.com/avatars/" + "a" * 1000 + ".png"
+    _, avatar = profile_fields_from_metadata({"picture": url})
+    assert avatar == url

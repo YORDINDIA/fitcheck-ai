@@ -130,7 +130,7 @@ async def test_missing_profile_legacy_pgrst116_still_provisions(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_missing_profile_auto_provision_cuts_long_profile_fields(monkeypatch):
+async def test_missing_profile_auto_provision_cuts_name_and_keeps_avatar(monkeypatch):
     """First-login profiles get the same length limits as oauth_sync."""
     monkeypatch.setattr(
         deps,
@@ -151,7 +151,7 @@ async def test_missing_profile_auto_provision_cuts_long_profile_fields(monkeypat
     upserted = [c.args[0] for c in db.table.return_value.upsert.call_args_list]
     profile = next(u for u in upserted if "email_verified" in u)
     assert profile["full_name"] == "N" * 255
-    assert profile["avatar_url"] == "p" * 500
+    assert profile["avatar_url"] == "p" * 600
 
 
 @pytest.mark.asyncio
