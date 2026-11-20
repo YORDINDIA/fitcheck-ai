@@ -534,3 +534,61 @@ async def fetch_dashboard_results(d: Any, *, user_id: str, month_start: str) -> 
             .execute
         ),
     )
+
+
+# ============================================================================
+# Auth dependency (app/api/v1/deps.py): user row lookups and first-login
+# provisioning writes. Chains moved verbatim. deps.py keeps the embed
+# fallback, the provisioning order, and error mapping.
+# ============================================================================
+
+
+async def select_user_row_for_auth(db: Any, *, columns: str, user_id: str, operation: str) -> Any:
+    return await execute_with_reconnect(
+        lambda d: d.table("users").select(columns).eq("id", user_id).maybe_single().execute(),
+        db,
+        extra={"operation": operation, "user_id": user_id},
+    )
+
+
+async def select_user_row_reduced_embed(db: Any, *, columns: str, user_id: str, operation: str) -> Any:
+    return await execute_with_reconnect(
+        lambda d: d.table("users").select(columns).eq("id", user_id).maybe_single().execute(),
+        db,
+        extra={"operation": operation, "user_id": user_id, "embed": "reduced"},
+    )
+
+
+async def select_user_row_no_embed(db: Any, *, columns: str, user_id: str, operation: str) -> Any:
+    return await execute_with_reconnect(
+        lambda d: d.table("users").select(columns).eq("id", user_id).maybe_single().execute(),
+        db,
+        extra={"operation": operation, "user_id": user_id, "embed": "none"},
+    )
+
+
+def upsert_user_profile(db: Any, *, profile: Dict[str, Any]) -> None:
+    db.table("users").upsert(profile, on_conflict="id").execute()
+
+
+def upsert_default_preferences(db: Any, *, token_data: Any) -> None:
+    db.table("user_preferences").upsert({
+        "user_id": token_data.sub,
+        "favorite_colors": [],
+        "preferred_styles": [],
+        "liked_brands": [],
+        "disliked_patterns": [],
+        "preferred_occasions": [],
+        "data_points_collected": 0,
+    }, on_conflict="user_id").execute()
+
+
+def upsert_default_settings(db: Any, *, token_data: Any) -> None:
+    db.table("user_settings").upsert({
+        "user_id": token_data.sub,
+        "language": "en",
+        "measurement_units": "imperial",
+        "notifications_enabled": True,
+        "email_marketing": False,
+        "dark_mode": False,
+    }, on_conflict="user_id").execute()
