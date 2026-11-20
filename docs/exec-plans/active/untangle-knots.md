@@ -36,7 +36,7 @@ Knots run worst first. The order is fixed in the table below.
 | 2 | Outfit generation state in two channels | A | TD-049 | c6f3f46 |
 | 3 | Profile fields copied twice | A | | 470305f, c604077 |
 | 4 | Routes run database queries directly | A | TD-013, TD-107, TD-112 | 419384e to 8fefdde |
-| 5 | Storage key shim kept as a workaround | A | | this commit |
+| 5 | Storage key shim kept as a workaround | A | | 3c12bfb |
 | 6 | `complete` vs `completed` photoshoot status | B | TD-021 (first half) | A 8b52992, B pending |
 | 7 | Admin page titles in placeholder namespace | B | TD-079 | 8f13f83 |
 | 8 | 114 identical Flutter DioException blocks | B | TD-113 | 407677b |
