@@ -901,31 +901,6 @@ class ItemRepository {
     return results;
   }
 
-  /// Get batch extraction job status
-  /// ONLY use this for batch extraction jobs started via /api/v1/ai/batch-extract
-  /// Single item extraction is synchronous and does not need polling
-  Future<ExtractionResponse> getGenerationStatus(String generationId) async {
-    try {
-      // Try the batch extraction status endpoint first
-      final response = await _apiClient.get(
-        ApiConstants.aiBatchExtractStatus(generationId),
-      );
-      final data = _extractDataMap(response.data);
-      return _parseExtractionResponse(data);
-    } on DioException catch (e) {
-      // If batch endpoint fails, try the extraction items endpoint
-      try {
-        final response = await _apiClient.get(
-          '${ApiConstants.ai}/extract-items/$generationId', // interpolation needed here
-        );
-        final data = _extractDataMap(response.data);
-        return _parseExtractionResponse(data);
-      } catch (_) {
-        throw handleDioException(e);
-      }
-    }
-  }
-
   Map<String, dynamic> _extractDataMap(dynamic payload) {
     if (payload is Map<String, dynamic>) {
       final data = payload['data'];
@@ -1108,63 +1083,12 @@ class ItemRepository {
     payload[to] = payload.remove(from);
   }
 
-  ExtractionResponse _parseExtractionResponse(Map<String, dynamic> data) {
-    final itemsPayload = data['items'];
-    final items = itemsPayload is List
-        ? itemsPayload
-              .whereType<Map<String, dynamic>>()
-              .map(_mapExtractedItem)
-              .toList()
-        : <ExtractedItem>[];
-    final status = data['status']?.toString() ?? 'completed';
-    final id =
-        data['id']?.toString() ??
-        data['extraction_id']?.toString() ??
-        'extraction-${DateTime.now().millisecondsSinceEpoch}';
-    return ExtractionResponse(
-      id: id,
-      status: status,
-      items: items,
-      imageUrl: data['image_url']?.toString(),
-      error: data['error']?.toString(),
-      createdAt: _parseDateTime(data['created_at']),
-    );
-  }
-
-  ExtractedItem _mapExtractedItem(Map<String, dynamic> json) {
-    final categoryValue = json['category']?.toString().toLowerCase() ?? 'other';
-    final name =
-        json['name']?.toString() ??
-        json['sub_category']?.toString() ??
-        categoryValue;
-    return ExtractedItem(
-      name: name,
-      category: Category.fromString(categoryValue),
-      colors: _coerceStringList(json['colors']),
-      material: json['material']?.toString(),
-      pattern: json['pattern']?.toString(),
-      description:
-          json['detailed_description']?.toString() ??
-          json['description']?.toString(),
-      boundingBox: json['bounding_box'] is Map<String, dynamic>
-          ? json['bounding_box'] as Map<String, dynamic>
-          : null,
-    );
-  }
-
   List<String>? _coerceStringList(dynamic value) {
     if (value is List) {
       return value.map((item) => item.toString()).toList();
     }
     if (value is String && value.isNotEmpty) {
       return [value];
-    }
-    return null;
-  }
-
-  DateTime? _parseDateTime(dynamic value) {
-    if (value is String) {
-      return DateTime.tryParse(value);
     }
     return null;
   }

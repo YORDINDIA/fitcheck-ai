@@ -334,25 +334,6 @@ class OutfitRepository {
     }
   }
 
-  /// Get generation status
-  Future<GenerationStatus> getGenerationStatus(String taskId) async {
-    try {
-      final response = await _apiClient.get(
-        '${ApiConstants.outfits}/generation/$taskId',
-      );
-      final data = _extractDataMap(response.data);
-      final normalized = Map<String, dynamic>.from(data);
-      normalized['id'] = taskId;
-      final images = normalized['images'];
-      if (images is List && images.isNotEmpty) {
-        normalized['imageUrl'] = images.first.toString();
-      }
-      return GenerationStatus.fromJson(normalized);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
-  }
-
   /// Share outfit publicly
   Future<String> shareOutfit(String outfitId) async {
     try {
