@@ -30,9 +30,9 @@ class ReferralRedemptionResult {
 /// across the auth flow and the subscription feature.
 ///
 /// Extracted as part of FL4 to break the cross-feature import from
-/// auth -> subscription: the subscription repository is injected behind the
-/// core [ReferralRedemptionService] interface, so auth keeps no compile-time
-/// dependency on the subscription feature.
+/// auth -> subscription: the service depends only on the core
+/// [ReferralRedemptionService] interface. The auth providers pass in the
+/// subscription repository through Riverpod.
 class UserInitializationService {
   final ReferralRedemptionService _subscriptionRepo;
 
