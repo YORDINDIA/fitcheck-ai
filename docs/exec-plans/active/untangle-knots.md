@@ -34,7 +34,7 @@ Knots run worst first. The order is fixed in the table below.
 |---|------|-------|------|--------|
 | 1 | Plan limits copied into three apps | A | TD-032 | 2dfed3e |
 | 2 | Outfit generation state in two channels | A | TD-049 | c6f3f46 |
-| 3 | Profile fields copied twice | A | | |
+| 3 | Profile fields copied twice | A | | 470305f |
 | 4 | Routes run database queries directly | A | TD-013, TD-107, TD-112 | |
 | 5 | Storage key shim kept as a workaround | A | | |
 | 6 | `complete` vs `completed` photoshoot status | B | TD-021 (first half) | |
@@ -46,6 +46,30 @@ Knots run worst first. The order is fixed in the table below.
 | 12 | Empty `getApiError` wrapper | C | | |
 | 13 | Dead UI files | C | TD-098 | |
 | 14 | Legacy settings tab names | C | | |
+
+### Knot 4 sub-steps
+
+One route file per sub-step, heaviest first. A sub-step ends with zero `.table(` calls in its route file and one commit. A commit hash lands in the next sub-step's commit.
+
+| # | Route file | Calls | Service module | Commit |
+|---|------------|-------|----------------|--------|
+| 1 | outfits.py | 65 | outfit_service.py | pending |
+| 2 | users.py | 51 | user_service.py | |
+| 3 | items.py | 36 | item_service.py | |
+| 4 | auth.py | 18 | auth_service.py | |
+| 5 | recommendations.py | 17 | recommendation_service.py | |
+| 6 | calendar.py | 17 | calendar_service.py | |
+| 7 | subscription.py | 14 | subscription_service.py | |
+| 8 | blog.py | 11 | blog_service.py | |
+| 9 | iap.py | 8 | iap_service.py | |
+| 10 | gamification.py | 8 | gamification_service.py | |
+| 11 | deps.py | 6 | user_service.py | |
+| 12 | ai.py | 5 | ai_service.py | |
+| 13 | shared_outfits.py | 2 | shared_outfit_service.py | |
+| 14 | weather.py | 1 | weather_service.py | |
+| 15 | waitlist.py | 1 | waitlist_service.py | |
+| 16 | ai_settings.py | 1 | ai_settings_service.py | |
+| 17 | architecture rule for `.table(` in app/api/v1 | - | scripts/check_architecture.py | |
 
 ## Context and links
 
@@ -64,6 +88,7 @@ Knots run worst first. The order is fixed in the table below.
 | 2026-11-20 | Knot 1 commit alone fails the docs freshness check: tracker header 2026-10-26, file last commit 2026-11-20. Knot 2 bumps the header to 2026-11-20. |
 | 2026-11-20 | Knot 2 (outfit generation state) done. Vitest 80 files, 558 tests pass (was 555). Lint pass. Build pass, 42 routes prerendered. Root architecture and docs pass. Commit: `refactor: derive outfit generation state from the job map`. |
 | 2026-11-20 | Knot 3 (profile fields) done. Helper `app/services/profile_fields.py` serves `oauth_sync` and `_provision_profile`. Ruff and architecture pass. Backend pytest 4426 passed, 4 skipped (10 new tests). Three existing `oauth_sync` tests returned a bare Mock for `user_metadata`. Supabase returns a dict, so those fixtures now return `{}`. The insert failure for names over 255 characters is not reproduced. The limit comes from `users.full_name VARCHAR(255)` in migration 001. Commit: `refactor: share first-login profile fields between auth and deps`. |
+| 2026-11-20 | Knot 4 sub-step 1 (outfits.py, 65 calls) done. Route has 0 `.table(` calls. Ruff, architecture, and docs pass. Backend pytest 4426 passed, 4 skipped. Left for later: two alias imports kept for tests (`_collection_counts`, `_normalize_item_images`), and the route still imports `materialize_*` from `app.api.v1.images`. Commit: `refactor: move outfit route queries into outfit_service`. |
 
 ## Decision log
 
@@ -79,6 +104,7 @@ Knots run worst first. The order is fixed in the table below.
 | 2026-11-20 | Prerendered marketing pages keep the constants in `plan-limits.ts`. `docs/generated/plan-limits.json` is checked by a backend test and a vitest test. | Prerender runs at build time and cannot call `/plans`. The snapshot makes drift fail a test. |
 | 2026-11-20 | Knot 2: the `generatingOutfits` map is the only generation record. `isGenerating` and `generationStatus` are removed from `outfitStore`. | TD-049: the two records could disagree. Side effect: a pane job now shows the spinner on its outfit card, which it did not before. |
 | 2026-11-20 | Knot 3: `oauth_sync` now cuts `full_name` to 255 and `avatar_url` to 500, as `_provision_profile` already did. One helper serves both. | One set of limits. `full_name` is `VARCHAR(255)`, so a longer name fails the insert. `avatar_url` is `TEXT`, so the 500 cap is app policy only. A URL cut at 500 characters stops working. |
+| 2026-11-20 | Knot 4: each route file's queries move into one service module, with the same query chains and log labels. Routes keep HTTP work only. | ARCHITECTURE.md keeps routes thin. Tests patch the service module where the moved name is now looked up. Moved log records carry the service logger name. |
 
 ## Verification
 
