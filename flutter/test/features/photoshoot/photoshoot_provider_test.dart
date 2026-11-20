@@ -182,6 +182,22 @@ void main() {
     expect(state().sessionId, 'ps_1');
   });
 
+  test('a job that reports completed reaches results through the poll fallback', () async {
+    await startJob();
+    repo.statusToReturn = const PhotoshootJobStatusResponse(
+      jobId: 'job-1',
+      status: 'completed',
+      generatedCount: 2,
+      totalCount: 2,
+      images: _twoImages,
+    );
+    repo.events.add(const ServerSentEvent(type: 'error'));
+    await _settle(150);
+
+    expect(state().step, PhotoshootStep.results);
+    expect(state().images, hasLength(2));
+  });
+
   test('a second completion signal after job_complete is ignored', () async {
     await startJob();
     repo.statusToReturn = const PhotoshootJobStatusResponse(

@@ -14,6 +14,7 @@ import { useDropzone } from 'react-dropzone';
 import { Camera, Loader2, Download, AlertCircle, CheckCircle2, ArrowRight, AlertTriangle, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn, downloadBlob } from '@/lib/utils';
+import { isPhotoshootComplete } from '@/lib/photoshoot-status';
 import { logger } from '@/lib/logger';
 import { GeneratedImage } from '@/components/ui/generated-image'
 import { EditorialPanel } from './EditorialPanel';
@@ -73,7 +74,7 @@ async function pollDemoJob(
   for (let attempt = 0; attempt < DEMO_POLL_MAX_ATTEMPTS; attempt++) {
     const status = await getDemoPhotoshootStatus(jobId, signal);
     onProgress(status);
-    if (status.status === 'complete' || status.status === 'failed' || status.status === 'cancelled') {
+    if (isPhotoshootComplete(status.status) || status.status === 'failed' || status.status === 'cancelled') {
       return status;
     }
     await new Promise((resolve) => setTimeout(resolve, DEMO_POLL_INTERVAL_MS));
@@ -166,7 +167,7 @@ export function PhotoshootDemo() {
       const failedIndices = final.failed_indices ?? [];
       const response: DemoPhotoshootResult = {
         session_id: final.job_id,
-        status: final.status === 'complete' ? 'complete' : 'failed',
+        status: isPhotoshootComplete(final.status) ? 'complete' : 'failed',
         images: (final.images ?? []).sort((a, b) => a.index - b.index),
         generated_count: final.generated_count,
         failed_count: final.failed_count,

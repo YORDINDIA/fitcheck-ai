@@ -35,9 +35,9 @@ Knots run worst first. The order is fixed in the table below.
 | 1 | Plan limits copied into three apps | A | TD-032 | 2dfed3e |
 | 2 | Outfit generation state in two channels | A | TD-049 | c6f3f46 |
 | 3 | Profile fields copied twice | A | | 470305f, c604077 |
-| 4 | Routes run database queries directly | A | TD-013, TD-107, TD-112 | |
+| 4 | Routes run database queries directly | A | TD-013, TD-107, TD-112 | 419384e to 8fefdde |
 | 5 | Storage key shim kept as a workaround | A | | |
-| 6 | `complete` vs `completed` photoshoot status | B | TD-021 (first half) | |
+| 6 | `complete` vs `completed` photoshoot status | B | TD-021 (first half) | A (this commit), B pending |
 | 7 | Admin page titles in placeholder namespace | B | TD-079 | |
 | 8 | 114 identical Flutter DioException blocks | B | TD-113 | |
 | 9 | Dead `batchCreateItems` | B | TD-092 | |
@@ -69,7 +69,7 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 | 14 | weather.py | 1 | weather_service.py | f69cb31 |
 | 15 | waitlist.py | 1 | waitlist_service.py | 09a8934 |
 | 16 | ai_settings.py | 1 | ai_settings_service.py | dab03b5 |
-| 17 | architecture rule for `.table(` in app/api/v1 | - | scripts/check_architecture.py | |
+| 17 | architecture rule for `.table(` in app/api/v1 | - | scripts/check_architecture.py | 8fefdde |
 
 ## Context and links
 
@@ -107,6 +107,7 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 | 2026-11-20 | Knot 4 sub-step 15 (waitlist.py, 1 call) done. Route has 0 `.table(` calls and stays at 156 lines. New `app/services/waitlist_service.py` (18 lines) holds one function, `insert_waitlist_row`. The route drops its unused `asyncio` import. Checks: ruff pass; backend pytest 4426 passed, 4 skipped, coverage 94.70%; architecture and docs pass; `check_moves.py` structure 1/1 and names 1/1, zero missing and zero extra. The route diff was read by hand for control flow. No test changed. Commit: `refactor: move waitlist route queries into waitlist_service`. |
 | 2026-11-20 | Knot 4 sub-step 16 (ai_settings.py, 1 call) done. Route has 0 `.table(` calls and went from 403 to 404 lines, because the call now spans four lines. The new function `save_provider_configs` sits in a labeled section at the end of `app/services/ai_settings_service.py`, which went from 779 to 795 lines. The route drops its unused `asyncio` import. Checks: ruff pass; backend pytest 4426 passed, 4 skipped, coverage 94.70%; architecture and docs pass; `check_moves.py` structure 9/9 and names 9/9 across the route and service, zero missing and zero extra. The route and service diffs were read by hand for control flow. No test changed. Commit: `refactor: move ai settings route queries into ai_settings_service`. |
 | 2026-11-20 | Knot 4 sub-step 17 (architecture rule) done. `scripts/check_architecture.py` fails on any `.table(` call under `app/api/`, found by an AST walk. Probe: a temporary route file with one `.table(` call made the check exit 1 and name the file and line. After the file was deleted, the check passed. Knot 4 is complete: 261 direct calls moved out of 16 route files in sub-steps 1 to 16. Checks: ruff pass; backend pytest 4426 passed, 4 skipped, coverage 94.70%; architecture and docs pass. Commit: `refactor: fail architecture check on direct table queries in routes`. |
+| 2026-11-20 | Knot 6 commit A done. Clients accept `complete` and `completed`. Flutter: `PhotoshootStatus.completed` added, poll switch takes both values, `.g.dart` regenerated with build_runner. Web: `isPhotoshootComplete` in `frontend/src/lib/photoshoot-status.ts`, used by the store and the landing demo. Admin: no code change. Checks: Flutter analyze, no issues; flutter test 657 passed, 2 skipped (was 654, plus 3 new). Web vitest 81 files, 560 tests pass (was 79 files, 552 tests). Admin lint, typecheck, test (36 files, 241 tests), schema, and build pass. Root architecture pass. Root docs failed on the stale `docs/BACKEND.md` header (2026-10-26), and passed after the header moved to 2026-11-20. Mutation check: reverting the web check to `=== 'complete'` fails the web poll test, and removing the Flutter `completed` case fails the Flutter poll test. Frontend prerender: 42 routes on a direct rerun. Two other runs rendered 41 and skipped `/blog`, because one of the two build-time blog requests failed or timed out (10 s limit in `src/entry-prerender.tsx`). The cause is not confirmed. The baseline run skipped `/blog` once too, and this change does not touch that path. Backend pytest not run: no backend file changed. Commit: `refactor: accept completed as a photoshoot status in clients`. |
 
 ## Decision log
 
@@ -141,6 +142,8 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 | 2026-11-20 | Knot 4 waitlist: the insert moves to `waitlist_service.py` as `insert_waitlist_row`. The route keeps the payload build, the empty-result check, logging, and the try and except chain. | One call site, so one chain and one function. The payload stays in the route, so its fields and their order do not change. |
 | 2026-11-20 | Knot 4 ai settings: the provider reset write moves to `ai_settings_service.py` as `save_provider_configs`. Its payload dict stays inside the chain, and the provider map it writes is passed in. The route keeps the provider lookup, the removal of the provider key, logging, and the response. | One call site, so one chain and one function. The move check compares dict literals, so the dict stays inside the chain. |
 | 2026-11-20 | Knot 4 architecture rule: the check walks the AST and flags `.table` attribute calls, so strings and comments do not trip it. Its scope is the `api` layer. That layer holds only `v1` today, so the rule covers `app/api/v1/` as the knot asks, and it also covers any future version. TD-013, TD-107, and TD-112 stay open, with a note on each. Their route-level orchestration (rollback sequencing, ranking, and the missing LOC ceiling) still sits in the routes, and knot 4 moved queries only. | The knot moved queries, and the rule keeps new ones out. Closing the debt entries now would claim workflow changes that did not happen. |
+| 2026-11-20 | Knot 6 commit A: clients accept both `complete` and `completed`. Web uses one predicate, `isPhotoshootComplete`, in `frontend/src/lib/photoshoot-status.ts`. Flutter adds `PhotoshootStatus.completed` and a second `case` in the poll switch. The landing demo uses the predicate too. | The landing demo polls the same job status, so it must read `completed` before commit B. The predicate sits in `lib/`, because the store test mocks `@/api/photoshoot` and a helper there would be missing from that mock. |
+| 2026-11-20 | Knot 6 commit A: admin needs no code change. The badge workaround, both `genStatus_` label keys, and both status filter values already accept `complete` and `completed`. | Checked in the code. Commit B removes the workaround and the MSW fixtures. |
 
 ## Verification
 

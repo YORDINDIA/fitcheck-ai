@@ -27,7 +27,7 @@ export interface PhotoshootUsage {
 
 export interface PhotoshootResult {
   session_id: string;
-  status: 'pending' | 'generating' | 'complete' | 'failed';
+  status: 'pending' | 'generating' | 'complete' | 'completed' | 'failed';
   images: GeneratedImage[];
   generated_count?: number;
   failed_count?: number;
@@ -45,7 +45,7 @@ export interface PhotoshootJobStartResponse {
 
 export interface PhotoshootJobStatusResponse {
   job_id: string;
-  status: 'pending' | 'processing' | 'complete' | 'failed' | 'cancelled';
+  status: 'pending' | 'processing' | 'complete' | 'completed' | 'failed' | 'cancelled';
   generated_count: number;
   failed_count: number;
   failed_indices: number[];

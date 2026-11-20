@@ -16,6 +16,7 @@ import {
 } from '@/api/photoshoot';
 import { getApiError, RATE_LIMIT_EXCEEDED } from '@/lib/errors';
 import { logger } from '@/lib/logger';
+import { isPhotoshootComplete } from '@/lib/photoshoot-status';
 import { fileToReplayablePreview } from '@/lib/replayable-preview';
 import { fileToBase64 } from '@/lib/utils';
 import { ensureSessionRecording, setPersonProperties, trackEvent } from '@/lib/analytics';
@@ -495,7 +496,7 @@ export const usePhotoshootStore = create<PhotoshootState>()((set, get) => {
                 // null means the run was cancelled mid-poll; already settled.
                 if (terminal === null) return;
                 const pollImages = [...terminal.images].sort((a, b) => a.index - b.index);
-                if (terminal.status === 'complete') {
+                if (isPhotoshootComplete(terminal.status)) {
                   // The status payload does not carry session_id; the job id
                   // is the stable identifier used for the session.
                   settleComplete(
