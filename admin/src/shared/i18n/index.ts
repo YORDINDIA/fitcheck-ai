@@ -16,7 +16,6 @@ import gifts from './en/gifts.json'
 import iap from './en/iap.json'
 import layout from './en/layout.json'
 import ops from './en/ops.json'
-import placeholder from './en/placeholder.json'
 import promo from './en/promo.json'
 import quotas from './en/quotas.json'
 import search from './en/search.json'
@@ -38,7 +37,6 @@ void i18n.use(initReactI18next).init({
       errors,
       dataTable,
       components,
-      placeholder,
       users,
       dashboard,
       audit,
