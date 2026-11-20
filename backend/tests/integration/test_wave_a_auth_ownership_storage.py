@@ -87,8 +87,8 @@ class _DB:
             "item_images",
             FOREIGN_ITEM_ID,
             OWNED_ITEM_ID,
-            "user-b/items/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.jpg",
-            "user-a/items/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg",
+            "users/user-b/items/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.jpg",
+            "users/user-a/items/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg",
         ),
         (
             outfits_module,
@@ -96,8 +96,8 @@ class _DB:
             "outfit_images",
             FOREIGN_OUTFIT_ID,
             OWNED_OUTFIT_ID,
-            "user-b/outfits/dddddddddddddddddddddddddddddddd.jpg",
-            "user-a/outfits/cccccccccccccccccccccccccccccccc.jpg",
+            "users/user-b/outfits/dddddddddddddddddddddddddddddddd.jpg",
+            "users/user-a/outfits/cccccccccccccccccccccccccccccccc.jpg",
         ),
     ],
 )
@@ -157,9 +157,9 @@ async def test_batch_delete_only_cleans_images_owned_by_requesting_user(
     else:
         await route_module.batch_delete_outfits(request=request, user_id=USER_ID, db=db)
 
-    # The owned row's path is a legacy key; resolve_owned_storage_paths
-    # migrates it to its users/ home and includes the derived thumb sibling.
-    migrated = "users/" + owned_path
+    # The owned row's path is a current users/ key; resolve_owned_storage_paths
+    # includes it and its derived thumb sibling.
+    migrated = owned_path
     base, _ext = migrated.rsplit(".", 1)
     assert sorted(deleted_paths) == sorted([migrated, f"{base}_thumb.webp"])
 
@@ -247,8 +247,7 @@ async def test_single_outfit_delete_cleans_outfit_images(monkeypatch):
 
     await outfits_module.delete_outfit(outfit_id=OWNED_OUTFIT_ID, user_id=USER_ID, db=db)
 
-    # Legacy fixture keys are mapped to their users/ home by the delete-path
-    # normalizer (migrate_key_to_users_layout).
+    # Current users/ keys are deleted with their _thumb siblings.
     assert sorted(deleted_paths) == [
         "users/user-a/outfits/33333333333333333333333333333333.jpg",
         "users/user-a/outfits/33333333333333333333333333333333_thumb.webp",
@@ -270,7 +269,7 @@ async def test_upload_avatar_deletes_replaced_avatar_object(monkeypatch):
             "users": [
                 {
                     "id": USER_ID,
-                    "avatar_url": "user-a/avatars/old1234567890abcdef1234567890abcd.jpg",
+                    "avatar_url": "users/user-a/avatars/old1234567890abcdef1234567890abcd.jpg",
                 },
             ],
         }

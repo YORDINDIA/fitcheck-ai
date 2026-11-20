@@ -36,7 +36,7 @@ Knots run worst first. The order is fixed in the table below.
 | 2 | Outfit generation state in two channels | A | TD-049 | c6f3f46 |
 | 3 | Profile fields copied twice | A | | 470305f, c604077 |
 | 4 | Routes run database queries directly | A | TD-013, TD-107, TD-112 | 419384e to 8fefdde |
-| 5 | Storage key shim kept as a workaround | A | | |
+| 5 | Storage key shim kept as a workaround | A | | this commit |
 | 6 | `complete` vs `completed` photoshoot status | B | TD-021 (first half) | A 8b52992, B pending |
 | 7 | Admin page titles in placeholder namespace | B | TD-079 | 8f13f83 |
 | 8 | 114 identical Flutter DioException blocks | B | TD-113 | 407677b |
@@ -45,7 +45,7 @@ Knots run worst first. The order is fixed in the table below.
 | 11 | Auth builds its own subscription repository | C | | 281078c |
 | 12 | Empty `getApiError` wrapper | C | | cc60165 |
 | 13 | Dead UI files | C | TD-098 | 74f8df2 |
-| 14 | Legacy settings tab names | C | | this commit |
+| 14 | Legacy settings tab names | C | | c8200d2 |
 
 ### Knot 4 sub-steps
 
@@ -116,6 +116,7 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 | 2026-11-20 | Knot 12 (getApiError wrapper) done. The wrapper in `frontend/src/api/client.ts` is gone. Its DEV log moved into the response error interceptor, which has the request URL. Fifteen `api/` modules import `getApiError` from `@/lib/errors`. The blog test mock no longer names it. A new test in `client.test.ts` logged 3 times on the old code (`expected "error" to be called 1 times, but got 3 times`) and passes now. Checks: frontend lint, zero warnings; vitest 81 files, 561 tests pass (was 560); build pass, 42 routes prerendered on the rerun (the first run rendered 41 and skipped `/blog`, the same build-time fetch as knot 6); root architecture and docs pass. `toast-utils.ts` still logs `[API Error]` on each toast. That is out of scope. Commit: `refactor: remove the getApiError wrapper from the API client`. |
 | 2026-11-20 | Knot 13 (dead UI files) done. `frontend/src/components/ui/table.tsx` and `pagination.tsx` are deleted. A search of `frontend/` for module paths to either file found none. TD-098 is marked fixed. Checks: frontend lint, zero warnings; vitest 81 files, 561 tests pass (no test removed); build pass, 42 routes prerendered; root architecture and docs pass. Commit: `refactor: delete unused ui table and pagination components`. |
 | 2026-11-20 | Knot 14 (legacy settings tab names) done. `LEGACY_TAB_MAP` is gone. `TAB_IDS` lists the five current names, and `resolveTab` opens `account` for any other value. The URL sync then rewrites an unknown `tab` to `account`. The mobile test that used `?tab=subscription` now uses `?tab=plan`. A new test asserts that `?tab=subscription` lands on `?tab=account`. On the old code that test fails (`1 failed | 18 passed`), and on the new code all 19 pass. A search of backend, flutter, frontend, admin, infra, scripts, and docs found no link that uses a legacy name. Checks: frontend lint, zero warnings; vitest 81 files, 562 tests pass (was 561); build pass, 42 routes prerendered; root architecture and docs pass. The live settings page was not opened in a browser. The component test renders the real page through a router. Commit: `refactor: remove legacy settings tab names`. |
+| 2026-11-20 | Knot 5 (storage key shim) done. Deleted `migrate_key_to_users_layout` with its three callers in `storage_service.py`, and the mapping in `key_from_path`. Deleted the one-time script `migrate_storage_layout_users.py` and its test. The layout migration ran on 2026-08-05. Checks: ruff pass; backend pytest 4402 passed, 4 skipped, coverage 94.71% (gate 90%); architecture and docs pass. The test count fell from 4426 to 4402: 25 tests went with the deleted code (12 in the script test file, 13 in `test_storage_keys.py`), and 1 was added. Inventory, read-only, same minute, HEAD logic against knot 5 logic: ORPHANS 11101 to 10761, MISSING 367 to 197. Nothing was deleted. Two effects need an owner decision before merge. (1) 66 objects (33 avatar images and their 33 `_thumb.webp` thumbnails, for 33 users) lose their only link, which was the shim. They become orphans, and `storage_inventory.py --delete` would remove them after the 2 h grace. (2) 34 legacy-shaped `users.avatar_url` keys stop resolving. 204 MISSING entries clear: legacy item and outfit keys that now match orphaned `users/` objects. Tracked as TD-146. Commit: `refactor: delete the storage key layout shim and its migration script`. |
 
 ## Decision log
 
@@ -162,6 +163,7 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 | 2026-11-20 | Knot 12: `getApiError` is exported only from `lib/errors.ts`. The DEV log moves into the response error interceptor. The toast helpers no longer log. | The wrapper added only the DEV log, and that log needs the request URL, which only the interceptor has. A failed request that is not retried logs once. The new test covers that case. Retried requests are not covered. |
 | 2026-11-20 | Knot 13: both files are deleted outright, with no stub or re-export. Git history keeps them. | Neither file had an importer in `frontend/`. The search covered both quote styles and `./`, `../`, and `ui/` paths. TD-098 is marked fixed in the tracker. |
 | 2026-11-20 | Knot 14: the seven legacy names are removed, with no alias. Unknown `?tab=` values open `account`. | Matches the owner decision above. Outside links that use a legacy name now open Account. No link in this repo uses one, so the exposure is external bookmarks and links. |
+| 2026-11-20 | Knot 5: the removed script and function names stay in historical plans and RCAs as written, for example the 2026-08-09 bug sweep and the 2026-08-31 RCA. The merge waits on an owner answer about the 66 avatar objects (TD-146). | Same rule as knots 9 and 10. The 2026-09-01 decision accepts legacy rows failing. It does not decide the deletion risk for the orphaned avatar objects. |
 
 ## Verification
 

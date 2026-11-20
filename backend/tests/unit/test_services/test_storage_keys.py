@@ -24,7 +24,6 @@ from app.core.storage_keys import (
     is_preview_key,
     is_public_key,
     key_from_path,
-    migrate_key_to_users_layout,
     mint_export_key,
     mint_key,
     mint_preview_key,
@@ -230,17 +229,15 @@ class TestParseKey:
 
 
 # --------------------------------------------------------------------------- #
-# key_from_path — URL/key reducer (SSRF-safe); legacy shapes map to users/
+# key_from_path — URL/key reducer (SSRF-safe); legacy shapes pass through unchanged
 # --------------------------------------------------------------------------- #
 class TestKeyFromPath:
     def test_bare_users_key_passes_through(self):
         key = f"users/{USER}/items/{HEX32}.png"
         assert key_from_path(key) == key
 
-    def test_bare_legacy_key_maps_to_users_home(self):
-        assert key_from_path(f"{USER}/items/{HEX32}.png") == (
-            f"users/{USER}/items/{HEX32}.png"
-        )
+    def test_bare_legacy_key_passes_through_unchanged(self):
+        assert key_from_path(f"{USER}/items/{HEX32}.png") == f"{USER}/items/{HEX32}.png"
 
     @pytest.mark.parametrize("value", ["", "   ", None])
     def test_empty_returns_none(self, value):
@@ -248,32 +245,32 @@ class TestKeyFromPath:
 
     def test_supabase_public_url(self):
         url = f"https://p.supabase.co/storage/v1/object/public/fitcheck-images/{USER}/items/{HEX32}.png"
-        assert key_from_path(url) == f"users/{USER}/items/{HEX32}.png"
+        assert key_from_path(url) == f"{USER}/items/{HEX32}.png"
 
     def test_configured_bucket_path_style_url(self, monkeypatch):
         monkeypatch.setattr("app.core.storage_keys.settings.OBJECT_STORAGE_BUCKET", "fitcheck-images")
         url = f"https://acct.r2.cloudflarestorage.com/fitcheck-images/{USER}/items/{HEX32}.png?X-Amz-Signature=abc"
-        assert key_from_path(url) == f"users/{USER}/items/{HEX32}.png"
+        assert key_from_path(url) == f"{USER}/items/{HEX32}.png"
 
     def test_foreign_bucket_name_is_dropped_by_position(self, monkeypatch):
         monkeypatch.setattr("app.core.storage_keys.settings.OBJECT_STORAGE_BUCKET", "fitcheck-images")
         # A pre-cutover Railway URL: non-UUID bucket segment dropped by position,
-        # then the legacy key maps to its users/ home.
+        # then the legacy key passes through unchanged.
         url = f"https://t3.storageapi.dev/collapsible-saddlebag-s0pyqr/{USER}/items/{HEX32}.png"
-        assert key_from_path(url) == f"users/{USER}/items/{HEX32}.png"
+        assert key_from_path(url) == f"{USER}/items/{HEX32}.png"
 
     def test_worker_cdn_url_is_key(self):
         url = f"https://images.fitcheckaiapp.com/{USER}/items/{HEX32}.png"
-        assert key_from_path(url) == f"users/{USER}/items/{HEX32}.png"
+        assert key_from_path(url) == f"{USER}/items/{HEX32}.png"
 
     def test_worker_cdn_top_level_preview_is_key(self):
         url = f"https://images.fitcheckaiapp.com/tmp/{USER}/batch/{HEX32}.webp"
-        assert key_from_path(url) == f"users/{USER}/tmp/batch/{HEX32}.webp"
+        assert key_from_path(url) == f"tmp/{USER}/batch/{HEX32}.webp"
 
     def test_foreign_bucket_top_level_preview_drops_bucket(self, monkeypatch):
         monkeypatch.setattr("app.core.storage_keys.settings.OBJECT_STORAGE_BUCKET", "fitcheck-images")
         url = f"https://t3.storageapi.dev/old-bucket/tmp/{USER}/batch/{HEX32}.webp"
-        assert key_from_path(url) == f"users/{USER}/tmp/batch/{HEX32}.webp"
+        assert key_from_path(url) == f"tmp/{USER}/batch/{HEX32}.webp"
 
     def test_foreign_url_returns_none(self):
         assert key_from_path("https://example.com/a.jpg") is None
@@ -354,61 +351,6 @@ class TestPredicates:
         key = f"users/{USER}/avatars/old-name.jpg"
         assert is_owned_storage_key(key, USER) is True
         assert is_owned_storage_key(key, str(uuid.uuid4())) is False
-
-
-# --------------------------------------------------------------------------- #
-# migrate_key_to_users_layout — legacy -> users/ mapping
-# --------------------------------------------------------------------------- #
-class TestMigrateKeyToUsersLayout:
-    def test_legacy_canonical(self):
-        assert migrate_key_to_users_layout(f"{USER}/items/{HEX32}.png") == (
-            f"users/{USER}/items/{HEX32}.png"
-        )
-
-    def test_legacy_thumb(self):
-        assert migrate_key_to_users_layout(f"{USER}/items/{HEX32}_thumb.webp") == (
-            f"users/{USER}/items/{HEX32}_thumb.webp"
-        )
-
-    def test_legacy_top_level_preview(self):
-        assert migrate_key_to_users_layout(f"tmp/{USER}/batch/{HEX32}.webp") == (
-            f"users/{USER}/tmp/batch/{HEX32}.webp"
-        )
-
-    def test_legacy_per_user_preview(self):
-        assert migrate_key_to_users_layout(f"{USER}/generated/product/{HEX32}.webp") == (
-            f"users/{USER}/generated/product/{HEX32}.webp"
-        )
-
-    def test_legacy_export(self):
-        assert migrate_key_to_users_layout(f"{USER}/export/data.json") == (
-            f"users/{USER}/export/data.json"
-        )
-
-    def test_current_users_key_passes_through(self):
-        key = mint_key(USER, "items", ".png")
-        assert migrate_key_to_users_layout(key) == key
-
-    def test_public_key_passes_through(self):
-        key = mint_public_key("banners", "home", ".webp")
-        assert migrate_key_to_users_layout(key) == key
-
-    def test_never_promotes_preview_to_durable(self):
-        """The mapper preserves the category — promotion is the migration
-        script's job (staging-only invariant), never this pure function."""
-        assert migrate_key_to_users_layout(f"{USER}/generated/product/{HEX32}.webp").endswith(
-            f"/generated/product/{HEX32}.webp"
-        )
-
-    @pytest.mark.parametrize("key", ["", None, "junk", "not/a/key"])
-    def test_unknown_returns_none(self, key):
-        assert migrate_key_to_users_layout(key) is None
-
-    def test_any_public_prefixed_key_passes_through(self):
-        # The mapper only rewrites legacy shapes; current-layout prefixes
-        # (even a malformed public key) are returned unchanged — validation is
-        # the worker/parse_key's job, not the layout mapper's.
-        assert migrate_key_to_users_layout("public/x/y.webp") == "public/x/y.webp"
 
 
 def test_grammar_constants_are_consistent():

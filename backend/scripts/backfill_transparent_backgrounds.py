@@ -361,11 +361,10 @@ def resolve_storage_key(row: dict[str, Any]) -> Optional[str]:
     to be recovered from `image_url`.
 
     The resolved key (from either branch) is reduced through
-    ``key_from_path`` so a legacy bare key (``{user}/items/{hex}.png``) or a
-    legacy Supabase URL resolves to its migrated ``users/`` home. Without this
-    the R2 download 404s on a post-``users/``-layout row whose DB value was
-    never rewritten. ``key_from_path`` applies ``migrate_key_to_users_layout``
-    and is a no-op for already-current keys.
+    ``key_from_path``, which turns a legacy Supabase URL into its bucket key.
+    A legacy bare key (``{user}/items/{hex}.png``) is returned as stored, so
+    its R2 download can 404 when the layout migration moved the object.
+    ``key_from_path`` is a no-op for already-current keys.
     """
     path = (row.get("storage_path") or "").strip()
     if path:
