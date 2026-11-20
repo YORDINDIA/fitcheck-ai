@@ -113,17 +113,13 @@ interface OutfitState {
    */
   previewSourceKey: string | null;
 
-  // Generation state
-  isGenerating: boolean;
-  generationStatus: 'idle' | 'pending' | 'processing' | 'completed' | 'failed';
+  // Generation state. `generatingOutfits` is the only record: the pane status
+  // and the "any job in flight" flag are read from that map.
   generationId: string | null;
   generatedImageUrl: string | null;
 
-  // Per-outfit generation tracking (for auto-generation on create)
-  generatingOutfits: Map<string, {
-    status: 'pending' | 'processing' | 'completed' | 'failed';
-    error?: string;
-  }>;
+  // Per-outfit jobs: pane generate and auto-generate after create
+  generatingOutfits: OutfitGenerationMap;
 
   // Filters
   filters: {
@@ -363,13 +359,47 @@ function mapPoseToPrompt(pose?: string): string {
 // OUTFIT STORE
 // ============================================================================
 
+/** Generation job per outfit. `pending` and `processing` are in flight. */
+export type OutfitGenerationMap = Map<string, {
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  error?: string;
+}>;
+
+/** What the outfit pane shows. `idle` means the map holds no job for the outfit. */
+export type GenerationStatus = 'idle' | 'pending' | 'processing' | 'failed';
+
+/** Status of one outfit's job, read only from the `generatingOutfits` map. */
+export function generationStatusOf(
+  map: OutfitGenerationMap,
+  outfitId: string | null | undefined,
+): GenerationStatus {
+  const status = outfitId ? map.get(outfitId)?.status : undefined;
+  return status === 'pending' || status === 'processing' || status === 'failed' ? status : 'idle';
+}
+
+/** True while any outfit has a job in flight: a pane generate or an auto-generate after create. */
+export function hasGenerationInFlight(map: OutfitGenerationMap): boolean {
+  for (const entry of map.values()) {
+    if (entry.status === 'pending' || entry.status === 'processing') return true;
+  }
+  return false;
+}
+
+function withGenerationEntry(
+  map: OutfitGenerationMap,
+  outfitId: string,
+  entry: { status: 'pending' | 'processing' | 'failed'; error?: string },
+): OutfitGenerationMap {
+  const next = new Map(map);
+  next.set(outfitId, entry);
+  return next;
+}
+
 export const useOutfitStore = create<OutfitState>((set, get) => ({
   // Initial state
   outfits: [],
   selectedOutfit: null,
   selectedOutfits: new Set(),
-  isGenerating: false,
-  generationStatus: 'idle',
   generationId: null,
   generatedImageUrl: null,
   generatingOutfits: new Map(),
@@ -400,8 +430,6 @@ export const useOutfitStore = create<OutfitState>((set, get) => ({
       outfits: [],
       selectedOutfit: null,
       selectedOutfits: new Set(),
-      isGenerating: false,
-      generationStatus: 'idle',
       generationId: null,
       generatedImageUrl: null,
       generatingOutfits: new Map(),
@@ -1074,7 +1102,10 @@ export const useOutfitStore = create<OutfitState>((set, get) => ({
     outfitId: string,
     options: { pose?: string; variations?: number; lighting?: string; body_profile_id?: string } = {}
   ) => {
-    set({ isGenerating: true, generationStatus: 'pending', error: null });
+    set({
+      error: null,
+      generatingOutfits: withGenerationEntry(get().generatingOutfits, outfitId, { status: 'pending' }),
+    });
 
     try {
       const response = await outfitsApi.generateOutfitVisualization(outfitId, options);
@@ -1082,11 +1113,11 @@ export const useOutfitStore = create<OutfitState>((set, get) => ({
       set({
         generationId: response.generation_id,
         // Client still does the heavy AI call next — treat as processing
-        generationStatus: 'processing',
+        generatingOutfits: withGenerationEntry(get().generatingOutfits, outfitId, { status: 'processing' }),
       });
 
       // Do not poll generation status in parallel: this path generates and
-      // uploads client-side, and concurrent polling can flip isGenerating/status
+      // uploads client-side, and concurrent polling can flip the job status
       // to completed/failed before the upload finishes.
 
       // Generate outfit via backend AI service, then upload to backend to mark completion.
@@ -1116,7 +1147,6 @@ export const useOutfitStore = create<OutfitState>((set, get) => ({
       }
 
       // Generate outfit using backend AI service with retry
-      set({ generationStatus: 'processing' });
       const aiResult = await withRetry(
         () =>
           generateOutfit(promptItems, {
@@ -1201,8 +1231,6 @@ export const useOutfitStore = create<OutfitState>((set, get) => ({
             ? { ...current.selectedOutfit, images: [...(current.selectedOutfit.images || []).map((img) => ({ ...img, is_primary: uploaded.is_primary ? false : img.is_primary })), uploaded] }
             : current.selectedOutfit,
         generatedImageUrl: uploaded.image_url,
-        generationStatus: 'completed',
-        isGenerating: false,
         generatingOutfits: successMap,
       });
       try {
@@ -1221,7 +1249,7 @@ export const useOutfitStore = create<OutfitState>((set, get) => ({
       // `error` — OutfitsPage swaps the whole list for the "Couldn't load
       // outfits" ErrorState whenever it is set. The failedMap entry above is
       // the designed channel for generation failures.
-      set({ isGenerating: false, generationStatus: 'failed', generatingOutfits: failedMap });
+      set({ generatingOutfits: failedMap });
       try {
         const { useJobUiStore } = await import('@/stores/jobUiStore');
         useJobUiStore.getState().clearJob('outfit-generate');
@@ -1234,10 +1262,8 @@ export const useOutfitStore = create<OutfitState>((set, get) => ({
   // Reset generation state
   resetGeneration: () => {
     set({
-      generationStatus: 'idle',
       generationId: null,
       generatedImageUrl: null,
-      isGenerating: false,
     });
   },
 

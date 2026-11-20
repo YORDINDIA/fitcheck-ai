@@ -32,7 +32,7 @@ Knots run worst first. The order is fixed in the table below.
 
 | # | Knot | Group | Debt | Commit |
 |---|------|-------|------|--------|
-| 1 | Plan limits copied into three apps | A | TD-032 | |
+| 1 | Plan limits copied into three apps | A | TD-032 | 2dfed3e |
 | 2 | Outfit generation state in two channels | A | TD-049 | |
 | 3 | Profile fields copied twice | A | | |
 | 4 | Routes run database queries directly | A | TD-013, TD-107, TD-112 | |
@@ -61,6 +61,8 @@ Knots run worst first. The order is fixed in the table below.
 | 2026-11-20 | Baseline run on `8ddf190`. Results below. |
 | 2026-11-20 | Branch `refactor/untangle-knots` created from `8ddf190`. |
 | 2026-11-20 | Knot 1 (plan limits) done. Backend 4416 passed, 4 skipped. Vitest 80 files, 555 tests. Frontend build pass. Flutter analyze clean; test 654 passed, 2 skipped. Commit: `refactor: serve plan limits from /plans`. |
+| 2026-11-20 | Knot 1 commit alone fails the docs freshness check: tracker header 2026-10-26, file last commit 2026-11-20. Knot 2 bumps the header to 2026-11-20. |
+| 2026-11-20 | Knot 2 (outfit generation state) done. Vitest 80 files, 558 tests pass (was 555). Lint pass. Build pass, 42 routes prerendered. Root architecture and docs pass. Commit: `refactor: derive outfit generation state from the job map`. |
 
 ## Decision log
 
@@ -74,6 +76,7 @@ Knots run worst first. The order is fixed in the table below.
 | 2026-11-20 | Backend tests run as `backend/.venv/bin/python -m pytest`. | The venv `pytest` script has a stale shebang from another checkout path. The venv itself works. |
 | 2026-11-20 | Flutter `analyze`, `test`, and `build_runner` run with the local SDK (3.47.4). | Owner approved. SDK writes stay in the SDK cache. |
 | 2026-11-20 | Prerendered marketing pages keep the constants in `plan-limits.ts`. `docs/generated/plan-limits.json` is checked by a backend test and a vitest test. | Prerender runs at build time and cannot call `/plans`. The snapshot makes drift fail a test. |
+| 2026-11-20 | Knot 2: the `generatingOutfits` map is the only generation record. `isGenerating` and `generationStatus` are removed from `outfitStore`. | TD-049: the two records could disagree. Side effect: a pane job now shows the spinner on its outfit card, which it did not before. |
 
 ## Verification
 
