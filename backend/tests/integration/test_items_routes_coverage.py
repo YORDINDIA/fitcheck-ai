@@ -416,28 +416,27 @@ async def test_create_item_releases_reservation_when_embedding_fails(monkeypatch
 
 @pytest.mark.asyncio
 async def test_create_item_raises_database_error_when_insert_returns_nothing(monkeypatch):
-    monkeypatch.setattr(
-        items_module, "execute_with_reconnect", AsyncMock(return_value=Mock(data=[]))
-    )
+    # create_item delegates to item_save_service, so the insert is patched there.
+    insert = AsyncMock(return_value=Mock(data=[]))
+    monkeypatch.setattr(save_service, "execute_with_reconnect", insert)
 
     with pytest.raises(DatabaseError):
         await items_module.create_item(
             item=ItemCreate(name="Tee", category="tops"), user_id=USER_ID, db=Mock()
         )
+    insert.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_create_item_wraps_unexpected_errors(monkeypatch):
-    monkeypatch.setattr(
-        items_module,
-        "execute_with_reconnect",
-        AsyncMock(side_effect=RuntimeError("boom")),
-    )
+    insert = AsyncMock(side_effect=RuntimeError("boom"))
+    monkeypatch.setattr(save_service, "execute_with_reconnect", insert)
 
     with pytest.raises(DatabaseError):
         await items_module.create_item(
             item=ItemCreate(name="Tee", category="tops"), user_id=USER_ID, db=Mock()
         )
+    insert.assert_awaited_once()
 
 
 @pytest.mark.asyncio
