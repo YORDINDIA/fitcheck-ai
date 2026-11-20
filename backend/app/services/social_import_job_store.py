@@ -84,11 +84,7 @@ class SocialImportJobStore:
 
     @staticmethod
     async def count_active_jobs(db, *, user_id: str) -> int:
-        terminal_statuses = [
-            SocialImportJobStatus.COMPLETED.value,
-            SocialImportJobStatus.CANCELLED.value,
-            SocialImportJobStatus.FAILED.value,
-        ]
+        terminal_statuses = [s.value for s in TERMINAL_JOB_STATUSES]
         result = await asyncio.to_thread(
             db.table("social_import_jobs")
             .select("id")

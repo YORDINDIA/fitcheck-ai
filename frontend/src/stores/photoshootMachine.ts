@@ -17,8 +17,8 @@
  *   results    -> upload       start over
  *
  * A failed start or a failed job stays on generating, with the error shown
- * there, so the user can retry or go back to options. See the decision note
- * in docs/FRONTEND.md.
+ * there, so the user can retry or go back to options. See Decision 1 in
+ * docs/exec-plans/active/2026-11-20-explicit-state-machines.md.
  */
 
 export type PhotoshootStep = 'upload' | 'configure' | 'generating' | 'results';
@@ -45,7 +45,7 @@ export function canTransition(
       if (to === 'generating') return !running;
       return false;
     case 'generating':
-      if (to === 'results') return true;
+      if (to === 'results') return !running;
       if (to === 'generating') return !running;
       if (to === 'configure') return !running || cancel;
       return false;

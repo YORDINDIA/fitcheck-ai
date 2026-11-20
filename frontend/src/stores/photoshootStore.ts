@@ -694,6 +694,13 @@ export const usePhotoshootStore = create<PhotoshootState>()((set, get) => {
         logger.warn('Failed to cancel photoshoot job:', e);
       }
 
+      // The run may have completed while the cancel request was in flight.
+      // Settling a finished run would move results back to configure.
+      if (!get().isGenerating) {
+        set({ jobId: '' });
+        return;
+      }
+
       // Abort the SSE stream; the terminal job_cancelled event (or the abort
       // itself) settles the run.
       try {

@@ -210,7 +210,7 @@ export default function TryOnPage() {
   // or another caller cleared it. Land the stored outcome for the CURRENT run,
   // or abandon the run. Nothing is copied from the store into local state.
   useEffect(() => {
-    const unsubscribe = useJobUiStore.subscribe((jobState) => {
+    const reconcile = (jobState: ReturnType<typeof useJobUiStore.getState>) => {
       const pillActive = jobState.job?.id === 'try-on' && jobState.job.isActive === true;
       if (pillActive || getMachine().step !== 'generating') return;
       const landed = lastTryOnResult;
@@ -225,7 +225,11 @@ export default function TryOnPage() {
       }
       abandonTryOnRun();
       send({ type: 'CANCEL' });
-    });
+    };
+    const unsubscribe = useJobUiStore.subscribe(reconcile);
+    // A pill clear that ran between render and this subscription has no event
+    // to observe. Reconcile once against the current store state.
+    reconcile(useJobUiStore.getState());
     return unsubscribe;
   }, [send, getMachine]);
 

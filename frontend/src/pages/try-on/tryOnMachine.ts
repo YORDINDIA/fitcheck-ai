@@ -102,10 +102,14 @@ const TRY_ON_TABLE: { [S in TryOnStep]: TryOnHandlers } = {
   },
   result: {
     START: startRun,
-    STEP_BACK: (s, e) =>
-      e.to === 'upload' || e.to === 'options'
-        ? { ...s, step: e.to, result: null, error: null }
-        : null,
+    // Options needs a held garment. A remounted run has none, so go to Upload.
+    STEP_BACK: (s, e) => {
+      if (e.to === 'upload') return { ...s, step: 'upload', result: null, error: null };
+      if (e.to === 'options') {
+        return { ...s, step: s.hasGarment ? 'options' : 'upload', result: null, error: null };
+      }
+      return null;
+    },
     RESET: resetState,
   },
 };

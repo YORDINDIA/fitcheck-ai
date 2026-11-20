@@ -52,8 +52,14 @@ describe('photoshoot step machine (run in flight)', () => {
     expect(canTransition('generating', 'configure', { running: true, cancel: true })).toBe(true)
   })
 
-  it('allows completion while running', () => {
-    expect(canTransition('generating', 'results', { running: true })).toBe(true)
+  it('rejects completion while running (generating -> results)', () => {
+    expect(canTransition('generating', 'results', { running: true })).toBe(false)
+    expect(transition('generating', 'results', { running: true })).toBe('generating')
+  })
+
+  it('accepts completion once the run is no longer running', () => {
+    expect(canTransition('generating', 'results', { running: false })).toBe(true)
+    expect(transition('generating', 'results', { running: false })).toBe('results')
   })
 
   it('rejects starting from configure while a run is in flight', () => {

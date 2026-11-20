@@ -419,10 +419,15 @@ class ExtractionJobsNotifier extends Notifier<ExtractionJobsState> {
       // unreachable job must still leave the active list. The error still
       // surfaces at the call site.
       if (_alive) {
-        // Read again: the job may have completed during the server call.
-        final fresh = state.job(jobId);
+        // The job may have completed on the server during the cancel call.
+        // Its stream is already closed, so take the current status first.
+        await refreshStatus(jobId);
+        final fresh = _alive ? state.job(jobId) : null;
         if (fresh != null &&
             canTransition(fresh.status, TrackedJobStatus.cancelled)) {
+          // A batch refresh may have reopened a stream: close it again.
+          _subscriptions.remove(jobId)?.cancel();
+          await _closeController(jobId);
           _upsert(fresh.copyWith(status: TrackedJobStatus.cancelled));
           await _persist();
         }
@@ -853,7 +858,9 @@ class ExtractionJobsNotifier extends Notifier<ExtractionJobsState> {
       if (terminal) {
         // Finished while dead: the _markTerminal path already ran through
         // refreshStatus; surface the away-notification exactly once.
-        if (!fresh.notified) {
+        // A user-cancelled job gets no "scan stopped" notification.
+        if (!fresh.notified &&
+            fresh.status != TrackedJobStatus.cancelled) {
           _upsert(fresh.copyWith(notified: true));
           await _persist();
           await JobNotifications.instance.showFinishedWhileAway(

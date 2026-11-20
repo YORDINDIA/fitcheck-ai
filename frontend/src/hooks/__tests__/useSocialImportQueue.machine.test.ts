@@ -63,13 +63,14 @@ describe('canTransition', () => {
     }
   })
 
-  it.each([
-    ['awaiting_auth', 'completed'],
-    ['paused_rate_limited', 'awaiting_auth'],
-    ['created', 'completed'],
-    ['discovering', 'paused_rate_limited'],
-  ] as Array<[SocialImportJobStatus, SocialImportJobStatus]>)('rejects %s -> %s', (from, to) => {
-    expect(canTransition(from, to)).toBe(false)
+  it('allows exactly the LEGAL_EDGES pairs and rejects every other pair', () => {
+    const legal = new Set(LEGAL_EDGES.map(([from, to]) => `${from}>${to}`))
+    for (const from of SOCIAL_IMPORT_JOB_STATUSES) {
+      for (const to of SOCIAL_IMPORT_JOB_STATUSES) {
+        if (from === to) continue
+        expect(canTransition(from, to), `${from} -> ${to}`).toBe(legal.has(`${from}>${to}`))
+      }
+    }
   })
 
   it.each(['completed', 'cancelled', 'failed'] as SocialImportJobStatus[])(

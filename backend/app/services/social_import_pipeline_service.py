@@ -159,6 +159,7 @@ class SocialImportPipelineService:
                 user_id=self.user_id,
                 status=SocialImportJobStatus.FAILED,
                 error_message=message,
+                exclude_statuses=TERMINAL_JOB_STATUSES,
             )
             await self._sync_job_counters(job_id)
             await self._publish_event(
@@ -344,6 +345,7 @@ class SocialImportPipelineService:
                     user_id=self.user_id,
                     status=SocialImportJobStatus.FAILED,
                     error_message=str(e),
+                    exclude_statuses=TERMINAL_JOB_STATUSES,
                 )
                 await self._publish_event(
                     job_id,
@@ -374,6 +376,7 @@ class SocialImportPipelineService:
             user_id=self.user_id,
             status=SocialImportJobStatus.DISCOVERING,
             error_message=None,
+            exclude_statuses=TERMINAL_JOB_STATUSES,
         )
         await self._publish_event(
             job_id,
@@ -521,6 +524,7 @@ class SocialImportPipelineService:
                         "error_message": error_message,
                         "metadata": existing_metadata,
                     },
+                    exclude_statuses=TERMINAL_JOB_STATUSES,
                 )
 
                 event_payload = {
@@ -564,6 +568,7 @@ class SocialImportPipelineService:
                         "error_message": failure_message,
                         "metadata": failure_metadata,
                     },
+                    exclude_statuses=TERMINAL_JOB_STATUSES,
                 )
                 await self._publish_event(
                     job_id,
@@ -632,6 +637,7 @@ class SocialImportPipelineService:
                 "status": SocialImportJobStatus.PROCESSING.value,
                 "metadata": job_metadata,
             },
+            exclude_statuses=TERMINAL_JOB_STATUSES,
         )
         await self._publish_event(
             job_id,
@@ -650,6 +656,7 @@ class SocialImportPipelineService:
             user_id=self.user_id,
             status=SocialImportJobStatus.PROCESSING,
             error_message=None,
+            exclude_statuses=TERMINAL_JOB_STATUSES,
         )
 
         # Keep pumping until we are blocked on user review/auth or completed.
@@ -1556,13 +1563,13 @@ class SocialImportPipelineService:
             updates=payload,
         )
 
-    async def cancel_job(self, job_id: str) -> None:
+    async def cancel_job(self, job_id: str) -> bool:
         lock = self._job_lock(job_id)
         async with lock:
             # Terminal jobs are immutable. The write only matches a row whose
             # status is not completed, cancelled, or failed. No row back means
-            # the job is already terminal (or not visible to this user), so
-            # nothing is written, cleaned up, or published.
+            # the job is terminal or missing. A missing job raises; a terminal
+            # job returns False and nothing is written, cleaned up, or published.
             cancelled = await SocialImportJobStore.set_job_status(
                 self.db,
                 job_id=job_id,
@@ -1572,7 +1579,14 @@ class SocialImportPipelineService:
                 exclude_statuses=TERMINAL_JOB_STATUSES,
             )
             if cancelled is None:
-                return
+                job = await SocialImportJobStore.get_job(
+                    self.db,
+                    job_id=job_id,
+                    user_id=self.user_id,
+                )
+                if not job:
+                    raise SocialImportJobNotFoundError(job_id)
+                return False
             await self._cleanup_unsaved_temp_assets(job_id)
             await SocialImportJobStore.delete_job_artifacts(
                 self.db,
@@ -1585,6 +1599,7 @@ class SocialImportPipelineService:
                 {"job_id": job_id},
             )
         await self.cancel_scheduled_job(job_id)
+        return True
 
     async def accept_auth(
         self,
@@ -1675,6 +1690,7 @@ class SocialImportPipelineService:
                     "auth_required": False,
                     "metadata": cleared_metadata,
                 },
+                exclude_statuses=TERMINAL_JOB_STATUSES,
             )
             if not updated:
                 raise SocialImportJobNotFoundError(job_id)
@@ -1752,6 +1768,7 @@ class SocialImportPipelineService:
                 job_id=job_id,
                 user_id=self.user_id,
                 updates={"status": SocialImportJobStatus.CREATED.value},
+                exclude_statuses=TERMINAL_JOB_STATUSES,
             )
         await self._publish_event(
             job_id,
@@ -1974,6 +1991,7 @@ class SocialImportPipelineService:
             user_id=self.user_id,
             status=SocialImportJobStatus.PAUSED_RATE_LIMITED,
             error_message=message,
+            exclude_statuses=TERMINAL_JOB_STATUSES,
         )
         await self._publish_event(
             job_id,
@@ -2011,6 +2029,7 @@ class SocialImportPipelineService:
                 "status": SocialImportJobStatus.PROCESSING.value,
                 "error_message": None,
             },
+            exclude_statuses=TERMINAL_JOB_STATUSES,
         )
         if not updated:
             return False
@@ -2064,6 +2083,7 @@ class SocialImportPipelineService:
             user_id=self.user_id,
             status=SocialImportJobStatus.COMPLETED,
             completed=True,
+            exclude_statuses=TERMINAL_JOB_STATUSES,
         )
         await self._cleanup_unsaved_temp_assets(job_id)
         await SocialImportJobStore.delete_job_artifacts(

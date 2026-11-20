@@ -15,7 +15,10 @@ from app.models.social_import import (
     SocialImportJobStatus,
     SocialImportPhotoStatus,
 )
-from app.services.social_import_job_store import SocialImportJobStore
+from app.services.social_import_job_store import (
+    TERMINAL_JOB_STATUSES,
+    SocialImportJobStore,
+)
 
 USER_ID = "user-1"
 JOB_ID = "job-1"
@@ -276,6 +279,23 @@ async def test_set_job_status_exclude_statuses_allows_active_job(fake_db):
 # =============================================================================
 # Photos
 # =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_set_job_status_exclude_statuses_blocks_cancelled_overwrite(fake_db):
+    """A late pipeline write must not overwrite a CANCELLED row."""
+    fake_db.rows["social_import_jobs"] = [_job_row(status=SocialImportJobStatus.CANCELLED.value)]
+
+    updated = await SocialImportJobStore.set_job_status(
+        fake_db,
+        job_id=JOB_ID,
+        user_id=USER_ID,
+        status=SocialImportJobStatus.PROCESSING,
+        exclude_statuses=TERMINAL_JOB_STATUSES,
+    )
+
+    assert updated is None
+    assert fake_db.rows["social_import_jobs"][0]["status"] == SocialImportJobStatus.CANCELLED.value
 
 
 @pytest.mark.asyncio

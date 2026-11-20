@@ -84,4 +84,17 @@ describe('photoshoot store step transitions', () => {
 
     expect(usePhotoshootStore.getState().currentStep).toBe('upload')
   })
+
+  it('keeps a run that completed during cancel on the results step', async () => {
+    usePhotoshootStore.setState({ currentStep: 'generating', isGenerating: true, jobId: 'job-1' })
+    mocks.cancelPhotoshootJob.mockImplementationOnce(async () => {
+      // The run finishes while the cancel request is in flight.
+      usePhotoshootStore.setState({ isGenerating: false, currentStep: 'results' })
+    })
+
+    await usePhotoshootStore.getState().cancelGeneration()
+
+    expect(usePhotoshootStore.getState().currentStep).toBe('results')
+    expect(usePhotoshootStore.getState().isGenerating).toBe(false)
+  })
 })

@@ -671,8 +671,10 @@ export function useBatchExtraction(): UseBatchExtractionReturn {
               generationTotalItems: data.total_items,
               // Mark items as generating, preserving terminal statuses
               // (deleted / generated / failed) so SSE replay does not revive them.
+              // Only detected items move to generating. Generated, failed, and
+              // deleted items keep their status, so no rejected move is logged.
               allDetectedItems: prev.allDetectedItems.map((item) =>
-                withItemStatus(item, 'generating')
+                item.status === 'detected' ? withItemStatus(item, 'generating') : item
               ),
             };
           });

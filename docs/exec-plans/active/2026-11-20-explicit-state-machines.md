@@ -1,7 +1,7 @@
 # Explicit state machines: fix defects and formalize flows
 
 Status: implemented, pending review. Date: 2026-11-20.
-Spec: `~/.factory/specs/2026-11-20-explicit-state-machines-fix-defects-and-formalize-flows.md`
+Spec: the external spec is not in this repo. The Goal, Workstreams, and Decisions sections below hold the decisions that matter.
 
 ## Goal
 
@@ -17,7 +17,7 @@ Make each implicit state machine explicit: one typed state, one transition table
 
 | # | Flow | Where | Result |
 |---|------|-------|--------|
-| W1 | Batch extraction, web | `frontend/src/stores/batchExtractionMachine.ts`, `useBatchExtraction.ts` | One step type (`BatchExtractionStep`). Step, image, and item transitions go through one table. Stale events cannot move a step or item backward. |
+| W1 | Batch extraction, web | `frontend/src/stores/batchExtractionMachine.ts`, `useBatchExtraction.ts` | One step type (`BatchExtractionStep`). Three transition tables (step, image, item) in one module, `batchExtractionMachine.ts`, each with a `canTransition*` check: `canTransitionStep`, `canTransitionImageStatus`, `canTransitionItemStatus`. Stale events cannot move a step or item backward. |
 | W2 | Photoshoot, web + Flutter + backend | `frontend/src/stores/photoshootMachine.ts`, `flutter/.../photoshoot_machine.dart` | Same step table on both clients. A failed start stays on the generating step, where the error shows. Backend terminal guard covered by new tests. |
 | W3 | Try-on, web + Flutter | `frontend/src/pages/try-on/tryOnMachine.ts`, `useStateMachine.ts`, `tryon_provider.dart` | The mirror effect that copied the store flag into local state is gone. The store flag is read once at mount and forwarded through a subscription. Flutter `generating` bool replaced by an enum status. |
 | W4 | Extraction job tracker, Flutter | `extraction_jobs_transitions.dart`, `extraction_jobs_provider.dart` | Unknown saved status restores as failed, not running. Terminal jobs never revert. Cancel after completion is a no-op. |
@@ -87,6 +87,9 @@ Legal edges as listed in `socialImportMachine.ts`. `completed`, `cancelled`, and
 
 ## Verification (run on the final tree)
 
+PR review fixes to this plan were applied in a follow-up commit. The results below are from the implementation commit. They were not re-run for the follow-up.
+
+
 | Check | Result |
 |-------|--------|
 | Frontend lint (`npm run lint`) | exit 0 |
@@ -116,9 +119,12 @@ Re-read the diffs and the externally changed social import files. Findings:
 
 ## Follow-ups (need approval)
 
-1. **Cancel response shape.** On a terminal social import job, `POST /social-import/jobs/{job_id}/cancel` still returns `"status": "cancelled"` with HTTP 200. The DB row is unchanged. Decide whether to return the real status.
+1. **Cancel response shape.** On a terminal social import job, `POST /social-import/jobs/{job_id}/cancel` still returns `"status": "cancelled"` with HTTP 200. The DB row is unchanged. Decide whether to return the real status. <!-- UPDATE-AFTER-BACKEND-DECISION -->
 2. **Retry on unreadable failed jobs.** `extraction_jobs_page.dart:147` shows Retry for failed single jobs. Not verified whether `_open` can recover a job restored from an unknown status.
-3. **Untraced flows.** Defects found by research, with file:line evidence, in W6 and W6b. Highest value: gift claim matches error text in English (`GiftClaimPage.tsx:141`), and a double-claim window before the button disables (`:124-127`). Subscription: Google Play collapses grace and on-hold into `active` (`google_play_service.py:345-354`). Onboarding and calendar are not fully read.
+3. **Untraced flows (research only, fix not yet approved).** These defects come from research. Onboarding and calendar are not fully read.
+   - **Gift claim, English error-text match.** `frontend/src/pages/gifts/GiftClaimPage.tsx:141`: `message.includes('already been claimed') || message.includes('expired')` decides the state from English server text. A localized or changed message breaks the branch.
+   - **Gift claim, double-claim window.** `frontend/src/pages/gifts/GiftClaimPage.tsx:124-127`: `submitClaim` checks `canClaim` from the last render, then sets `isClaiming` at line 127. Two clicks before the re-render can both pass the check. The button disables at line 313 only after the re-render.
+   - **Google Play status mapping.** `backend/app/services/google_play_service.py:345-354`: `subscription_to_entitlement` sets `active` when `cancelReason` is 0, 1, or 3 (line 350) and when `paymentState` is not 0 (line 354). It sets `past_due` when `paymentState` is 0 (line 352). Grace and on-hold are not separate states here. RTDN types 5 and 6 are named at lines 51-52 but not used in this mapping. Whether grace and on-hold map to `active` is not verified against Play's payment-state values.
 4. **Docs.** Add the tables above to `docs/FRONTEND.md` and `docs/FLUTTER.md`.
 5. **Label and wording.** Flutter's failed-state Back button says "Back". Web says "Back to options". Needs a new l10n key.
 6. **IndexNow on every build.** `frontend/package.json` `postbuild` submits URLs on each build. Decide whether to keep it.

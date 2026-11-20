@@ -16,7 +16,8 @@
 ///   results    -> upload       start over
 ///
 /// A failed start or a failed job stays on generating, with the error shown
-/// there, so the user can retry or go back to options.
+/// there, so the user can retry or go back to options. The exception is a
+/// plan-limit 429 on start: it goes to configure instead (referral dialog).
 enum PhotoshootStep { upload, configure, generating, results }
 
 bool canTransition(
@@ -33,7 +34,7 @@ bool canTransition(
       if (to == PhotoshootStep.generating) return !running;
       return false;
     case PhotoshootStep.generating:
-      if (to == PhotoshootStep.results) return true;
+      if (to == PhotoshootStep.results) return !running;
       if (to == PhotoshootStep.generating) return !running;
       if (to == PhotoshootStep.configure) return !running || cancel;
       return false;

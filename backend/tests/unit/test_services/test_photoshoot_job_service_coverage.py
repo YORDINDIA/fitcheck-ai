@@ -299,6 +299,48 @@ async def test_cancel_job_adopts_external_cancelled_when_cas_loses():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "terminal",
+    [
+        PhotoshootJobStatus.COMPLETE,
+        PhotoshootJobStatus.FAILED,
+        PhotoshootJobStatus.CANCELLED,
+    ],
+)
+async def test_cancel_job_terminal_never_reaches_durable_cas(terminal):
+    """A terminal job returns before the durable CAS, so no write is attempted."""
+    job = await _make_job()
+    job.persistence_db = Mock()
+    job.status = terminal
+    transition = AsyncMock(return_value=True)
+
+    with patch.object(photoshoot_job_service._store, "transition", new=transition):
+        result = await PhotoshootJobService.cancel_job(job.job_id, USER_ID)
+
+    assert result is False
+    transition.assert_not_awaited()
+    assert job.cancelled is False
+    assert job.status is terminal
+
+
+@pytest.mark.asyncio
+async def test_cancel_job_persists_cancelled_through_cas():
+    job = await _make_job()
+    job.persistence_db = Mock()
+    job.status = PhotoshootJobStatus.PROCESSING
+    transition = AsyncMock(return_value=True)
+
+    with patch.object(photoshoot_job_service._store, "transition", new=transition):
+        result = await PhotoshootJobService.cancel_job(job.job_id, USER_ID)
+
+    assert result is True
+    transition.assert_awaited_once()
+    assert transition.await_args.kwargs["status"] is PhotoshootJobStatus.CANCELLED
+    assert job.cancelled is True
+    assert job.status is PhotoshootJobStatus.CANCELLED
+
+
+@pytest.mark.asyncio
 async def test_update_status_missing_job_is_noop():
     await PhotoshootJobService.update_status("nope", PhotoshootJobStatus.FAILED)
 

@@ -312,8 +312,9 @@ class TryOnNotifier extends Notifier<TryOnState> {
     // Third-party AI consent (Apple 5.1.2(i)) before any image is read.
     if (!await _aiConsent(ref)) return;
     if (!ref.mounted) return;
-    // Re-check after the consent await: a second call may have started meanwhile.
-    if (!_allows(TryOnEvent.start)) return;
+    // Re-check after the consent await. A second call may have started, or
+    // the garment may have changed: the captured garment must still be current.
+    if (!_allows(TryOnEvent.start) || state.garment != garment) return;
     _advance(TryOnEvent.start);
     var outcome = TryOnEvent.fail;
     try {

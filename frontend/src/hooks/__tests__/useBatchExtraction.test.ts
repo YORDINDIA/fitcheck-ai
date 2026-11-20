@@ -20,6 +20,7 @@ vi.mock('@/api/batch', () => ({
 }))
 
 import useBatchExtraction from '../useBatchExtraction'
+import { logger } from '@/lib/logger'
 import { resetBatchExtractionStore, useBatchExtractionStore } from '@/stores/batchExtractionStore'
 
 const JOB = 'job-1'
@@ -156,6 +157,20 @@ describe('useBatchExtraction step and replay guards', () => {
     expect(state.jobId).toBeNull()
     expect(state.allDetectedItems).toEqual([])
     expect(state.images).toEqual([])
+  })
+
+  it('a replayed generation_started leaves a generated item alone without a rejected-move warning', () => {
+    imageExtractionComplete()
+    generationStarted()
+    itemGenerationComplete()
+    expect(itemStatus()).toBe('generated')
+    const warn = vi.spyOn(logger, 'warn')
+
+    generationStarted()
+
+    expect(itemStatus()).toBe('generated')
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Batch item status move rejected'))
+    warn.mockRestore()
   })
 
   it('reset() (save complete path) returns the store to the select step', () => {

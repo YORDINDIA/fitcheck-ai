@@ -136,7 +136,7 @@ async def test_try_resume_rate_limited_job_when_limits_reset(monkeypatch):
     async def fake_check_rate_limit(user_id, operation_type, db, count=1):  # noqa: ANN001
         return {"allowed": True, "remaining": 100, "limit": 100, "current_count": 0}
 
-    async def fake_update_job(db, *, job_id, user_id, updates):  # noqa: ANN001
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):  # noqa: ANN001
         update_calls.append({"job_id": job_id, "user_id": user_id, "updates": dict(updates)})
         return {"id": job_id, **updates}
 

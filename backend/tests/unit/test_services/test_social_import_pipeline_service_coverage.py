@@ -115,7 +115,7 @@ async def test_discover_all_photos_handles_malformed_iteration_count(monkeypatch
     async def fake_discover(normalized_url, platform, auth_session, cursor):
         return make_discovery_result(exhausted=True)
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
         return {"id": job_id}
 
@@ -163,7 +163,7 @@ async def test_discover_all_photos_stops_at_iteration_limit_with_no_inserts(monk
             exhausted=False,
         )
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
         return {"id": job_id}
 
@@ -215,7 +215,7 @@ async def test_discover_all_photos_retry_callback_logs_warning(monkeypatch):
             )
         return make_discovery_result(exhausted=True)
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
         return {"id": job_id}
 
@@ -271,7 +271,7 @@ async def test_discover_all_photos_auth_persist_failure_with_cursor(monkeypatch)
     async def fake_store_scraper_session(*args, **kwargs):
         raise RuntimeError("session store down")
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
         return {"id": job_id}
 
@@ -332,7 +332,7 @@ async def test_discover_all_photos_truncates_to_max_photo_cap(monkeypatch):
         added.append((start_ordinal, [p["id"] for p in photos]))
         return [{"id": p["id"]} for p in photos]
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
         return {"id": job_id}
 
@@ -373,7 +373,7 @@ async def test_discover_all_photos_breaks_when_no_next_cursor(monkeypatch):
         # Not exhausted but no cursor: the loop must still stop.
         return make_discovery_result(exhausted=False, next_cursor=None)
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
         return {"id": job_id}
 

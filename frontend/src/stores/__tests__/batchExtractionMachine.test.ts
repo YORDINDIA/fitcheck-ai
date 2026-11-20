@@ -72,6 +72,13 @@ describe('batch step transitions', () => {
     }
   })
 
+  it('canTransitionStep and transitionStep agree on same-step moves', () => {
+    for (const step of STEPS) {
+      expect(canTransitionStep(step, step)).toBe(true)
+      expect(transitionStep(step, step).accepted).toBe(canTransitionStep(step, step))
+    }
+  })
+
   it('rejects every other move and keeps the current step', () => {
     for (const from of STEPS) {
       for (const to of STEPS) {
@@ -114,6 +121,13 @@ describe('batch image status transitions', () => {
     }
   })
 
+  it('canTransitionImageStatus and transitionImageStatus agree on same-status moves', () => {
+    for (const status of IMAGE_STATUSES) {
+      expect(canTransitionImageStatus(status, status)).toBe(true)
+      expect(transitionImageStatus(status, status).accepted).toBe(canTransitionImageStatus(status, status))
+    }
+  })
+
   it('treats completed and failed as terminal', () => {
     expect(transitionImageStatus('completed', 'extracting').accepted).toBe(false)
     expect(transitionImageStatus('failed', 'completed').accepted).toBe(false)
@@ -134,6 +148,13 @@ describe('detected item status transitions', () => {
         expect(canTransitionItemStatus(from, to), key(from, to)).toBe(false)
         expect(transitionItemStatus(from, to), key(from, to)).toEqual({ next: from, accepted: false })
       }
+    }
+  })
+
+  it('canTransitionItemStatus and transitionItemStatus agree on same-status moves', () => {
+    for (const status of ITEM_STATUSES) {
+      expect(canTransitionItemStatus(status, status)).toBe(true)
+      expect(transitionItemStatus(status, status).accepted).toBe(canTransitionItemStatus(status, status))
     }
   })
 

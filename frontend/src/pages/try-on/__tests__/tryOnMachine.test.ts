@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import {
   AVATAR_INITIAL,
-  TRY_ON_STEPS,
   createTryOnMachine,
   transitionAvatar,
   transitionTryOn,
   type AvatarEvent,
   type TryOnEvent,
   type TryOnMachineState,
+  type TryOnStep,
 } from '../tryOnMachine'
 
 const RESULT = { image_url: 'https://cdn.test/r.webp' } as never
@@ -15,6 +15,10 @@ const RESULT = { image_url: 'https://cdn.test/r.webp' } as never
 const upload: TryOnMachineState = createTryOnMachine(false)
 const options: TryOnMachineState = transitionTryOn(upload, { type: 'PICK_GARMENT' })
 const generating: TryOnMachineState = transitionTryOn(options, { type: 'START' })
+const resultWithGarment: TryOnMachineState = transitionTryOn(generating, { type: 'SUCCESS', result: RESULT })
+// A remounted page restores generating with no garment, then lands a result.
+const restoredGenerating: TryOnMachineState = createTryOnMachine(true)
+const restoredResult: TryOnMachineState = transitionTryOn(restoredGenerating, { type: 'SUCCESS', result: RESULT })
 
 describe('try-on step machine', () => {
   it('PICK_GARMENT moves upload to options and records a garment', () => {
@@ -63,20 +67,19 @@ describe('try-on step machine', () => {
   })
 
   it('CANCEL from generating on a remounted page (no garment) returns to upload', () => {
-    const restored = createTryOnMachine(true)
-    expect(restored.step).toBe('generating')
-    expect(restored.hasGarment).toBe(false)
-    expect(transitionTryOn(restored, { type: 'CANCEL' }).step).toBe('upload')
+    expect(restoredGenerating.step).toBe('generating')
+    expect(restoredGenerating.hasGarment).toBe(false)
+    expect(transitionTryOn(restoredGenerating, { type: 'CANCEL' }).step).toBe('upload')
   })
 
   it('FAIL on a remounted page (no garment) returns to upload, keeping the message', () => {
-    const failed = transitionTryOn(createTryOnMachine(true), { type: 'FAIL', message: 'boom' })
+    const failed = transitionTryOn(restoredGenerating, { type: 'FAIL', message: 'boom' })
     expect(failed.step).toBe('upload')
     expect(failed.error).toBe('boom')
   })
 
   it('RESET from any step returns to upload and clears the garment and result', () => {
-    for (const s of [options, generating, transitionTryOn(generating, { type: 'SUCCESS', result: RESULT })]) {
+    for (const s of [options, generating, resultWithGarment]) {
       const reset = transitionTryOn(s, { type: 'RESET' })
       expect(reset.step).toBe('upload')
       expect(reset.hasGarment).toBe(false)
@@ -92,9 +95,22 @@ describe('try-on step machine', () => {
     expect(transitionTryOn(upload, { type: 'STEP_BACK', to: 'options' })).toBe(upload)
   })
 
+  it('STEP_BACK from result to options with a garment goes to options', () => {
+    const back = transitionTryOn(resultWithGarment, { type: 'STEP_BACK', to: 'options' })
+    expect(back.step).toBe('options')
+    expect(back.hasGarment).toBe(true)
+    expect(back.result).toBeNull()
+  })
+
+  it('STEP_BACK from result to options with no garment goes to upload', () => {
+    const back = transitionTryOn(restoredResult, { type: 'STEP_BACK', to: 'options' })
+    expect(back.step).toBe('upload')
+    expect(back.hasGarment).toBe(false)
+    expect(back.result).toBeNull()
+  })
+
   it('START from result (regenerate) moves to generating', () => {
-    const done = transitionTryOn(generating, { type: 'SUCCESS', result: RESULT })
-    expect(transitionTryOn(done, { type: 'START' }).step).toBe('generating')
+    expect(transitionTryOn(resultWithGarment, { type: 'START' }).step).toBe('generating')
   })
 
   it('SUCCESS, FAIL and CANCEL are ignored outside generating', () => {
@@ -104,28 +120,76 @@ describe('try-on step machine', () => {
       expect(transitionTryOn(s, { type: 'CANCEL' })).toBe(s)
     }
   })
+})
 
-  it('every step/event pair either transitions or returns the same reference', () => {
-    const events: TryOnEvent[] = [
-      { type: 'PICK_GARMENT' },
-      { type: 'START' },
-      { type: 'SUCCESS', result: RESULT },
-      { type: 'FAIL', message: 'x' },
-      { type: 'CANCEL' },
-      { type: 'RESET' },
-      { type: 'STEP_BACK', to: 'upload' },
-    ]
-    const starts: TryOnMachineState[] = TRY_ON_STEPS.map((step) => ({
-      step,
-      hasGarment: step !== 'upload',
-      result: step === 'result' ? (RESULT as never) : null,
-      error: null,
-    }))
-    for (const s of starts) {
-      for (const e of events) {
-        const next = transitionTryOn(s, e)
-        expect(TRY_ON_STEPS).toContain(next.step)
-      }
+describe('try-on step/event table', () => {
+  // `to` is the expected step after the event, or 'same' when the event is
+  // rejected and the machine must return the exact input reference.
+  type Case = { name: string; from: TryOnMachineState; event: TryOnEvent; to: TryOnStep | 'same' }
+
+  const PICK: TryOnEvent = { type: 'PICK_GARMENT' }
+  const START: TryOnEvent = { type: 'START' }
+  const SUCCESS: TryOnEvent = { type: 'SUCCESS', result: RESULT }
+  const FAIL: TryOnEvent = { type: 'FAIL', message: 'x' }
+  const CANCEL: TryOnEvent = { type: 'CANCEL' }
+  const RESET: TryOnEvent = { type: 'RESET' }
+  const BACK_UPLOAD: TryOnEvent = { type: 'STEP_BACK', to: 'upload' }
+  const BACK_OPTIONS: TryOnEvent = { type: 'STEP_BACK', to: 'options' }
+
+  const cases: Case[] = [
+    // upload (no garment)
+    { name: 'upload + PICK_GARMENT', from: upload, event: PICK, to: 'options' },
+    { name: 'upload + START', from: upload, event: START, to: 'same' },
+    { name: 'upload + SUCCESS', from: upload, event: SUCCESS, to: 'same' },
+    { name: 'upload + FAIL', from: upload, event: FAIL, to: 'same' },
+    { name: 'upload + CANCEL', from: upload, event: CANCEL, to: 'same' },
+    { name: 'upload + RESET', from: upload, event: RESET, to: 'upload' },
+    { name: 'upload + STEP_BACK upload', from: upload, event: BACK_UPLOAD, to: 'same' },
+    { name: 'upload + STEP_BACK options', from: upload, event: BACK_OPTIONS, to: 'same' },
+    // options (garment held)
+    { name: 'options + PICK_GARMENT', from: options, event: PICK, to: 'same' },
+    { name: 'options + START', from: options, event: START, to: 'generating' },
+    { name: 'options + SUCCESS', from: options, event: SUCCESS, to: 'same' },
+    { name: 'options + FAIL', from: options, event: FAIL, to: 'same' },
+    { name: 'options + CANCEL', from: options, event: CANCEL, to: 'same' },
+    { name: 'options + RESET', from: options, event: RESET, to: 'upload' },
+    { name: 'options + STEP_BACK upload', from: options, event: BACK_UPLOAD, to: 'upload' },
+    { name: 'options + STEP_BACK options', from: options, event: BACK_OPTIONS, to: 'same' },
+    // generating (garment held)
+    { name: 'generating + PICK_GARMENT', from: generating, event: PICK, to: 'same' },
+    { name: 'generating + START', from: generating, event: START, to: 'same' },
+    { name: 'generating + SUCCESS', from: generating, event: SUCCESS, to: 'result' },
+    { name: 'generating + FAIL', from: generating, event: FAIL, to: 'options' },
+    { name: 'generating + CANCEL', from: generating, event: CANCEL, to: 'options' },
+    { name: 'generating + RESET', from: generating, event: RESET, to: 'upload' },
+    { name: 'generating + STEP_BACK upload', from: generating, event: BACK_UPLOAD, to: 'same' },
+    { name: 'generating + STEP_BACK options', from: generating, event: BACK_OPTIONS, to: 'same' },
+    // generating after remount (no garment)
+    { name: 'remounted generating + START', from: restoredGenerating, event: START, to: 'same' },
+    { name: 'remounted generating + SUCCESS', from: restoredGenerating, event: SUCCESS, to: 'result' },
+    { name: 'remounted generating + FAIL', from: restoredGenerating, event: FAIL, to: 'upload' },
+    { name: 'remounted generating + CANCEL', from: restoredGenerating, event: CANCEL, to: 'upload' },
+    // result (garment held)
+    { name: 'result + PICK_GARMENT', from: resultWithGarment, event: PICK, to: 'same' },
+    { name: 'result + START', from: resultWithGarment, event: START, to: 'generating' },
+    { name: 'result + SUCCESS', from: resultWithGarment, event: SUCCESS, to: 'same' },
+    { name: 'result + FAIL', from: resultWithGarment, event: FAIL, to: 'same' },
+    { name: 'result + CANCEL', from: resultWithGarment, event: CANCEL, to: 'same' },
+    { name: 'result + RESET', from: resultWithGarment, event: RESET, to: 'upload' },
+    { name: 'result + STEP_BACK upload', from: resultWithGarment, event: BACK_UPLOAD, to: 'upload' },
+    { name: 'result + STEP_BACK options', from: resultWithGarment, event: BACK_OPTIONS, to: 'options' },
+    // result after remount (no garment)
+    { name: 'remounted result + START', from: restoredResult, event: START, to: 'same' },
+    { name: 'remounted result + STEP_BACK upload', from: restoredResult, event: BACK_UPLOAD, to: 'upload' },
+    { name: 'remounted result + STEP_BACK options', from: restoredResult, event: BACK_OPTIONS, to: 'upload' },
+  ]
+
+  it.each(cases)('$name', ({ from, event, to }) => {
+    const next = transitionTryOn(from, event)
+    if (to === 'same') {
+      expect(next).toBe(from)
+    } else {
+      expect(next.step).toBe(to)
     }
   })
 })

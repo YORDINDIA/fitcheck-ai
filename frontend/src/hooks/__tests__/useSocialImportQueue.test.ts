@@ -27,7 +27,7 @@ vi.mock('@/stores/upgradePromptStore', () => ({
   useUpgradePromptStore: { getState: () => ({ open: mocks.openUpgradePrompt }) },
 }))
 
-import { cancelSocialImportJob } from '@/api/socialImport'
+import { cancelSocialImportJob, startSocialImportJob } from '@/api/socialImport'
 import { useSocialImportQueue } from '../useSocialImportQueue'
 
 const JOB_KEY = 'fitcheck.socialImport.activeJobId'
@@ -142,13 +142,17 @@ describe('useSocialImportQueue', () => {
     await waitFor(() => expect(window.open).toHaveBeenCalled())
     postOAuthMessage({ status: 'success', message: 'Account connected. Import resumed.' })
 
-    await waitFor(() => expect(result.current.state.status).toBe('processing'))
-    expect(result.current.state.authRequired).toBe(false)
-
+    // Wait for the refresh request, then let the server answer before asserting.
+    await waitFor(() => expect(mocks.getSocialImportStatus).toHaveBeenCalledTimes(2))
     await act(async () => {
       resolveRefresh(makeJob('processing'))
       await flow
     })
+
+    expect(result.current.state.status).toBe('processing')
+    expect(result.current.state.authRequired).toBe(false)
+    // Only applyJobData writes job.auth_required, so this proves the refresh landed.
+    expect(result.current.state.job?.auth_required).toBe(false)
   })
 
   it('does not change status when the OAuth callback reports an error', async () => {
@@ -198,5 +202,48 @@ describe('useSocialImportQueue', () => {
     expect(cancelSocialImportJob).toHaveBeenCalledWith('job-1')
     expect(result.current.state.status).toBe('completed')
     expect(result.current.state.job?.status).toBe('completed')
+  })
+
+  it('refreshes and shows the real status when cancel returns 409 for a finished job', async () => {
+    const { result } = await mountWithJob('processing')
+    vi.mocked(cancelSocialImportJob).mockRejectedValueOnce({ status: 409 } as never)
+    mocks.getSocialImportStatus.mockResolvedValueOnce(makeJob('completed'))
+
+    await act(async () => { await result.current.cancelJob() })
+    await flush()
+
+    expect(result.current.state.status).toBe('completed')
+    expect(result.current.state.job?.status).toBe('completed')
+  })
+
+  it('keeps the terminal payload when a stale snapshot arrives after completion', async () => {
+    const { result } = await mountWithJob('awaiting_auth')
+
+    mocks.getSocialImportStatus.mockResolvedValueOnce(makeJob('completed'))
+    await act(async () => { sseHandler!({ type: 'job_completed', data: {} }) })
+    await waitFor(() => expect(result.current.state.status).toBe('completed'))
+
+    // Out-of-order snapshot from before completion still reports auth required.
+    mocks.getSocialImportStatus.mockResolvedValueOnce(makeJob('awaiting_auth'))
+    await act(async () => { sseHandler!({ type: 'job_updated', data: {} }) })
+    await flush()
+
+    expect(result.current.state.status).toBe('completed')
+    expect(result.current.state.authRequired).toBe(false)
+    expect(result.current.state.job?.auth_required).toBe(false)
+  })
+
+  it('does not carry a terminal status from job A into a new job B', async () => {
+    const { result } = await mountWithJob('completed')
+    vi.mocked(startSocialImportJob).mockResolvedValueOnce({ job_id: 'job-2' } as never)
+    mocks.getSocialImportStatus.mockResolvedValueOnce(makeJob('created', { id: 'job-2' }))
+
+    await act(async () => { await result.current.startJob('https://instagram.com/new') })
+    await flush()
+
+    expect(result.current.state.jobId).toBe('job-2')
+    expect(result.current.state.job?.id).toBe('job-2')
+    expect(result.current.state.status).toBe('created')
+    expect(window.localStorage.getItem(JOB_KEY)).toBe('job-2')
   })
 })

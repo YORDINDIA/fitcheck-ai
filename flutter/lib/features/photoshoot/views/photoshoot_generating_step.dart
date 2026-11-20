@@ -3,10 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/i18n/l10n.dart';
+import '../../../core/utils/error_handler.dart';
 import '../../../core/widgets/app_ui.dart';
 import '../models/photoshoot_models.dart';
 import '../providers/photoshoot_provider.dart';
 import 'photoshoot_image.dart';
+import 'referral_limit_dialog.dart';
 
 /// Step 3: live progress. Finished images fill their slots as they arrive;
 /// pending slots are skeletons. The bar follows real completed counts.
@@ -44,7 +46,7 @@ class PhotoshootGeneratingStep extends ConsumerWidget {
                   Expanded(
                     child: Text(
                       failedRun
-                          ? context.l10n.photoshootGenerationFailedBody
+                          ? ErrorHandler.extractMessage(s.error)
                           : s.status.isEmpty
                           ? context.l10n.photoshootStarting
                           : s.status,
@@ -107,13 +109,21 @@ class PhotoshootGeneratingStep extends ConsumerWidget {
         ),
         const SizedBox(height: AppConstants.spacing16),
         if (failedRun)
-          Center(
-            child: TextButton(
-              onPressed: () =>
-                  ref.read(photoshootProvider.notifier).backToOptions(),
-              style: TextButton.styleFrom(minimumSize: const Size(120, 48)),
-              child: Text(context.l10n.actionBack),
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              TextButton(
+                onPressed: () =>
+                    ref.read(photoshootProvider.notifier).backToOptions(),
+                style: TextButton.styleFrom(minimumSize: const Size(120, 48)),
+                child: Text(context.l10n.actionBack),
+              ),
+              TextButton(
+                onPressed: () => startPhotoshoot(context, ref),
+                style: TextButton.styleFrom(minimumSize: const Size(120, 48)),
+                child: const Text('Retry'),
+              ),
+            ],
           )
         else
         Center(

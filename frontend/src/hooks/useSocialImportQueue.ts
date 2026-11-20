@@ -96,7 +96,17 @@ export function useSocialImportQueue(): UseSocialImportQueue {
   const applyJobData = useCallback((incoming: SocialImportJobData) => {
     // Terminal states are sticky: a late snapshot cannot revive a finished job.
     const status = resolveSocialImportStatus(statusRef.current, incoming.status)
-    const job: SocialImportJobData = status === incoming.status ? incoming : { ...incoming, status }
+    if (status !== incoming.status) {
+      // A terminal status beat a stale snapshot. Keep the last terminal payload:
+      // stale fields (auth_required, review photo) must not drive the UI.
+      setState((prev) =>
+        prev.status === status
+          ? prev
+          : { ...prev, status, job: prev.job ? { ...prev.job, status } : prev.job }
+      )
+      return
+    }
+    const job: SocialImportJobData = incoming
     statusRef.current = status
     const terminal = isTerminalSocialImportStatus(status)
     setActiveJobId(terminal ? null : job.id)
@@ -229,6 +239,9 @@ export function useSocialImportQueue(): UseSocialImportQueue {
         const started = await startSocialImportJob(sourceUrl)
         const jobId = started.job_id
         setActiveJobId(jobId)
+        // A new job has no status yet. Drop the previous job's status so a
+        // terminal status cannot pin the new job.
+        statusRef.current = null
         const job = await getSocialImportStatus(jobId)
         setState((prev) => ({
           ...prev,
@@ -411,7 +424,12 @@ export function useSocialImportQueue(): UseSocialImportQueue {
 
   const cancelJob = useCallback(async () => {
     if (!state.jobId) return
-    await cancelSocialImportJob(state.jobId)
+    try {
+      await cancelSocialImportJob(state.jobId)
+    } catch (error) {
+      // 409: the job finished before the cancel landed. The refresh below shows its real status.
+      if ((error as { status?: number } | undefined)?.status !== 409) throw error
+    }
     await refreshStatus()
     setActiveJobId(null)
     disconnect()

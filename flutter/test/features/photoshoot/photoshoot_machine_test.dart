@@ -44,6 +44,17 @@ void main() {
       );
     });
 
+    test('configure -> generating is rejected while running', () {
+      expect(
+        canTransition(
+          PhotoshootStep.configure,
+          PhotoshootStep.generating,
+          running: true,
+        ),
+        isFalse,
+      );
+    });
+
     test('back-step to configure while running is rejected', () {
       expect(
         canTransition(
@@ -86,12 +97,23 @@ void main() {
       );
     });
 
-    test('completion (generating -> results) is allowed while running', () {
+    test('completion (generating -> results) is rejected while running', () {
       expect(
         canTransition(
           PhotoshootStep.generating,
           PhotoshootStep.results,
           running: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('completion (generating -> results) is allowed once the run ends', () {
+      expect(
+        canTransition(
+          PhotoshootStep.generating,
+          PhotoshootStep.results,
+          running: false,
         ),
         isTrue,
       );
