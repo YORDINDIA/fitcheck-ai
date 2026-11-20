@@ -17,6 +17,7 @@ from typing import Any, Dict, List
 
 from google import genai
 from google.genai import types
+from supabase import Client
 from app.core.config import settings
 from app.core.logging_config import get_context_logger
 from app.core.exceptions import AIServiceError
@@ -507,3 +508,56 @@ class AIService:
 
     # Smart matching services
     find_matching_items = SmartMatcher.find_matching_items
+
+
+# ============================================================================
+# AI ROUTE QUERIES (moved from app/api/v1/ai.py)
+# ============================================================================
+#
+# Each function holds one Supabase chain that used to sit inline in a route.
+# Chains, filters, wrappers, and their order are unchanged. Routes keep the
+# request parsing, quota checks, provider calls, and response shaping.
+
+
+async def fetch_extraction_avatar_row(db: Client, user_id: str):
+    """Read avatar_url for the extraction avatar helper (ai.py _fetch_user_avatar_base64)."""
+    return await asyncio.to_thread(db.table("users").select("avatar_url").eq("id", user_id).maybe_single().execute)
+
+
+async def fetch_outfit_user_avatar_and_body_profile(db: Client, user_id: str):
+    """Read avatar_url and body_profile_id for generate_outfit when include_user_face is set."""
+    return await asyncio.to_thread(
+        db.table("users")
+        .select("avatar_url, body_profile_id")
+        .eq("id", user_id)
+        .maybe_single()
+        .execute
+    )
+
+
+async def fetch_outfit_user_body_profile_id(db: Client, user_id: str):
+    """Read avatar_url and body_profile_id for generate_outfit when use_body_profile is set and the first read did not run."""
+    return await asyncio.to_thread(
+        db.table("users")
+        .select("avatar_url, body_profile_id")
+        .eq("id", user_id)
+        .maybe_single()
+        .execute
+    )
+
+
+async def fetch_outfit_body_profile(db: Client, user_id: str, body_profile_id: str):
+    """Read body measurements for generate_outfit, scoped to the caller's user_id (A3-02)."""
+    return await asyncio.to_thread(
+        db.table("body_profiles")
+        .select("height_cm, weight_kg, body_shape, skin_tone")
+        .eq("id", body_profile_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute
+    )
+
+
+async def fetch_try_on_avatar_row(db: Client, user_id: str):
+    """Read avatar_url for generate_try_on (ai.py step 1)."""
+    return await asyncio.to_thread(db.table("users").select("avatar_url").eq("id", user_id).maybe_single().execute)
