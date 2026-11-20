@@ -1,6 +1,6 @@
 # Frontend
 
-Last updated: 2026-10-26
+Last updated: 2026-11-20
 
 React + TypeScript web app under `frontend/`. Package-local agent entry: `frontend/AGENTS.md` (thin pointer here). UI direction: `docs/DESIGN.md`.
 
@@ -54,7 +54,7 @@ All HTTP goes through `src/api/client.ts`:
 - Auth token injection
 - Refresh on 401 with request queue
 - Global error toasts (`skipToast` to opt out)
-- `getApiError()` for consistent messages
+- `getApiError()` (from `src/lib/errors.ts`) for consistent messages
 
 Domain modules: `src/api/*.ts` (auth, items, outfits, ai, batch, etc.).
 

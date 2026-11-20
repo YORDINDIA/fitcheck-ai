@@ -1,4 +1,5 @@
-import { apiClient, getAccessToken, getApiError } from './client'
+import { apiClient, getAccessToken } from './client'
+import { getApiError } from '@/lib/errors'
 import { API_BASE_URL } from '@/lib/apiBaseUrl'
 import { createSSEConnection, type SSEMessage } from '@/lib/sse'
 import type { SocialImportJobData, SocialImportItem, SocialImportSSEEvent } from '@/types'

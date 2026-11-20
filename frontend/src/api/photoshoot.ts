@@ -2,7 +2,8 @@
  * Photoshoot API functions
  */
 
-import { apiClient, getApiError } from './client';
+import { apiClient } from './client';
+import { getApiError } from '@/lib/errors';
 import { createAuthenticatedSSEConnection } from './batch';
 import { API_BASE_URL } from '@/lib/apiBaseUrl';
 

@@ -5,7 +5,8 @@
  * — the backend's `/api/v1/blog/admin/posts` endpoint is admin-app only.
  */
 
-import { apiClient, getApiError } from './client'
+import { apiClient } from './client'
+import { getApiError } from '@/lib/errors'
 import type {
   ApiEnvelope,
   BlogPost,

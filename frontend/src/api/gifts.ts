@@ -1,4 +1,5 @@
-import { apiClient, getApiError, skipToast } from '@/api/client'
+import { apiClient, skipToast } from '@/api/client'
+import { getApiError } from '@/lib/errors'
 import { downloadBlob } from '@/lib/utils'
 import type { ApiEnvelope } from '@/types'
 

@@ -2,7 +2,8 @@
  * Items API endpoints
  */
 
-import { apiClient, getApiError } from './client';
+import { apiClient } from './client';
+import { getApiError } from '@/lib/errors';
 import { createPromiseQueue } from '@/utils/promiseQueue';
 import type { AxiosRequestConfig } from 'axios';
 import type {

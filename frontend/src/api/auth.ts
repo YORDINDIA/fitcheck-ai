@@ -2,7 +2,8 @@
  * Authentication API endpoints
  */
 
-import { apiClient, getTokens, setTokens, clearTokens, getApiError } from './client';
+import { apiClient, getTokens, setTokens, clearTokens } from './client';
+import { getApiError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
 import { ENDPOINTS } from '@/lib/endpoints';
 import type { AxiosRequestConfig } from 'axios';

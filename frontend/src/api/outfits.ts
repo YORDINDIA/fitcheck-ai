@@ -2,7 +2,8 @@
  * Outfits API endpoints
  */
 
-import { apiClient, getApiError } from './client';
+import { apiClient } from './client';
+import { getApiError } from '@/lib/errors';
 import { UPLOAD_TIMEOUT_MS } from '@/lib/endpoints';
 import type { AxiosRequestConfig } from 'axios';
 import type {
