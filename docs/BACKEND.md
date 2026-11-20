@@ -37,7 +37,7 @@ app/
 
 ## Layers (summary)
 
-- **Routes** (`api/v1/`): HTTP only; use `Depends(get_db)`, `Depends(get_current_user)`.
+- **Routes** (`api/v1/`): HTTP only; use `Depends(get_db)`, `Depends(get_current_user)`. No direct `.table(` calls. Queries live in services, and `scripts/check_architecture.py` fails on them.
 - **Services**: domain logic, AI, storage, jobs.
 - **Models**: request/response contracts.
 - **Core**: settings, JWT, exceptions, middleware.
