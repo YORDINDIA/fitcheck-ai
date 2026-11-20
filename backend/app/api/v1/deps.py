@@ -16,6 +16,7 @@ from app.core.exceptions import AuthenticationError, PermissionDeniedError
 from app.core import user_profile_cache
 from app.utils.datetime_util import utcnow_iso
 from app.utils.db import execute_with_reconnect, maybe_single_data
+from app.services.profile_fields import profile_fields_from_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -156,17 +157,7 @@ async def _provision_profile(token_data: TokenData, db: Client) -> Dict[str, Any
 
         user_metadata = auth_user.user.user_metadata or {}
         email = auth_user.user.email or token_data.email
-        full_name = (
-            user_metadata.get("full_name")
-            or user_metadata.get("name")
-            or ""
-        )[:255]
-        avatar_url = (
-            user_metadata.get("avatar_url")
-            or user_metadata.get("picture")
-        )
-        if avatar_url is not None:
-            avatar_url = avatar_url[:500]
+        full_name, avatar_url = profile_fields_from_metadata(user_metadata)
 
         now = utcnow_iso()
         profile = {

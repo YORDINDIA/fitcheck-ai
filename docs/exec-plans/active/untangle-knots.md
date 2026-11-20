@@ -33,7 +33,7 @@ Knots run worst first. The order is fixed in the table below.
 | # | Knot | Group | Debt | Commit |
 |---|------|-------|------|--------|
 | 1 | Plan limits copied into three apps | A | TD-032 | 2dfed3e |
-| 2 | Outfit generation state in two channels | A | TD-049 | |
+| 2 | Outfit generation state in two channels | A | TD-049 | c6f3f46 |
 | 3 | Profile fields copied twice | A | | |
 | 4 | Routes run database queries directly | A | TD-013, TD-107, TD-112 | |
 | 5 | Storage key shim kept as a workaround | A | | |
@@ -63,6 +63,7 @@ Knots run worst first. The order is fixed in the table below.
 | 2026-11-20 | Knot 1 (plan limits) done. Backend 4416 passed, 4 skipped. Vitest 80 files, 555 tests. Frontend build pass. Flutter analyze clean; test 654 passed, 2 skipped. Commit: `refactor: serve plan limits from /plans`. |
 | 2026-11-20 | Knot 1 commit alone fails the docs freshness check: tracker header 2026-10-26, file last commit 2026-11-20. Knot 2 bumps the header to 2026-11-20. |
 | 2026-11-20 | Knot 2 (outfit generation state) done. Vitest 80 files, 558 tests pass (was 555). Lint pass. Build pass, 42 routes prerendered. Root architecture and docs pass. Commit: `refactor: derive outfit generation state from the job map`. |
+| 2026-11-20 | Knot 3 (profile fields) done. Helper `app/services/profile_fields.py` serves `oauth_sync` and `_provision_profile`. Ruff and architecture pass. Backend pytest 4426 passed, 4 skipped (10 new tests). Three existing `oauth_sync` tests returned a bare Mock for `user_metadata`. Supabase returns a dict, so those fixtures now return `{}`. The insert failure for names over 255 characters is not reproduced. The limit comes from `users.full_name VARCHAR(255)` in migration 001. Commit: `refactor: share first-login profile fields between auth and deps`. |
 
 ## Decision log
 
@@ -77,6 +78,7 @@ Knots run worst first. The order is fixed in the table below.
 | 2026-11-20 | Flutter `analyze`, `test`, and `build_runner` run with the local SDK (3.47.4). | Owner approved. SDK writes stay in the SDK cache. |
 | 2026-11-20 | Prerendered marketing pages keep the constants in `plan-limits.ts`. `docs/generated/plan-limits.json` is checked by a backend test and a vitest test. | Prerender runs at build time and cannot call `/plans`. The snapshot makes drift fail a test. |
 | 2026-11-20 | Knot 2: the `generatingOutfits` map is the only generation record. `isGenerating` and `generationStatus` are removed from `outfitStore`. | TD-049: the two records could disagree. Side effect: a pane job now shows the spinner on its outfit card, which it did not before. |
+| 2026-11-20 | Knot 3: `oauth_sync` now cuts `full_name` to 255 and `avatar_url` to 500, as `_provision_profile` already did. One helper serves both. | One set of limits. `full_name` is `VARCHAR(255)`, so a longer name fails the insert. `avatar_url` is `TEXT`, so the 500 cap is app policy only. A URL cut at 500 characters stops working. |
 
 ## Verification
 

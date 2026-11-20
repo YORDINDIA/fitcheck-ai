@@ -130,6 +130,31 @@ async def test_missing_profile_legacy_pgrst116_still_provisions(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_missing_profile_auto_provision_cuts_long_profile_fields(monkeypatch):
+    """First-login profiles get the same length limits as oauth_sync."""
+    monkeypatch.setattr(
+        deps,
+        "execute_with_reconnect",
+        AsyncMock(return_value=None),
+    )
+    client = Mock()
+    client.auth.admin.get_user_by_id.return_value = Mock(
+        user=Mock(user_metadata={"full_name": "N" * 300, "picture": "p" * 600}, email=None)
+    )
+    monkeypatch.setattr(deps.SupabaseDB, "get_service_client", lambda: client)
+
+    db = Mock()
+    db.table.return_value.upsert.return_value.execute.side_effect = [None, None, None]
+
+    await get_current_user(db=db, token_data=_token())
+
+    upserted = [c.args[0] for c in db.table.return_value.upsert.call_args_list]
+    profile = next(u for u in upserted if "email_verified" in u)
+    assert profile["full_name"] == "N" * 255
+    assert profile["avatar_url"] == "p" * 500
+
+
+@pytest.mark.asyncio
 async def test_missing_profile_auto_provision_survives_preference_failures(monkeypatch):
     monkeypatch.setattr(
         deps,

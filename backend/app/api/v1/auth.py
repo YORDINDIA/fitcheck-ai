@@ -29,6 +29,7 @@ from app.core.ip_rate_limit import auth_rate_limited_operation
 from app.utils.db import execute_with_reconnect, run_sync_with_reconnect
 from app.utils.datetime_util import utcnow_iso
 from app.services.referral_service import ReferralService
+from app.services.profile_fields import profile_fields_from_metadata
 from app.models.subscription import RedeemReferralResponse
 from supabase import Client
 from supabase_auth.errors import AuthApiError
@@ -886,16 +887,10 @@ async def oauth_sync(
                 logger.debug(f"Could not fetch auth user metadata: {e}")
 
             # Determine values (priority: request > auth metadata > defaults)
-            full_name = (
-                (request.full_name if request else None)
-                or user_metadata.get("full_name")
-                or user_metadata.get("name")  # Google OAuth uses "name"
-                or ""
-            )
-            avatar_url = (
-                (request.avatar_url if request else None)
-                or user_metadata.get("avatar_url")
-                or user_metadata.get("picture")  # Google OAuth uses "picture"
+            full_name, avatar_url = profile_fields_from_metadata(
+                user_metadata,
+                full_name=request.full_name if request else None,
+                avatar_url=request.avatar_url if request else None,
             )
 
             # Create user profile
