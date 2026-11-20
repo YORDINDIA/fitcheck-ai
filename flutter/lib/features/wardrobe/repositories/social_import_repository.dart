@@ -13,7 +13,7 @@ class SocialImportRepository {
   Future<SocialImportJobStartResponse> startJob({
     required String sourceUrl,
   }) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         ApiConstants.aiSocialImportJobs,
         data: {'source_url': sourceUrl},
@@ -21,20 +21,16 @@ class SocialImportRepository {
       return SocialImportJobStartResponse.fromJson(
         _extractDataMap(response.data),
       );
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   Future<SocialImportJobData> getStatus(String jobId) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get(
         ApiConstants.aiSocialImportStatus(jobId),
       );
       return SocialImportJobData.fromJson(_extractDataMap(response.data));
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   Stream<SocialImportSSEEvent> subscribeToEvents(
@@ -65,7 +61,7 @@ class SocialImportRepository {
     String jobId, {
     String? mobileRedirectUri,
   }) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         ApiConstants.aiSocialImportOAuthConnect(jobId),
         queryParameters: {
@@ -76,9 +72,7 @@ class SocialImportRepository {
       return SocialImportOAuthConnectResponse.fromJson(
         _extractDataMap(response.data),
       );
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   Future<void> submitScraperLogin(
@@ -88,7 +82,7 @@ class SocialImportRepository {
     String? otpCode,
     String? twoFactorIdentifier,
   }) async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.post(
         ApiConstants.aiSocialImportScraperLogin(jobId),
         data: {
@@ -99,9 +93,7 @@ class SocialImportRepository {
             'two_factor_identifier': twoFactorIdentifier,
         },
       );
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   Future<SocialImportItem> patchItem(
@@ -110,35 +102,29 @@ class SocialImportRepository {
     String itemId,
     Map<String, dynamic> updates,
   ) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.patch(
         ApiConstants.aiSocialImportPatchItem(jobId, photoId, itemId),
         data: updates,
       );
       return SocialImportItem.fromJson(_extractDataMap(response.data));
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   Future<void> approvePhoto(String jobId, String photoId) async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.post(
         ApiConstants.aiSocialImportApprovePhoto(jobId, photoId),
       );
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   Future<void> rejectPhoto(String jobId, String photoId) async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.post(
         ApiConstants.aiSocialImportRejectPhoto(jobId, photoId),
       );
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   Future<void> cancelJob(String jobId) async {

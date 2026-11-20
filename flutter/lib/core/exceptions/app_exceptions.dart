@@ -371,3 +371,13 @@ AppException handleDioException(DioException error) {
       );
   }
 }
+
+/// Runs [request] and converts a [DioException] into an [AppException].
+/// Any other error passes through unchanged.
+Future<T> runDioRequest<T>(Future<T> Function() request) async {
+  try {
+    return await request();
+  } on DioException catch (e) {
+    throw handleDioException(e);
+  }
+}

@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/exceptions/app_exceptions.dart';
 import '../../../core/network/api_client.dart';
@@ -8,20 +7,18 @@ class AiSettingsRepository {
   final ApiClient _apiClient = ApiClient.instance;
 
   Future<AiSettingsModel> getSettings() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get(ApiConstants.aiSettings);
       final data = _extractDataMap(response.data);
       return AiSettingsModel.fromJson(data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   Future<AiSettingsModel> updateSettings({
     String? defaultProvider,
     Map<String, dynamic>? providerConfigs,
   }) async {
-    try {
+    return runDioRequest(() async {
       final payload = <String, dynamic>{};
       if (defaultProvider != null && defaultProvider.isNotEmpty) {
         payload['default_provider'] = defaultProvider;
@@ -35,9 +32,7 @@ class AiSettingsRepository {
       );
       final data = _extractDataMap(response.data);
       return AiSettingsModel.fromJson(data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   Future<AiProviderTestResult> testProvider({
@@ -45,7 +40,7 @@ class AiSettingsRepository {
     required String apiKey,
     required String model,
   }) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.aiSettings}/test',
         data: {
@@ -56,9 +51,7 @@ class AiSettingsRepository {
       );
       final data = _extractDataMap(response.data);
       return AiProviderTestResult.fromJson(data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   Map<String, dynamic> _extractDataMap(dynamic payload) {

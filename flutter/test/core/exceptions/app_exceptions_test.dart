@@ -279,4 +279,30 @@ void main() {
       expect(result.errorCode, 'SERVER_ERROR');
     });
   });
+
+  group('runDioRequest', () {
+    test('returns the request result', () async {
+      final result = await runDioRequest(() async => 42);
+      expect(result, 42);
+    });
+
+    test('maps DioException through handleDioException', () async {
+      final error = DioException(
+        requestOptions: RequestOptions(path: '/test'),
+        type: DioExceptionType.connectionTimeout,
+      );
+      await expectLater(
+        runDioRequest<int>(() async => throw error),
+        throwsA(isA<NetworkException>()),
+      );
+    });
+
+    test('passes other errors through unchanged', () async {
+      final error = StateError('boom');
+      await expectLater(
+        runDioRequest<int>(() async => throw error),
+        throwsA(same(error)),
+      );
+    });
+  });
 }

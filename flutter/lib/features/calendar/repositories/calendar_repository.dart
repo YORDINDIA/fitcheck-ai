@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/exceptions/app_exceptions.dart';
@@ -69,7 +68,7 @@ class CalendarRepository {
 
   /// Get all calendar connections
   Future<List<CalendarConnectionModel>> getConnections() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get(
         '${ApiConstants.calendar}/connections',
       );
@@ -79,9 +78,7 @@ class CalendarRepository {
           .whereType<Map>()
           .map((e) => _parseConnection(Map<String, dynamic>.from(e)))
           .toList();
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Connect calendar provider (OAuth / local)
@@ -89,7 +86,7 @@ class CalendarRepository {
     required CalendarProvider provider,
     required String authCode,
   }) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.calendar}/connect',
         data: {'provider': provider.name, 'auth_code': authCode},
@@ -97,20 +94,16 @@ class CalendarRepository {
       // API: { data: { id, provider, email, connected_at }, message }
       final data = _extractDataMap(response.data);
       return _parseConnection(data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Disconnect calendar
   Future<void> disconnectCalendar(String connectionId) async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.delete(
         '${ApiConstants.calendar}/connections/$connectionId',
       );
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get events for date range
@@ -118,7 +111,7 @@ class CalendarRepository {
     DateTime? startDate,
     DateTime? endDate,
   }) async {
-    try {
+    return runDioRequest(() async {
       final queryParams = <String, dynamic>{};
       if (startDate != null) {
         // A10b-01: send the UTC instant. A naive local string was parsed by
@@ -140,9 +133,7 @@ class CalendarRepository {
           .whereType<Map>()
           .map((e) => CalendarEventModel.fromJson(Map<String, dynamic>.from(e)))
           .toList();
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Create event with optional outfit
@@ -155,7 +146,7 @@ class CalendarRepository {
     bool isAllDay = false,
     String? outfitId,
   }) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.calendar}/events',
         data: {
@@ -176,9 +167,7 @@ class CalendarRepository {
           ? Map<String, dynamic>.from(data['event'] as Map)
           : data;
       return CalendarEventModel.fromJson(eventMap);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Update event
@@ -223,7 +212,7 @@ class CalendarRepository {
       outfitId: outfitId,
     );
 
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.put(
         '${ApiConstants.calendar}/events/$eventId',
         data: data,
@@ -233,43 +222,35 @@ class CalendarRepository {
           ? Map<String, dynamic>.from(payload['event'] as Map)
           : payload;
       return CalendarEventModel.fromJson(eventMap);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Delete event
   Future<void> deleteEvent(String eventId) async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.delete('${ApiConstants.calendar}/events/$eventId');
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Link outfit to event.
   /// API returns partial `{ id, outfit_id, updated_at }` — returns outfitId only.
   Future<String> linkOutfit(String eventId, String outfitId) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.calendar}/events/$eventId/outfit',
         data: {'outfit_id': outfitId},
       );
       final data = _extractDataMap(response.data);
       return (data['outfit_id'] as String?) ?? outfitId;
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Remove outfit from event. Returns success; outfit cleared.
   Future<void> removeOutfit(String eventId) async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.delete(
         '${ApiConstants.calendar}/events/$eventId/outfit',
       );
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 }

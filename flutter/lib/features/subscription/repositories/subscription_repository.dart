@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/exceptions/app_exceptions.dart';
@@ -11,7 +10,7 @@ class SubscriptionRepository implements ReferralRedemptionService {
 
   /// Get subscription with usage
   Future<SubscriptionWithUsage> getSubscription() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get(ApiConstants.subscription);
       final payload = response.data as Map<String, dynamic>;
       final data =
@@ -25,14 +24,12 @@ class SubscriptionRepository implements ReferralRedemptionService {
       );
 
       return SubscriptionWithUsage(subscription: subscription, usage: usage);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get usage details
   Future<UsageLimitsModel> getUsage() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get(
         '${ApiConstants.subscription}/usage',
       );
@@ -40,14 +37,12 @@ class SubscriptionRepository implements ReferralRedemptionService {
       final data =
           payload['data'] as Map<String, dynamic>? ?? <String, dynamic>{};
       return UsageLimitsModel.fromJson(data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get available plans (display + store product IDs)
   Future<PlansResponse> getPlans() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get(
         '${ApiConstants.subscription}/plans',
       );
@@ -55,9 +50,7 @@ class SubscriptionRepository implements ReferralRedemptionService {
       final data =
           payload['data'] as Map<String, dynamic>? ?? <String, dynamic>{};
       return PlansResponse.fromJson(data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Register a store-verified purchase with the backend.
@@ -70,7 +63,7 @@ class SubscriptionRepository implements ReferralRedemptionService {
     required String transactionId,
     required String productId,
   }) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.subscription}/iap/transaction',
         data: {
@@ -83,14 +76,12 @@ class SubscriptionRepository implements ReferralRedemptionService {
       final data =
           payload['data'] as Map<String, dynamic>? ?? <String, dynamic>{};
       return SubscriptionModel.fromJson(data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Create a Stripe billing portal session (web only).
   Future<String> createPortalSession() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.subscription}/portal',
       );
@@ -98,9 +89,7 @@ class SubscriptionRepository implements ReferralRedemptionService {
       final data =
           payload['data'] as Map<String, dynamic>? ?? <String, dynamic>{};
       return data['portal_url'] as String? ?? '';
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Create checkout session for upgrade
@@ -109,7 +98,7 @@ class SubscriptionRepository implements ReferralRedemptionService {
     String? successUrl,
     String? cancelUrl,
   }) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.subscription}/checkout',
         data: {
@@ -122,49 +111,41 @@ class SubscriptionRepository implements ReferralRedemptionService {
       final data =
           payload['data'] as Map<String, dynamic>? ?? <String, dynamic>{};
       return CheckoutSessionModel.fromJson(data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Cancel subscription
   Future<void> cancelSubscription() async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.post('${ApiConstants.subscription}/cancel');
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get user's referral code
   Future<ReferralCodeModel> getReferralCode() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get('${ApiConstants.referral}/code');
       final payload = response.data as Map<String, dynamic>;
       final data =
           payload['data'] as Map<String, dynamic>? ?? <String, dynamic>{};
       return ReferralCodeModel.fromJson(data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get referral stats
   Future<ReferralStatsModel> getReferralStats() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get('${ApiConstants.referral}/stats');
       final payload = response.data as Map<String, dynamic>;
       final data =
           payload['data'] as Map<String, dynamic>? ?? <String, dynamic>{};
       return ReferralStatsModel.fromJson(data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Validate a referral code
   Future<ValidateReferralResponse> validateReferralCode(String code) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.referral}/validate',
         data: {'code': code},
@@ -173,15 +154,13 @@ class SubscriptionRepository implements ReferralRedemptionService {
       final data =
           payload['data'] as Map<String, dynamic>? ?? <String, dynamic>{};
       return ValidateReferralResponse.fromJson(data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Redeem a referral code (implements [ReferralRedemptionService])
   @override
   Future<bool> redeemReferralCode(String code) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.referral}/redeem',
         data: {'code': code},
@@ -195,8 +174,6 @@ class SubscriptionRepository implements ReferralRedemptionService {
         throw const FormatException('Invalid referral redemption response');
       }
       return data['success'] as bool;
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 }

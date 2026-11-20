@@ -38,10 +38,10 @@ Knots run worst first. The order is fixed in the table below.
 | 4 | Routes run database queries directly | A | TD-013, TD-107, TD-112 | 419384e to 8fefdde |
 | 5 | Storage key shim kept as a workaround | A | | |
 | 6 | `complete` vs `completed` photoshoot status | B | TD-021 (first half) | A 8b52992, B pending |
-| 7 | Admin page titles in placeholder namespace | B | TD-079 | this commit |
-| 8 | 114 identical Flutter DioException blocks | B | TD-113 | |
-| 9 | Dead `batchCreateItems` | B | TD-092 | this commit |
-| 10 | Dead Flutter status method | B | TD-025 | this commit |
+| 7 | Admin page titles in placeholder namespace | B | TD-079 | 8f13f83 |
+| 8 | 114 identical Flutter DioException blocks | B | TD-113 | this commit |
+| 9 | Dead `batchCreateItems` | B | TD-092 | 5955a09 |
+| 10 | Dead Flutter status method | B | TD-025 | ba97014 |
 | 11 | Auth builds its own subscription repository | C | | |
 | 12 | Empty `getApiError` wrapper | C | | |
 | 13 | Dead UI files | C | TD-098 | |
@@ -111,6 +111,7 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 | 2026-11-20 | Knot 7 (admin page titles) done. 16 route titles now read from their feature namespaces. 13 reuse the page's existing `title` key with identical text. Trends, User details, and Generation details get `routeTitles` keys in `dashboard` and `users`, with the same text as before. `placeholder.json` and its two registrations are removed. Browser titles do not change. Checks: admin lint (zero warnings), typecheck, test 37 files and 261 tests pass (was 36 files and 241 tests; the new `admin/src/app/route-titles.test.ts` adds 20), schema check, build. The new test fails for a mistyped key (`users:titel`), checked by hand, then reverted. The build chunk-size warning is the existing one. Commit: `refactor: move admin route titles out of placeholder namespace`. |
 | 2026-11-20 | Knot 9 (dead `batchCreateItems`) done. The method and its doc comment are removed from `flutter/lib/features/wardrobe/repositories/item_repository.dart`. It had no callers in `flutter/lib` or `flutter/test`. Checks: flutter analyze, no issues; flutter test 657 passed, 2 skipped (no test changed; the count before this knot was 657 passed, 2 skipped). The 2026-08-08 image RCA still names the method. It is a historical record, so it stays as written. Commit: `refactor: delete dead batchCreateItems from item repository`. |
 | 2026-11-20 | Knot 10 (dead Flutter status methods and models) done. Deleted `OutfitRepository.getGenerationStatus`, `ItemRepository.getGenerationStatus`, the helpers `_parseExtractionResponse`, `_mapExtractedItem`, and `_parseDateTime`, and the models `GenerationStatus` and `ExtractionResponse`. The diff has 8 files, 751 deletions, and no additions. Incremental codegen kept the stale `.g.dart` blocks, so codegen was rebuilt with `build_runner clean` and a full build. Checks: `flutter analyze` reports no issues; `flutter test` 657 passed, 2 skipped (no test changed). A grep for the removed names in `flutter/lib` and `flutter/test` finds none. Commit: `refactor: delete dead Flutter generation status methods and models`. |
+| 2026-11-20 | Knot 8 (Flutter DioException blocks) done. `runDioRequest<T>` sits after `handleDioException` in `flutter/lib/core/exceptions/app_exceptions.dart`. It runs a request and maps a `DioException` through `handleDioException`. The scan finds 111 `on DioException catch` blocks in `flutter/lib`, not the 114 in the plan. 102 are identical and now call `runDioRequest` (83 with `return`, 19 with `await`). Three of the 102 catch as `error`, not `e`. Nine keep their handling. Checks: `flutter analyze` no issues; `flutter test` 660 passed, 2 skipped (657 before, plus 3 new tests for the wrapper). A reverse check rebuilds the old `try` blocks from the new calls. All 18 changed source files match HEAD (102 blocks reversed, 0 mismatches). Commit: `refactor: wrap Flutter repository requests in runDioRequest`. |
 
 ## Decision log
 
@@ -150,6 +151,9 @@ One route file per sub-step, heaviest first. A sub-step ends with zero `.table(`
 | 2026-11-20 | Knot 7: a route reuses its page's existing `title` key when the text is identical. Three routes have no identical key, so they get `routeTitles` keys (`dashboard.routeTitles.trends`, `users.routeTitles.userDetail`, `users.routeTitles.userGeneration`) with the same text. | Titles keep their text. Reusing a key with different text would change the browser title. |
 | 2026-11-20 | Knot 10: codegen runs `build_runner clean` before the full build. Incremental builds, with and without `--delete-conflicting-outputs`, left the deleted classes in `item_model.g.dart` and `outfit_model.g.dart`. | The incremental build reported `wrote 0 outputs`, and `flutter analyze` then failed on `_ExtractionResponse` and `_GenerationStatus`. The clean build removed exactly those blocks and changed no other tracked file. |
 | 2026-11-20 | Knot 10: the `getGenerationStatus` note in `docs/exec-plans/active/flutter-full-app-bug-sweep.md` (line 90) stays as written. | Same rule as the knot 9 note on `batchCreateItems`. Historical records are not edited. |
+| 2026-11-20 | Knot 8: `runDioRequest<T>(Future<T> Function() request)` is the wrapper. A method whose try body returns a value uses `return runDioRequest(...)`. A method whose try body has no `return` uses `await runDioRequest(...)`. | The `return` form keeps the value. The `await` form is safe only when the body has no `return`, so no value is dropped. A body that ends in `throw` uses the `return` form. |
+| 2026-11-20 | Knot 8: nine blocks keep their own handling. Four are `ErrorHandler.reportError` fallbacks. Two map a status to something else (a custom 404 message, and a 404/405/501 fallback to `BatchSaveUnsupported`). One returns a `ReferralRedemptionResult`. Two end with `catch (e) { rethrow; }`. | Each block returns, throws, or reports something other than the plain mapping. The knot rule keeps them. |
+| 2026-11-20 | Knot 8: `flutter format` is not run on whole files. 11 of the 19 files checked already differed from the formatter at HEAD. | Whole-file formatting would reformat unrelated lines. Formatter diff lines are equal or fewer in all 18 changed source files. |
 
 ## Verification
 

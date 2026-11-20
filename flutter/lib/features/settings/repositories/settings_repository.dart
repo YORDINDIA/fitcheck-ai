@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/exceptions/app_exceptions.dart';
@@ -10,13 +9,11 @@ class SettingsRepository {
 
   /// Get user preferences
   Future<UserPreferencesModel> getPreferences() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get('${ApiConstants.users}/preferences');
       final data = _extractPreferenceData(response.data);
       return UserPreferencesModel.fromJson(data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Update user preferences
@@ -38,7 +35,7 @@ class SettingsRepository {
 
   /// One PUT for the preferences endpoint: single URL, envelope and mapping.
   Future<UserPreferencesModel> _putPreferences(Map<String, dynamic> data) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.put(
         '${ApiConstants.users}/preferences',
         data: data,
@@ -46,34 +43,28 @@ class SettingsRepository {
       return UserPreferencesModel.fromJson(
         _extractPreferenceData(response.data),
       );
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get user settings
   Future<Map<String, dynamic>> getSettings() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get('${ApiConstants.users}/settings');
       final data = _extractSettingsData(response.data);
       return data;
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Update user settings
   Future<Map<String, dynamic>> updateSettings(Map<String, dynamic> settings) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.put(
         '${ApiConstants.users}/settings',
         data: settings,
       );
       final data = _extractSettingsData(response.data);
       return data;
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   Map<String, dynamic> _extractPreferenceData(dynamic payload) {
@@ -112,16 +103,14 @@ class SettingsRepository {
 
   /// Delete account
   Future<void> deleteAccount() async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.delete('${ApiConstants.users}/me');
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Request data export
   Future<String> requestDataExport() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post('${ApiConstants.users}/export');
       // The endpoint returns exactly {"data": {"export_url": ...}} — the standard
       // envelope (backend/app/api/v1/users.py). A bare top-level `export_url` is
@@ -133,9 +122,7 @@ class SettingsRepository {
         throw StateError('Export URL missing from response');
       }
       return exportUrl;
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
 }
