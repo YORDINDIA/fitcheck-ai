@@ -161,10 +161,10 @@ class SocialImportPipelineService:
                 error_message=message,
                 exclude_statuses=TERMINAL_JOB_STATUSES,
             )
-            await self._sync_job_counters(job_id)
             if failed is None:
                 # Terminal guard refused the write: the job is already final.
                 return
+            await self._sync_job_counters(job_id)
             await self._publish_event(
                 job_id,
                 "job_failed",

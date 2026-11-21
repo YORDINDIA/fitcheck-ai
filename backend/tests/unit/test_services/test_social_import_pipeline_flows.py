@@ -1163,6 +1163,36 @@ async def test_handle_capacity_exhaustion_pauses_after_budget(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_handle_capacity_exhaustion_refused_failed_write_skips_counter_sync(monkeypatch):
+    """If the terminal guard refuses the FAILED write, the job is already
+    final: no counter sync and no job_failed event."""
+    events = patch_event(monkeypatch)
+    sync_calls = []
+
+    async def fake_get_job(db, *, job_id, user_id):
+        return make_job(metadata={"capacity_retry_attempts": 5})
+
+    async def fake_set_job_status(db, *, job_id, user_id, status, error_message=None, **kwargs):
+        return None
+
+    async def fake_sync(job_id):
+        sync_calls.append(job_id)
+
+    patch_store(
+        monkeypatch,
+        get_job=fake_get_job,
+        set_job_status=fake_set_job_status,
+    )
+    service = make_service()
+    monkeypatch.setattr(service, "_sync_job_counters", fake_sync)
+
+    await service._handle_capacity_exhaustion("job-1")
+
+    assert sync_calls == []
+    assert not [e for e in events if e["event_type"] == "job_failed"]
+
+
+@pytest.mark.asyncio
 async def test_handle_capacity_exhaustion_missing_job_is_noop(monkeypatch):
     patch_store(monkeypatch, get_job=_async_value(None))
     service = make_service()

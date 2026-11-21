@@ -99,7 +99,7 @@ The results below were re-run on the final tree, after the PR review fixes. The 
 | Flutter analyze | no issues |
 | Flutter test (`flutter test`) | all tests passed (658 passing, 2 skipped) |
 | Backend ruff (`ruff check app tests`) | all checks passed |
-| Backend unit tests (`pytest -o addopts="" tests/unit`) | 2724 passed, 1 skipped |
+| Backend unit tests (`pytest -o addopts="" tests/unit`) | 2725 passed, 1 skipped |
 | Backend social import route tests (`tests/integration/test_social_import_routes_coverage.py`) | 45 passed |
 | `scripts/check_architecture.py` | passed |
 | `scripts/check_docs_structure.py` | passed |
