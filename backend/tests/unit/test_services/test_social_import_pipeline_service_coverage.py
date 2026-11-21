@@ -292,7 +292,7 @@ async def test_discover_all_photos_auth_persist_failure_with_cursor(monkeypatch)
         await service._discover_all_photos("job-1")
 
     # The cursor is preserved in metadata even though 2FA persist failed.
-    auth_update = updated[0]
+    auth_update = updated[-1]  # last write: the auth status after the live-job guard
     assert auth_update["status"] == SocialImportJobStatus.AWAITING_AUTH.value
     assert auth_update["metadata"]["discovery_cursor"] == "cur-1"
     assert auth_update["metadata"]["auth_reason"] == "two_factor_required"

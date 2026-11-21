@@ -462,6 +462,19 @@ class SocialImportPipelineService:
                     f"Photo discovery failed after retries: {discovery_error}"
                 )
 
+            # Guarded write before any session, photo, or cursor write. A refused
+            # write means the job went terminal during the fetch: write nothing.
+            live_write = await SocialImportJobStore.update_job(
+                self.db,
+                job_id=job_id,
+                user_id=self.user_id,
+                updates={"status": SocialImportJobStatus.DISCOVERING.value},
+                exclude_statuses=TERMINAL_JOB_STATUSES,
+            )
+            if live_write is None:
+                # Terminal guard refused the write: persist nothing for this job.
+                return
+
             await self._persist_scraper_session_from_payload(
                 job_id=job_id,
                 auth_session=auth_session,
@@ -632,12 +645,16 @@ class SocialImportPipelineService:
 
             job_metadata["discovery_cursor"] = cursor
             job_metadata["discovery_iteration"] = iteration_count
-            await SocialImportJobStore.update_job(
+            cursor_write = await SocialImportJobStore.update_job(
                 self.db,
                 job_id=job_id,
                 user_id=self.user_id,
                 updates={"metadata": job_metadata},
+                exclude_statuses=TERMINAL_JOB_STATUSES,
             )
+            if cursor_write is None:
+                # Terminal guard refused the write: do not persist the cursor.
+                return
 
         job_metadata.pop("discovery_cursor", None)
         job_metadata.pop("discovery_iteration", None)
@@ -1756,6 +1773,22 @@ class SocialImportPipelineService:
             return False
 
         job_id = job["id"]
+        # Claim the job first. A refused write means the job went terminal, so
+        # no photo is requeued and nothing is rescheduled.
+        claim_status = (
+            SocialImportJobStatus.PROCESSING.value
+            if job.get("discovery_completed")
+            else SocialImportJobStatus.CREATED.value
+        )
+        claimed = await SocialImportJobStore.update_job(
+            self.db,
+            job_id=job_id,
+            user_id=self.user_id,
+            updates={"status": claim_status},
+            exclude_statuses=TERMINAL_JOB_STATUSES,
+        )
+        if claimed is None:
+            return False
         # Requeue photos stuck in `processing` so the next run claims them
         # again instead of treating them as an in-flight slot forever.
         stuck_photos = await SocialImportJobStore.list_photos(
@@ -1784,17 +1817,6 @@ class SocialImportPipelineService:
                 count=len(stuck_photos),
             )
 
-        if not job.get("discovery_completed"):
-            reset = await SocialImportJobStore.update_job(
-                self.db,
-                job_id=job_id,
-                user_id=self.user_id,
-                updates={"status": SocialImportJobStatus.CREATED.value},
-                exclude_statuses=TERMINAL_JOB_STATUSES,
-            )
-            if reset is None:
-                # Job is terminal: do not publish or reschedule.
-                return False
         await self._publish_event(
             job_id,
             "job_updated",
