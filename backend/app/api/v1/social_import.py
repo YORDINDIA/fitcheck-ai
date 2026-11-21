@@ -1066,7 +1066,12 @@ async def cancel_social_import_job(
     db: Client = Depends(get_db),
 ):
     service = _service(user_id, db)
-    await service.cancel_job(job_id)
+    cancelled = await service.cancel_job(job_id)
+    if not cancelled:
+        raise HTTPException(
+            status_code=409,
+            detail="Job is already finished and cannot be cancelled",
+        )
     payload = SocialImportActionResponse(
         success=True,
         job_id=job_id,

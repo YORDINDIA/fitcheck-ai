@@ -14,8 +14,9 @@ import '../../../core/utils/error_handler.dart';
 import '../../../core/utils/permission_helper.dart';
 import '../models/photoshoot_models.dart';
 import '../repositories/photoshoot_repository.dart';
+import 'photoshoot_machine.dart';
 
-enum PhotoshootStep { upload, configure, generating, results }
+export 'photoshoot_machine.dart';
 
 /// What [PhotoshootNotifier.generate] did.
 enum PhotoshootStart {
@@ -57,6 +58,7 @@ class PhotoshootState {
     this.usage,
     this.usageLoading = false,
     this.usageError,
+    this.running = false,
     this.jobId = '',
     this.progress = 0,
     this.status = '',
@@ -88,6 +90,9 @@ class PhotoshootState {
   final bool usageLoading;
   final Object? usageError;
 
+  /// A run is in flight: a start was accepted and it has not ended.
+  final bool running;
+
   final String jobId;
 
   /// 0 to 100: 10 for the upload, 90 spread over the images.
@@ -116,7 +121,7 @@ class PhotoshootState {
   /// Last generation failure, shown as a banner on the configure step.
   final Object? error;
 
-  bool get isGenerating => step == PhotoshootStep.generating;
+  bool get isGenerating => running;
   bool get isDownloading => downloadingIndex != null;
 
   int get remainingToday => usage?.remaining ?? PhotoshootNotifier.maxImages;
@@ -140,6 +145,7 @@ class PhotoshootState {
     Object? usage = _unset,
     bool? usageLoading,
     Object? usageError = _unset,
+    bool? running,
     String? jobId,
     int? progress,
     String? status,
@@ -167,6 +173,7 @@ class PhotoshootState {
     usage: identical(usage, _unset) ? this.usage : usage as PhotoshootUsage?,
     usageLoading: usageLoading ?? this.usageLoading,
     usageError: identical(usageError, _unset) ? this.usageError : usageError,
+    running: running ?? this.running,
     jobId: jobId ?? this.jobId,
     progress: progress ?? this.progress,
     status: status ?? this.status,
@@ -357,13 +364,31 @@ class PhotoshootNotifier extends Notifier<PhotoshootState> {
       );
       return;
     }
-    state = state.copyWith(step: PhotoshootStep.configure);
+    state = state.copyWith(
+      step: transition(
+        state.step,
+        PhotoshootStep.configure,
+        running: state.running,
+      ),
+    );
   }
 
   void backToUpload() {
     if (state.step == PhotoshootStep.configure) {
       state = state.copyWith(step: PhotoshootStep.upload, error: null);
     }
+  }
+
+  /// Leaves a failed run for the configure step. Refused while a run is in
+  /// flight: use [cancel] for that.
+  void backToOptions() {
+    final next = transition(
+      state.step,
+      PhotoshootStep.configure,
+      running: state.running,
+    );
+    if (next == state.step) return;
+    state = state.copyWith(step: next, error: null);
   }
 
   // Generation --------------------------------------------------------------
@@ -380,6 +405,9 @@ class PhotoshootNotifier extends Notifier<PhotoshootState> {
   Future<PhotoshootStart> generate() async {
     final s = state;
     if (s.isGenerating || s.photos.isEmpty) return PhotoshootStart.notStarted;
+    if (!canTransition(s.step, PhotoshootStep.generating, running: false)) {
+      return PhotoshootStart.notStarted;
+    }
     if (s.useCase == PhotoshootUseCase.custom &&
         s.customPrompt.trim().isEmpty) {
       ErrorHandler.showValidation(
@@ -411,7 +439,12 @@ class PhotoshootNotifier extends Notifier<PhotoshootState> {
     _latencySamples.clear();
     _lastImageAt = DateTime.now();
     state = state.copyWith(
-      step: PhotoshootStep.generating,
+      step: transition(
+        state.step,
+        PhotoshootStep.generating,
+        running: false,
+      ),
+      running: true,
       jobId: '',
       error: null,
       progress: 0,
@@ -476,12 +509,16 @@ class PhotoshootNotifier extends Notifier<PhotoshootState> {
           'source': 'flutter_app',
         },
       );
+      // A plan limit goes to configure (referral dialog). Any other failed
+      // start stays on generating, with the error and a retry shown there.
+      final next = limit ? PhotoshootStep.configure : PhotoshootStep.generating;
       state = state.copyWith(
-        step: PhotoshootStep.configure,
+        step: transition(state.step, next, running: false),
+        running: false,
         error: limit ? null : e,
       );
       if (limit) return PhotoshootStart.limitReached;
-      // Shown as the banner on the configure step, with a retry.
+      // Shown on the generating step, with a retry.
       ErrorHandler.reportError(
         e,
         ErrorHandler.extractMessage(e),
@@ -574,7 +611,16 @@ class PhotoshootNotifier extends Notifier<PhotoshootState> {
         );
       case 'job_cancelled':
         _stopJobListeners();
-        state = state.copyWith(step: PhotoshootStep.configure, jobId: '');
+        state = state.copyWith(
+          step: transition(
+            state.step,
+            PhotoshootStep.configure,
+            running: true,
+            cancel: true,
+          ),
+          running: false,
+          jobId: '',
+        );
       case 'error':
         _startPollFallback(id);
     }
@@ -652,13 +698,14 @@ class PhotoshootNotifier extends Notifier<PhotoshootState> {
       },
     );
     state = state.copyWith(
-      step: PhotoshootStep.configure,
+      step: transition(state.step, PhotoshootStep.generating, running: false),
+      running: false,
       jobId: '',
       etaSeconds: 0,
       sceneLabel: '',
       error: message,
     );
-    // Shown as the banner on the configure step, with a retry.
+    // Shown on the generating step, with a retry.
     ErrorHandler.reportError(message, 'Photoshoot job failed');
   }
 
@@ -707,7 +754,11 @@ class PhotoshootNotifier extends Notifier<PhotoshootState> {
     if (!_isCurrent(id)) return;
 
     _stopJobListeners();
-    state = state.copyWith(step: PhotoshootStep.results, cancelling: false);
+    state = state.copyWith(
+      step: transition(state.step, PhotoshootStep.results, running: false),
+      running: false,
+      cancelling: false,
+    );
     final s = state;
     AnalyticsService.instance.track(
       'photoshoot_session_completed',
@@ -798,7 +849,16 @@ class PhotoshootNotifier extends Notifier<PhotoshootState> {
         );
       case 'cancelled':
         _stopJobListeners();
-        state = state.copyWith(step: PhotoshootStep.configure, jobId: '');
+        state = state.copyWith(
+          step: transition(
+            state.step,
+            PhotoshootStep.configure,
+            running: true,
+            cancel: true,
+          ),
+          running: false,
+          jobId: '',
+        );
       default:
         await _wait(pollInterval);
         return _poll(id, attempt: attempt + 1);
@@ -825,7 +885,13 @@ class PhotoshootNotifier extends Notifier<PhotoshootState> {
     if (!_isCurrent(id)) return true;
     _stopJobListeners();
     state = state.copyWith(
-      step: PhotoshootStep.configure,
+      step: transition(
+        state.step,
+        PhotoshootStep.configure,
+        running: true,
+        cancel: true,
+      ),
+      running: false,
       jobId: '',
       cancelling: false,
       etaSeconds: 0,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -16,14 +17,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
 
-class FakeAiConsentService extends AiConsentService {
+class GatedConsent extends AiConsentService {
+  /// When set, [ensureConsent] waits until this completes.
+  Completer<bool>? gate;
+
   @override
-  Future<bool> ensureConsent({required String featureLabel}) async => true;
+  Future<bool> ensureConsent({required String featureLabel}) =>
+      gate?.future ?? Future<bool>.value(true);
 }
 
 class FakeTryOnRepository extends TryOnRepository {
   final avatarResults = <Object?>['https://cdn.test/me.png'];
   Map<String, dynamic> result = const {};
+  int generateCalls = 0;
+  Completer<Map<String, dynamic>>? gate;
   int downloads = 0;
   Uint8List? saved;
   String? savedName;
@@ -38,8 +45,11 @@ class FakeTryOnRepository extends TryOnRepository {
   }
 
   @override
-  Future<Map<String, dynamic>> generate(Map<String, dynamic> payload) async =>
-      result;
+  Future<Map<String, dynamic>> generate(Map<String, dynamic> payload) async {
+    generateCalls++;
+    final pending = gate;
+    return pending != null ? pending.future : result;
+  }
 
   @override
   Future<Uint8List> downloadBytes(String url) async {
@@ -90,6 +100,7 @@ void main() {
 
   late FakeTryOnRepository repo;
   late FakePicker picker;
+  late GatedConsent consent;
   late ProviderContainer container;
   late File garment;
 
@@ -98,11 +109,12 @@ void main() {
     addTearDown(() => dir.deleteSync(recursive: true));
     garment = File('${dir.path}/shirt.png')..writeAsBytesSync([1, 2, 3, 4]);
     repo = FakeTryOnRepository();
+    consent = GatedConsent();
     picker = FakePicker(garment.path);
     container = ProviderContainer(
       retry: noRetry,
       overrides: [
-        aiConsentServiceProvider.overrideWithValue(FakeAiConsentService()),
+        aiConsentServiceProvider.overrideWithValue(consent),
         tryOnRepositoryProvider.overrideWithValue(repo),
         tryOnImagePickerProvider.overrideWithValue(picker),
       ],
@@ -246,5 +258,96 @@ void main() {
     expect(picker.calls.single.maxWidth, 1024);
     expect(picker.calls.single.quality, 85);
     expect(state().garment?.path, garment.path);
+  });
+
+  group('tryOnTransition (legal events per status)', () {
+    test('start is legal only from idle', () {
+      expect(
+        tryOnTransition(TryOnStatus.idle, TryOnEvent.start),
+        TryOnStatus.generating,
+      );
+      expect(tryOnTransition(TryOnStatus.generating, TryOnEvent.start), isNull);
+    });
+
+    test('a run ends only from generating', () {
+      expect(
+        tryOnTransition(TryOnStatus.generating, TryOnEvent.succeed),
+        TryOnStatus.idle,
+      );
+      expect(
+        tryOnTransition(TryOnStatus.generating, TryOnEvent.fail),
+        TryOnStatus.idle,
+      );
+      expect(tryOnTransition(TryOnStatus.idle, TryOnEvent.succeed), isNull);
+      expect(tryOnTransition(TryOnStatus.idle, TryOnEvent.fail), isNull);
+    });
+
+    test('garment and option changes are rejected while generating', () {
+      for (final event in [
+        TryOnEvent.changeGarment,
+        TryOnEvent.changeOptions,
+      ]) {
+        expect(tryOnTransition(TryOnStatus.idle, event), TryOnStatus.idle);
+        expect(tryOnTransition(TryOnStatus.generating, event), isNull);
+      }
+    });
+  });
+
+  test('a second start while generating is rejected and sends no request',
+      () async {
+    await container.read(tryOnAvatarProvider.future);
+    repo.gate = Completer<Map<String, dynamic>>();
+    notifier().setGarment(garment);
+
+    final first = notifier().generate();
+    for (var i = 0; i < 400 && repo.generateCalls == 0; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(state().generating, isTrue);
+
+    await notifier().generate();
+    expect(repo.generateCalls, 1);
+
+    notifier().setGarment(File('${garment.parent.path}/other.png'));
+    expect(state().garment?.path, garment.path);
+
+    repo.gate!.complete({'image_url': 'https://cdn.test/r.png'});
+    await first;
+    expect(state().generating, isFalse);
+    expect(state().resultUrl, 'https://cdn.test/r.png');
+  });
+
+  test('two generate calls during pending consent send one request',
+      () async {
+    await container.read(tryOnAvatarProvider.future);
+    consent.gate = Completer<bool>();
+    notifier().setGarment(garment);
+    repo.result = {'image_url': 'https://cdn.test/r.png'};
+
+    // Both calls pass the first guard: the run has not started yet.
+    final first = notifier().generate();
+    final second = notifier().generate();
+    consent.gate!.complete(true);
+    await Future.wait([first, second]);
+
+    expect(repo.generateCalls, 1);
+    expect(state().resultUrl, 'https://cdn.test/r.png');
+  });
+
+  test('a garment change during consent never calls the API with the old one',
+      () async {
+    await container.read(tryOnAvatarProvider.future);
+    consent.gate = Completer<bool>();
+    notifier().setGarment(garment);
+
+    final run = notifier().generate();
+    final other = File('${garment.parent.path}/other.png');
+    notifier().setGarment(other);
+    consent.gate!.complete(true);
+    await run;
+
+    expect(repo.generateCalls, 0);
+    expect(state().generating, isFalse);
+    expect(state().garment?.path, other.path);
   });
 }

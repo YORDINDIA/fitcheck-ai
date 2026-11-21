@@ -107,7 +107,7 @@ async def test_discover_all_photos_handles_malformed_iteration_count(monkeypatch
         return make_job(metadata={"discovery_iteration": "not-an-int"})
 
     async def fake_set_job_status(*args, **kwargs):
-        return None
+        return {"id": "job-1"}
 
     async def fake_get_active_session(db, *, job_id, user_id):
         return None
@@ -115,7 +115,7 @@ async def test_discover_all_photos_handles_malformed_iteration_count(monkeypatch
     async def fake_discover(normalized_url, platform, auth_session, cursor):
         return make_discovery_result(exhausted=True)
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
         return {"id": job_id}
 
@@ -151,7 +151,7 @@ async def test_discover_all_photos_stops_at_iteration_limit_with_no_inserts(monk
         return make_job()
 
     async def fake_set_job_status(*args, **kwargs):
-        return None
+        return {"id": "job-1"}
 
     async def fake_get_active_session(db, *, job_id, user_id):
         return None
@@ -163,7 +163,7 @@ async def test_discover_all_photos_stops_at_iteration_limit_with_no_inserts(monk
             exhausted=False,
         )
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
         return {"id": job_id}
 
@@ -202,7 +202,7 @@ async def test_discover_all_photos_retry_callback_logs_warning(monkeypatch):
         return make_job()
 
     async def fake_set_job_status(*args, **kwargs):
-        return None
+        return {"id": "job-1"}
 
     async def fake_get_active_session(db, *, job_id, user_id):
         return None
@@ -215,7 +215,7 @@ async def test_discover_all_photos_retry_callback_logs_warning(monkeypatch):
             )
         return make_discovery_result(exhausted=True)
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
         return {"id": job_id}
 
@@ -252,7 +252,7 @@ async def test_discover_all_photos_auth_persist_failure_with_cursor(monkeypatch)
         return make_job(metadata={"discovery_cursor": "cur-1"})
 
     async def fake_set_job_status(*args, **kwargs):
-        return None
+        return {"id": "job-1"}
 
     async def fake_get_active_session(db, *, job_id, user_id):
         return {"session_payload": {"username": "ada", "password": "pw"}}
@@ -271,7 +271,7 @@ async def test_discover_all_photos_auth_persist_failure_with_cursor(monkeypatch)
     async def fake_store_scraper_session(*args, **kwargs):
         raise RuntimeError("session store down")
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
         return {"id": job_id}
 
@@ -292,7 +292,7 @@ async def test_discover_all_photos_auth_persist_failure_with_cursor(monkeypatch)
         await service._discover_all_photos("job-1")
 
     # The cursor is preserved in metadata even though 2FA persist failed.
-    auth_update = updated[0]
+    auth_update = updated[-1]  # last write: the auth status after the live-job guard
     assert auth_update["status"] == SocialImportJobStatus.AWAITING_AUTH.value
     assert auth_update["metadata"]["discovery_cursor"] == "cur-1"
     assert auth_update["metadata"]["auth_reason"] == "two_factor_required"
@@ -314,7 +314,7 @@ async def test_discover_all_photos_truncates_to_max_photo_cap(monkeypatch):
         return make_job(discovered_photos=1995)
 
     async def fake_set_job_status(*args, **kwargs):
-        return None
+        return {"id": "job-1"}
 
     async def fake_get_active_session(db, *, job_id, user_id):
         return None
@@ -332,7 +332,7 @@ async def test_discover_all_photos_truncates_to_max_photo_cap(monkeypatch):
         added.append((start_ordinal, [p["id"] for p in photos]))
         return [{"id": p["id"]} for p in photos]
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
         return {"id": job_id}
 
@@ -364,7 +364,7 @@ async def test_discover_all_photos_breaks_when_no_next_cursor(monkeypatch):
         return make_job()
 
     async def fake_set_job_status(*args, **kwargs):
-        return None
+        return {"id": "job-1"}
 
     async def fake_get_active_session(db, *, job_id, user_id):
         return None
@@ -373,7 +373,7 @@ async def test_discover_all_photos_breaks_when_no_next_cursor(monkeypatch):
         # Not exhausted but no cursor: the loop must still stop.
         return make_discovery_result(exhausted=False, next_cursor=None)
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
         return {"id": job_id}
 
@@ -407,7 +407,7 @@ async def test_run_queue_claim_empty_while_awaiting_syncs_and_returns(monkeypatc
 
     patch_store(
         monkeypatch,
-        set_job_status=_async_value(None),
+        set_job_status=_async_value(make_job()),
         get_job=_async_value(make_job(discovery_completed=True)),
         get_slots=_async_value(
             {"awaiting": make_photo(), "buffered": None, "processing": None}
