@@ -46,7 +46,7 @@ class PhotoshootGeneratingStep extends ConsumerWidget {
                   Expanded(
                     child: Text(
                       failedRun
-                          ? ErrorHandler.extractMessage(s.error)
+                          ? ErrorHandler.localizedMessage(s.error)
                           : s.status.isEmpty
                           ? context.l10n.photoshootStarting
                           : s.status,
@@ -121,7 +121,7 @@ class PhotoshootGeneratingStep extends ConsumerWidget {
               TextButton(
                 onPressed: () => startPhotoshoot(context, ref),
                 style: TextButton.styleFrom(minimumSize: const Size(120, 48)),
-                child: const Text('Retry'),
+                child: Text(context.l10n.actionRetry),
               ),
             ],
           )

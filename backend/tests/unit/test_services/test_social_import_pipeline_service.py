@@ -184,7 +184,7 @@ async def test_discover_all_photos_handles_none_result_without_attribute_error(
         }
 
     async def fake_set_job_status(*args, **kwargs):  # noqa: ANN001
-        return None
+        return {"id": "job-1"}
 
     async def fake_update_job(*args, **kwargs):  # noqa: ANN001
         return {}

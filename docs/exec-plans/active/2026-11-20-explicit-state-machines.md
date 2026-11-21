@@ -35,7 +35,7 @@ Make each implicit state machine explicit: one typed state, one transition table
 | configure | upload | back | always |
 | configure | generating | start | not running |
 | generating | generating | try again, or failure stays visible | not running |
-| generating | results | job complete | always |
+| generating | results | job complete | not running |
 | generating | configure | back to options, or cancel | not running, or cancel |
 | results | configure | new style | always |
 | results | upload | start over | always |
@@ -87,19 +87,20 @@ Legal edges as listed in `socialImportMachine.ts`. `completed`, `cancelled`, and
 
 ## Verification (run on the final tree)
 
-PR review fixes to this plan were applied in a follow-up commit. The results below are from the implementation commit. They were not re-run for the follow-up.
+The results below were re-run on the final tree, after the PR review fixes. The build row is the exception: it was not re-run, to avoid another IndexNow submission.
 
 
 | Check | Result |
 |-------|--------|
 | Frontend lint (`npm run lint`) | exit 0 |
 | Frontend typecheck (`npx tsc --noEmit -p tsconfig.json`) | exit 0 |
-| Frontend tests (`NODE_OPTIONS=--no-experimental-webstorage npx vitest run`) | 79 files, 552 tests passed |
-| Frontend build (`npm run build`) | exit 0. Its postbuild step submitted 128 URLs to IndexNow (HTTP 422). See Follow-ups. |
+| Frontend tests (`NODE_OPTIONS=--no-experimental-webstorage npx vitest run`) | 79 files, 598 tests passed |
+| Frontend build (`npm run build`) | Not re-run on the final tree. The earlier run exited 0, and its postbuild step submitted 128 URLs to IndexNow (HTTP 422). See Follow-ups. |
 | Flutter analyze | no issues |
-| Flutter test (`flutter test`) | all tests passed |
-| Backend ruff (`ruff check .`) | all checks passed |
-| Backend unit tests (`pytest -o addopts="" tests/unit`) | 2710 passed, 1 skipped |
+| Flutter test (`flutter test`) | all tests passed (658 passing, 2 skipped) |
+| Backend ruff (`ruff check app tests`) | all checks passed |
+| Backend unit tests (`pytest -o addopts="" tests/unit`) | 2719 passed, 1 skipped |
+| Backend social import route tests (`tests/integration/test_social_import_routes_coverage.py`) | 45 passed |
 | `scripts/check_architecture.py` | passed |
 | `scripts/check_docs_structure.py` | passed |
 
@@ -119,7 +120,7 @@ Re-read the diffs and the externally changed social import files. Findings:
 
 ## Follow-ups (need approval)
 
-1. **Cancel response shape.** On a terminal social import job, `POST /social-import/jobs/{job_id}/cancel` still returns `"status": "cancelled"` with HTTP 200. The DB row is unchanged. Decide whether to return the real status. <!-- UPDATE-AFTER-BACKEND-DECISION -->
+1. **Cancel response shape (decided).** `POST /social-import/jobs/{job_id}/cancel` returns HTTP 409 for a job that already finished, and HTTP 404 for a missing job. The DB row is unchanged. The web cancel hook treats 409 as already finished and refreshes the status.
 2. **Retry on unreadable failed jobs.** `extraction_jobs_page.dart:147` shows Retry for failed single jobs. Not verified whether `_open` can recover a job restored from an unknown status.
 3. **Untraced flows (research only, fix not yet approved).** These defects come from research. Onboarding and calendar are not fully read.
    - **Gift claim, English error-text match.** `frontend/src/pages/gifts/GiftClaimPage.tsx:141`: `message.includes('already been claimed') || message.includes('expired')` decides the state from English server text. A localized or changed message breaks the branch.

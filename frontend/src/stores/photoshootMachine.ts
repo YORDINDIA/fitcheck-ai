@@ -10,7 +10,7 @@
  *   configure  -> generating   start (not while a run is in flight)
  *   generating -> generating   run again: retry, or stay with a failure shown
  *                              (not while a run is in flight)
- *   generating -> results      complete
+ *   generating -> results      complete (not while a run is in flight)
  *   generating -> configure    back to options (not while running) or
  *                              cancel (allowed while running)
  *   results    -> configure    new style
