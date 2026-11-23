@@ -623,3 +623,33 @@ def test_get_weather_service_returns_singleton(monkeypatch):
 
     assert isinstance(service, WeatherService)
     assert get_weather_service() is service
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("location", ["Testville", "28.4455,77.0081"])
+@pytest.mark.parametrize("units,temp,feels_like", [
+    ("metric", 25.0, 24.0),
+    ("imperial", 77.0, 75.2),
+])
+async def test_weather_classification_respects_units(
+    monkeypatch, location, units, temp, feels_like,
+):
+    service = _service_with_key()
+
+    def handler(request):
+        assert request.url.params["units"] == units
+        return httpx.Response(
+            200,
+            json=_weather_json(temp=temp, feels_like=feels_like, condition="Mist"),
+        )
+
+    _patch_async_client(monkeypatch, handler)
+
+    weather = await service.get_weather(location, units=units)
+
+    assert weather["temperature"] == temp
+    assert weather["feels_like"] == feels_like
+    assert weather["temp_category"] == WeatherCondition.WARM
+    assert weather["weather_state"] == WeatherCondition.CLOUDY
+    recommendations = WeatherOutfitRecommender.get_recommendations(weather)
+    assert recommendations["suggested_layers"] == 1
