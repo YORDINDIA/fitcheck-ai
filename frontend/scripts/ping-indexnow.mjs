@@ -4,7 +4,8 @@
  * public/.well-known/indexnow/<key>.txt (committed) and the key at
  * public/indexnow-key.txt. Override with INDEXNOW_KEY.
  *
- * No-op when the key or sitemap is missing — local builds stay harmless.
+ * Only Netlify production builds submit URLs; local/preview builds only
+ * prepare the verification file.
  */
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -40,6 +41,11 @@ async function main() {
   const wellKnown = join(dist, '.well-known', 'indexnow', `${key}.txt`)
   mkdirSync(dirname(wellKnown), { recursive: true })
   if (!existsSync(wellKnown)) writeFileSync(wellKnown, key, 'utf8')
+
+  if (process.env.CONTEXT !== 'production') {
+    console.log('[indexnow] Not a production deploy — skipping submission')
+    return
+  }
 
   const urls = extractUrls(join(dist, 'sitemap.xml'))
   if (!urls.length) {
