@@ -11,6 +11,16 @@ building or testing. Use only publishable client values. Android emulators
 reach a host API at `http://10.0.2.2:8000`; a physical device needs your host's
 reachable LAN address rather than `localhost`.
 
+## Android native dependency compatibility
+
+`posthog_flutter` 5.11.1 declares the inclusive Android SDK range
+`[3.25.0,4.0.0]`. Android SDK 4.0.0 removes feature-flag and replay APIs that
+this plugin still calls, causing Kotlin compilation failures on a fresh build.
+`android/build.gradle.kts` pins `com.posthog:posthog-android` to 3.77.1 across
+subprojects so both plugin compilation and the app use the compatible SDK.
+Revisit the pin when upgrading the Flutter plugin, and verify a release APK;
+Dart analysis/unit tests do not compile this native dependency.
+
 ## Commands
 
 ```bash
