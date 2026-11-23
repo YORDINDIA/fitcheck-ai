@@ -1,6 +1,6 @@
 # Conservative unused-code cleanup
 
-- **Status:** active
+- **Status:** completed
 - **Started:** 2026-11-23
 - **Owner:** engineering
 
@@ -12,8 +12,8 @@ No behavior changes, speculative asset deletion, public API removal, or unrelate
 
 ## Acceptance criteria
 - [x] Document evidence for each removal.
-- [ ] Run existing build, lint, and test commands and report any blockers accurately.
-- [ ] Review the diff and publish a pull request with removal rationale.
+- [x] Run existing build, lint, and test commands and report any blockers accurately.
+- [x] Review the diff and publish a pull request with removal rationale.
 
 ## Context
 - [Architecture](../../../ARCHITECTURE.md)
@@ -30,7 +30,7 @@ No behavior changes, speculative asset deletion, public API removal, or unrelate
 Existing package lint/test/build commands and repository harness checks; no coverage reductions.
 
 ## Follow-ups / debt
-None yet.
+The aggregate harness requires untracked generated store creative (see verification limits below).
 
 ## Removal evidence
 
@@ -44,3 +44,16 @@ None yet.
 
 ## Preserved candidates
 Public assets, operational scripts, framework callbacks, indirect configuration dependencies such as `python-dotenv`, mobile icon fonts, and advertised API error types were retained where absence of ordinary imports did not establish safe removal.
+
+## Verification results
+
+- Backend Ruff and full pytest: 4,403 passed, four skipped, 94.63% branch-inclusive coverage (90% gate). The first full run hit the existing 400ms image-matting timing ceiling under concurrent builds; the unchanged full suite passed on retry with lower contention. Used the CI placeholder Supabase environment, never production credentials.
+- Frontend lint, 410 tests, and production build/prerender passed. The ordinary build passed; its optional IndexNow postbuild request reported HTTP 422 non-fatally. Post-removal revalidation ran the same build body plus sitemap/LLMS generation without repeating that external indexing request.
+- Admin lint, typecheck, 241 tests, production build, schema drift, and bundle budget passed.
+- Widget production build and 59 image-worker tests passed.
+- Architecture, docs structure, markdown lint, migration, theme, iOS target, localization, and store-listing checks passed before the aggregate harness reached its store-creative gate.
+- Backend API-spec regeneration is unchanged; lockfile comparison confirms 40 frontend and four admin package records removed, with no additions or changes to retained package records.
+- Limitation: `scripts/check_all.sh` cannot complete in this checkout because `npm run check` in `scripts/creative` reports 756 missing generated-image errors (`checked 0 file(s)`). These approximately 1.5GB of derived assets are intentionally gitignored and unrelated to this cleanup; no check was weakened. Remaining package checks were run separately as listed above.
+- Flutter SDK is absent locally; the existing PR CI runs Flutter analyze/tests and APK build. CI and admin E2E results are tracked on PR #29.
+
+PR: <https://github.com/YORDINDIA/fitcheck-ai/pull/29>
