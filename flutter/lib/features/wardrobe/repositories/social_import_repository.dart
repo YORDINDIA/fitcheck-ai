@@ -145,6 +145,9 @@ class SocialImportRepository {
     try {
       await _apiClient.post(ApiConstants.aiSocialImportCancel(jobId));
     } on DioException catch (e) {
+      // 409: the job finished before the cancel landed. Not an error; the
+      // caller refreshes the status and shows the real terminal state.
+      if (e.response?.statusCode == 409) return;
       throw handleDioException(e);
     }
   }
