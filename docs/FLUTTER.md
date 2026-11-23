@@ -4,19 +4,31 @@ Last updated: 2026-10-26
 
 Mobile client under `flutter/`. State and dependency injection use Riverpod 3 (no code generation). Routing uses go_router. The paper-cut diorama design system lives in `lib/core/theme/` and `lib/core/widgets/`. The app has no GetX; `test/core/utils/snackbar_policy_test.dart` fails on a `package:get/` import.
 
+Install [Flutter 3.47.5](https://docs.flutter.dev/install) (the CI version)
+and run `flutter doctor` for platform tooling. The `.env` asset is required
+by `pubspec.yaml` even when using `--dart-define`; copy the template before
+building or testing. Use only publishable client values. Android emulators
+reach a host API at `http://10.0.2.2:8000`; a physical device needs your host's
+reachable LAN address rather than `localhost`.
+
 ## Commands
 
 ```bash
 cd flutter
+test -e .env || cp .env.example .env
 flutter pub get
 flutter analyze
-flutter test                                  # CI runs --exclude-tags golden
+flutter test --exclude-tags golden           # matches CI
 flutter test --tags golden --update-goldens   # screenshot tests, local only
 flutter run \
   --dart-define=API_BASE_URL=http://localhost:8000 \
   --dart-define=SUPABASE_URL=... \
   --dart-define=SUPABASE_ANON_KEY=...
 ```
+
+CI uses `flutter analyze --no-fatal-infos --no-fatal-warnings` for its
+existing analyzer baseline; plain `flutter analyze` is stricter. Golden
+updates are intentional visual baseline changes, not a prerequisite to tests.
 
 Env can also load via asset `.env` through `lib/core/config/env_config.dart`. Template: `flutter/.env.example`.
 

@@ -34,11 +34,13 @@ cleanup() {
         kill "$FRONTEND_PID" 2>/dev/null || true
     fi
 
+    wait "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true
     echo -e "${GREEN}All servers stopped.${NC}"
-    exit 0
 }
 
-trap cleanup SIGINT SIGTERM
+trap cleanup EXIT
+trap 'exit 130' SIGINT
+trap 'exit 143' SIGTERM
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}   FitCheck AI - Development Server    ${NC}"
@@ -52,38 +54,54 @@ echo -e "${YELLOW}API Docs: http://localhost:8000/api/v1/docs${NC}"
 echo ""
 
 cd "$BACKEND_DIR"
-if [ ! -d "$BACKEND_DIR/.venv" ]; then
+if [ ! -x "$BACKEND_DIR/.venv/bin/python" ]; then
     echo -e "${RED}Error: backend virtualenv not found at $BACKEND_DIR/.venv${NC}"
     echo -e "${YELLOW}Create it with:${NC}"
-    echo -e "  cd $BACKEND_DIR"
-    echo -e "  python3 -m venv .venv"
+    echo -e "  cd \"$BACKEND_DIR\""
+    echo -e "  python3.12 -m venv .venv"
     echo -e "  source .venv/bin/activate"
     echo -e "  pip install -r requirements.txt"
     exit 1
 fi
-source "$BACKEND_DIR/.venv/bin/activate"
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 &
+for command in node curl; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+        echo -e "${RED}Error: $command is required; install it before running this script.${NC}"
+        exit 1
+    fi
+done
+if [ ! -f "$FRONTEND_DIR/node_modules/vite/bin/vite.js" ]; then
+    echo -e "${RED}Error: frontend dependencies are missing.${NC}"
+    echo "Install them with: cd \"$FRONTEND_DIR\" && npm ci"
+    exit 1
+fi
+if ! "$BACKEND_DIR/.venv/bin/python" -c 'import uvicorn' >/dev/null 2>&1; then
+    echo -e "${RED}Error: backend dependencies are missing.${NC}"
+    echo "Install them with: cd \"$BACKEND_DIR\" && .venv/bin/python -m pip install -r requirements.txt"
+    exit 1
+fi
+"$BACKEND_DIR/.venv/bin/python" -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 
 # Wait for the backend to become healthy (bounded retry loop instead of a
 # fixed sleep: slower cold starts are tolerated, a dead process fails fast).
 echo -e "${YELLOW}Waiting for backend health (http://localhost:8000/health)...${NC}"
 BACKEND_READY=""
-for _ in $(seq 1 30); do
-    if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
-        BACKEND_READY="yes"
-        break
-    fi
+for ((attempt = 0; attempt < 30; attempt++)); do
     if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
         echo -e "${RED}Backend process exited before becoming healthy${NC}"
         exit 1
+    fi
+    if curl --connect-timeout 1 --max-time 1 -fsS http://localhost:8000/health >/dev/null 2>&1; then
+        BACKEND_READY="yes"
+        break
     fi
     sleep 1
 done
 if [ -n "$BACKEND_READY" ]; then
     echo -e "${GREEN}Backend is healthy.${NC}"
 else
-    echo -e "${YELLOW}Backend not healthy after 30s — continuing anyway; check logs with: tail -f $BACKEND_DIR/logs/*.log${NC}"
+    echo -e "${RED}Backend did not become healthy after 30 attempts; check logs in $BACKEND_DIR/logs/.${NC}"
+    exit 1
 fi
 
 # Start Frontend Server
@@ -92,12 +110,13 @@ echo -e "${YELLOW}Frontend URL: http://localhost:3000${NC}"
 echo ""
 
 cd "$FRONTEND_DIR"
-npm run dev &
+# Launch Vite directly so cleanup owns the server, not an npm wrapper.
+node "$FRONTEND_DIR/node_modules/vite/bin/vite.js" --strictPort &
 FRONTEND_PID=$!
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}Both servers are running!${NC}"
+echo -e "${GREEN}Both server processes started!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo -e "  Backend:  ${YELLOW}http://localhost:8000${NC}"
 echo -e "  Frontend: ${YELLOW}http://localhost:3000${NC}"
@@ -106,5 +125,18 @@ echo ""
 echo -e "${BLUE}Press Ctrl+C to stop both servers${NC}"
 echo ""
 
-# Wait for both processes
-wait
+# Bash 3.2 (macOS) has no wait -n; monitor both children explicitly.
+while true; do
+    for pid in "$BACKEND_PID" "$FRONTEND_PID"; do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            status=0
+            wait "$pid" || status=$?
+            echo -e "${RED}Server process $pid exited (status $status); stopping both servers.${NC}"
+            if [ "$status" -eq 0 ]; then
+                status=1
+            fi
+            exit "$status"
+        fi
+    done
+    sleep 1
+done

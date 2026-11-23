@@ -24,10 +24,18 @@ Flutter mobile app for FitCheck AI.
 
 Mobile starts jobs with **JSON base64** (`POST /api/v1/ai/batch-extract`). The web app prefers **multipart** (`POST /api/v1/ai/batch-extract-multipart`). Both share the same SSE progress and overlapped extract→generate pipeline on the backend.
 
+Install [Flutter 3.47.5](https://docs.flutter.dev/install) (the CI version)
+and run `flutter doctor` for platform tooling. The `.env` asset is required
+by `pubspec.yaml` even when using `--dart-define`; copy the template before
+building or testing. Use only publishable client values. Android emulators
+reach a host API at `http://10.0.2.2:8000`; a physical device needs your host's
+reachable LAN address rather than `localhost`.
+
 ## Setup
 
 ```bash
 cd flutter
+test -e .env || cp .env.example .env
 flutter pub get
 ```
 
@@ -65,5 +73,5 @@ Key values:
 
 ```bash
 cd flutter
-flutter test
+flutter test --exclude-tags golden
 ```

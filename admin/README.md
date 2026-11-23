@@ -18,17 +18,37 @@ Supabase-backed auth as the other clients. All authorization is
 
 ## Quickstart
 
+Use Node 24 LTS with npm. The locked Supabase packages require Node >=22
+and Vite 7 requires 22.12+ on that line; the older package-level Node 20
+minimum does not cover the complete locked dependency tree.
+From the repository root:
+
 ```bash
 cd admin
-npm install
+npm ci
 npm run dev            # http://localhost:5173
 ```
 
 Dev runs on `:5173` and proxies `/api` → `http://localhost:8000` (the backend;
-`cd ../backend && uvicorn app.main:app --reload --port 8000`). No env file is
-needed locally — all vars are optional. Open `http://localhost:5173` and log
-in with an admin account (`@fitcheckaiapp.com` emails resolve to `admin` via
-the legacy fallback, or set the `role` column via migration 037).
+`cd ../backend && .venv/bin/python -m uvicorn app.main:app --reload --port 8000`). No env file is
+needed for the admin shell or its tests — all admin vars are optional.
+The backend still needs its own dependencies and development credentials;
+complete [local setup](../docs/references/local-setup.md) first for real login. Open `http://localhost:5173` and log
+in with a development account assigned an explicit privileged `role` by an
+authorized project administrator (schema introduced by migration 037).
+Email domain alone does not grant admin access.
+
+For a credential-free check, from `admin/` after `npm ci`:
+
+```bash
+npm run lint && npm run typecheck && npm test && npm run build
+npm run check:schema && npm run check:bundle
+```
+
+Build before `check:bundle`: it reads generated `dist/` assets. The schema
+check uses the committed contract, not a running API. Playwright is optional:
+install its Chromium browser with `npx playwright install --with-deps chromium`
+after installing packages, then build and run `npm run e2e`.
 
 ## Environment variables
 
@@ -87,7 +107,7 @@ sync (via the monorepo design language and OpenAPI codegen, never shared code).
 
 ## Architecture (one-pager)
 
-```
+```text
 pages (route components, no logic)
   → features/<feature>/{components,hooks,api}   (feature logic lives here)
     → shared/{ui,lib,hooks,api,stores}          (cross-cutting)
@@ -154,8 +174,8 @@ codegen instead.
 
 Roles (`backend/app/core/permissions.py` is authoritative): `super_admin`,
 `admin`, `ops`, `support`, `content_editor`, plus the legacy fallback (a
-`True` `is_admin` flag or an `@fitcheckaiapp.com` email resolves to `admin`
-unless an explicit role is set).
+`True` `is_admin` flag resolves to `admin` unless an explicit privileged role
+is set). Email domains never grant privileges.
 
 | Permission | super_admin | admin | ops | support | content_editor |
 |------------|:-----------:|:-----:|:---:|:-------:|:--------------:|
@@ -192,7 +212,7 @@ in `index.html`).
 
 ## Layout
 
-```
+```text
 src/
   config/            env (zod-validated) + feature flags (build-time)
   shared/

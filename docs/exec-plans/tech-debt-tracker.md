@@ -165,3 +165,10 @@ Last updated: 2026-10-26 (TD-030–TD-145)
 - Add rows when you consciously defer work.  
 - Remove or strike through when fixed (leave a short “fixed YYYY-MM-DD” note or delete).  
 - Monthly GC: see `docs/exec-plans/README.md`.
+
+## Clean-checkout dependency advisories (2026-11-23)
+
+The onboarding rehearsal reported 31 frontend npm advisories, including two
+critical, without preventing install/tests/build. Triage and update dependencies
+in a dedicated change rather than running `npm audit fix --force` during setup.
+See [setup audit](../references/setup-audit.md) for scope and verification limits.
