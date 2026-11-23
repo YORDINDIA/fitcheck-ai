@@ -42,6 +42,7 @@ describe('photoshoot usage safety', () => {
   })
 
   it('blocks generation until the server confirms usage', async () => {
+    usePhotoshootStore.setState({ currentStep: 'configure' })
     usePhotoshootStore.getState().addPhotos([new File(['image'], 'look.png', { type: 'image/png' })])
 
     const result = await usePhotoshootStore.getState().generate()
@@ -95,6 +96,7 @@ describe('photoshoot usage safety', () => {
     })
 
     usePhotoshootStore.setState({
+      currentStep: 'configure',
       photos: [new File(['image'], 'look.png', { type: 'image/png' })],
       useCase: 'linkedin',
       numImages: 1,

@@ -299,6 +299,48 @@ async def test_cancel_job_adopts_external_cancelled_when_cas_loses():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "terminal",
+    [
+        PhotoshootJobStatus.COMPLETE,
+        PhotoshootJobStatus.FAILED,
+        PhotoshootJobStatus.CANCELLED,
+    ],
+)
+async def test_cancel_job_terminal_never_reaches_durable_cas(terminal):
+    """A terminal job returns before the durable CAS, so no write is attempted."""
+    job = await _make_job()
+    job.persistence_db = Mock()
+    job.status = terminal
+    transition = AsyncMock(return_value=True)
+
+    with patch.object(photoshoot_job_service._store, "transition", new=transition):
+        result = await PhotoshootJobService.cancel_job(job.job_id, USER_ID)
+
+    assert result is False
+    transition.assert_not_awaited()
+    assert job.cancelled is False
+    assert job.status is terminal
+
+
+@pytest.mark.asyncio
+async def test_cancel_job_persists_cancelled_through_cas():
+    job = await _make_job()
+    job.persistence_db = Mock()
+    job.status = PhotoshootJobStatus.PROCESSING
+    transition = AsyncMock(return_value=True)
+
+    with patch.object(photoshoot_job_service._store, "transition", new=transition):
+        result = await PhotoshootJobService.cancel_job(job.job_id, USER_ID)
+
+    assert result is True
+    transition.assert_awaited_once()
+    assert transition.await_args.kwargs["status"] is PhotoshootJobStatus.CANCELLED
+    assert job.cancelled is True
+    assert job.status is PhotoshootJobStatus.CANCELLED
+
+
+@pytest.mark.asyncio
 async def test_update_status_missing_job_is_noop():
     await PhotoshootJobService.update_status("nope", PhotoshootJobStatus.FAILED)
 
@@ -521,3 +563,45 @@ async def test_cleanup_loop_logs_and_continues_on_error(monkeypatch):
 
     assert task.done()
     assert sweep.call_count >= 1
+
+
+# =============================================================================
+# Terminal guard: late writes after CANCELLED
+# =============================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "late_status",
+    [
+        PhotoshootJobStatus.PENDING,
+        PhotoshootJobStatus.PROCESSING,
+        PhotoshootJobStatus.COMPLETE,
+        PhotoshootJobStatus.FAILED,
+    ],
+)
+async def test_late_status_write_does_not_overwrite_cancelled(late_status):
+    job = await _make_job()
+    await PhotoshootJobService.update_status(job.job_id, PhotoshootJobStatus.CANCELLED)
+
+    await PhotoshootJobService.update_status(job.job_id, late_status)
+
+    assert PhotoshootJobService._jobs[job.job_id].status is PhotoshootJobStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_late_error_image_and_progress_writes_after_cancelled_are_ignored():
+    job = await _make_job()
+    await PhotoshootJobService.update_status(job.job_id, PhotoshootJobStatus.CANCELLED)
+
+    await PhotoshootJobService.set_error(job.job_id, "late provider error")
+    await PhotoshootJobService.mark_image_failed(job.job_id, 0, "late image error")
+    await PhotoshootJobService.add_generated_image(job.job_id, "img-late", 1, image_url="https://x/y.png")
+    await PhotoshootJobService.update_current_batch(job.job_id, 3)
+
+    stored = PhotoshootJobService._jobs[job.job_id]
+    assert stored.status is PhotoshootJobStatus.CANCELLED
+    assert stored.error_message is None
+    assert stored.failed_indices == set()
+    assert stored.generated_images == []
+    assert stored.current_batch == 0

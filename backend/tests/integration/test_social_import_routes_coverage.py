@@ -801,6 +801,30 @@ async def test_cancel_social_import_job(monkeypatch):
     service.cancel_job.assert_awaited_once_with("job-1")
 
 
+@pytest.mark.asyncio
+async def test_cancel_social_import_job_finished_returns_409(monkeypatch):
+    service = SimpleNamespace(cancel_job=AsyncMock(return_value=False))
+    _patch_service(monkeypatch, service)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await cancel_social_import_job(job_id="job-1", user_id="user-1", db=Mock())
+
+    assert exc_info.value.status_code == 409
+    service.cancel_job.assert_awaited_once_with("job-1")
+
+
+@pytest.mark.asyncio
+async def test_cancel_social_import_job_terminal_returns_409(monkeypatch):
+    service = SimpleNamespace(cancel_job=AsyncMock(return_value=False))
+    _patch_service(monkeypatch, service)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await cancel_social_import_job(job_id="job-1", user_id="user-1", db=Mock())
+
+    assert exc_info.value.status_code == 409
+    service.cancel_job.assert_awaited_once_with("job-1")
+
+
 # =============================================================================
 # Origin validation helpers
 # =============================================================================
