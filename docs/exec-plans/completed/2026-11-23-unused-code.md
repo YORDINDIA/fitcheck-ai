@@ -57,3 +57,7 @@ Public assets, operational scripts, framework callbacks, indirect configuration 
 - Flutter SDK is absent locally; the existing PR CI runs Flutter analyze/tests and APK build. CI and admin E2E results are tracked on PR #29.
 
 PR: <https://github.com/YORDINDIA/fitcheck-ai/pull/29>
+
+## APK CI compatibility follow-up
+
+The APK gate exposed an unrelated upstream version-range bug: `posthog_flutter` 5.11.1 declares native `posthog-android:[3.25.0,4.0.0]`, including the incompatible 4.0.0 release. Kotlin compilation fails on removed feature-flag and replay APIs. Pin native `posthog-android` to 3.77.1 for all Android subproject configurations, including the plugin compile classpath and app runtime. Its published sources retain the required APIs, and its POM selects core SDK 6.49.1. Dart dependencies and analytics behavior are unchanged. The existing APK build is the verification gate.
