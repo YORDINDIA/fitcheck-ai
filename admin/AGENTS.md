@@ -24,7 +24,7 @@ npm run check:bundle # fail if the production bundle exceeds the size budget
 src/app/          providers, route manifest, guards, layout shell
 src/features/     per-domain modules (auth, users, subscriptions, quotas,
                   content, promo, feedback, ops, audit, dashboard, search, settings)
-src/shared/       ui/ (shadcn-style primitives + DataTable), api/ (openapi-fetch
+src/shared/       ui/ (shadcn-style primitives + DataTable), api/ (native fetch
                   client + generated schema), hooks/, lib/, stores/, i18n/
 src/test/         MSW handlers + fixtures, setup, render utils
 ```
