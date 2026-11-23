@@ -451,13 +451,6 @@ def revoke_refresh_token(db: Client, refresh_token: str) -> None:
     ).execute()
 
 
-def revoke_all_for_user(db: Client, user_id: str) -> None:
-    """Kill every refresh family for a user (logout-everywhere / incident path)."""
-    db.table("mcp_oauth_refresh_tokens").update({"revoked_at": utcnow().isoformat()}).eq(
-        "user_id", user_id
-    ).is_("revoked_at", "null").execute()
-
-
 # ---------------------------------------------------------------------------
 # Small time helpers
 # ---------------------------------------------------------------------------
