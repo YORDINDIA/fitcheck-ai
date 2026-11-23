@@ -7,7 +7,7 @@ FitCheck AI is a multi-platform wardrobe intelligence product with AI-assisted i
 - `backend/` — FastAPI API and business logic
 - `frontend/` — React + TypeScript web app (Vite)
 - `admin/` — Internal admin console (React 19 SPA, server-enforced RBAC)
-- `flutter/` — Flutter mobile app (GetX)
+- `flutter/` — Flutter mobile app (Riverpod + go_router)
 - `infra/` — Cloudflare images worker
 - `docs/` — Agent-first knowledge base (product, design, plans, quality)
 - `scripts/` — Harness checks (architecture + docs structure)
@@ -36,7 +36,7 @@ FitCheck AI is a multi-platform wardrobe intelligence product with AI-assisted i
 
 1. Web and mobile clients call FastAPI under `/api/v1/*`.
 2. Routes coordinate domain services (`backend/app/services/`).
-3. Supabase provides Postgres + storage + auth.
+3. Supabase provides Postgres + auth; private uploads use S3-compatible storage (Cloudflare R2).
 4. AI provider abstraction (custom/OpenAI; Gemini for embeddings).
 5. Optional vector features use Pinecone.
 
@@ -48,12 +48,28 @@ Hosted Supabase only. **Do not** use Docker or local Supabase for development.
 
 ### Prerequisites
 
-- Python 3.12+
-- Node.js 18+
-- Hosted Supabase project
-- Optional: Flutter, Pinecone, AI provider keys
+- Git, Bash, Python 3.12, and Node.js 24 LTS (includes npm)
+- Node 20 is the minimum required by the locked web dependencies; Node 18 is unsupported.
+- Hosted Supabase and private object storage are needed for authenticated app
+  flows, **not** for the frontend build/tests below.
+- Optional: Flutter SDK, Pinecone, AI provider keys
 
-### Fastest start (web + API)
+### Clone to a working build (no credentials required)
+
+```bash
+git clone https://github.com/YORDINDIA/fitcheck-ai.git
+cd fitcheck-ai
+(cd frontend && npm ci && npm run lint && npm test && npm run build)
+```
+
+The production web bundle is written to `frontend/dist/`. This verifies the web
+app, not hosted authentication, uploads, or AI. Local builds do not submit
+IndexNow notifications; production Netlify builds still do.
+
+### Run web + API
+
+First complete the dependency and environment setup in
+[Development Setup](docs/references/local-setup.md). Then, from the repository root:
 
 ```bash
 ./run-dev.sh
@@ -63,28 +79,21 @@ Hosted Supabase only. **Do not** use Docker or local Supabase for development.
 - Frontend: `http://localhost:3000`
 - API docs: `http://localhost:8000/api/v1/docs`
 
-### Manual start
-
-```bash
-# Backend
-cd backend && python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-
-# Frontend
-cd frontend && npm install && npm run dev
-```
-
-Full setup: `docs/references/local-setup.md`.
+The runner starts installed services; it does not install dependencies or
+provision Supabase.
 
 ## Environment
 
-Workspace `.env` values are expected to be provisioned. Templates:
+A fresh clone has **no private environment files**. Copy the templates only if
+the destination does not already exist, then fill in your own development
+credentials as described in the setup guide:
 
-- `backend/.env.example`
-- `frontend/.env.example`
-- `admin/.env.example`
-- `flutter/.env.example`
+- `backend/.env.example` → `backend/.env`
+- `frontend/.env.example` → `frontend/.env`
+- `admin/.env.example` → `admin/.env`
+- `flutter/.env.example` → `flutter/.env`
+
+Never commit credentials or put backend secret keys in a frontend/mobile env.
 
 ## Documentation map
 
@@ -103,13 +112,25 @@ Workspace `.env` values are expected to be provisioned. Templates:
 
 ## Validation
 
+Run each command from the repository root, after installing that app's
+dependencies (see the setup guide and optional app READMEs):
+
 ```bash
 ./scripts/check_all.sh
-cd backend && source .venv/bin/activate && pytest
-cd frontend && npm run lint && npm test && npm run build
-cd admin && npm run lint && npm run typecheck && npm test && npm run check:schema
-cd flutter && flutter test
+(cd backend &&
+  SUPABASE_URL=https://ci-placeholder.supabase.co \
+  SUPABASE_PUBLISHABLE_KEY=ci-placeholder-publishable-key \
+  SUPABASE_SECRET_KEY=ci-placeholder-secret-key \
+  SUPABASE_JWT_SECRET=ci-placeholder-jwt-secret-at-least-32-characters \
+  .venv/bin/python -m pytest)
+(cd frontend && npm run lint && npm test && npm run build)
+(cd admin && npm run lint && npm run typecheck && npm test && npm run check:schema)
+(cd flutter && flutter test)
 ```
+
+The aggregate harness requires its toolchains by default. Its opt-in
+`--allow-missing-checks` and `--allow-no-pytest` flags permit partial runs;
+a partial run is not proof that every app was tested.
 
 Harness CI: docs structure + architecture (`.github/workflows/docs-ci.yml`); backend also runs architecture in `backend-ci.yml`.
 
