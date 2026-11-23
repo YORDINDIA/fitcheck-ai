@@ -31,3 +31,15 @@ Before the fix: 2 metric failures, 2 imperial passes. After the fix: all 109
 weather service and route tests pass. Backend Ruff, architecture, and docs
 structure checks pass. Returned temperature and feels-like values stay in the
 requested units; only classification inputs are converted.
+
+## Android CI compatibility
+
+The APK check exposed an existing dependency-resolution failure:
+posthog_flutter 5.11.1 declares `[3.25.0,4.0.0]`, including Android SDK 4.0.0.
+That version brings PostHog core 7.0.0, which removes the feature-flag callback
+and replay types used by the Flutter plugin. Pin Android SDK 3.77.1 across all
+Android subprojects so both plugin compilation and the app runtime use the
+compatible core 6.49.1. The Dart package and iOS dependency are unchanged.
+
+The original failed build is GitHub Actions run 45145684632. Re-run the failed
+job once, then verify the pin with the release APK build on the updated PR head.
