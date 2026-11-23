@@ -31,9 +31,24 @@ class _StatusAdapter implements HttpClientAdapter {
 }
 
 void main() {
+  late List<Interceptor> savedInterceptors;
+  late HttpClientAdapter savedAdapter;
+
   setUp(() {
+    final dio = ApiClient.instance.dio;
+    savedInterceptors = List<Interceptor>.of(dio.interceptors);
+    savedAdapter = dio.httpClientAdapter;
     // Drop auth and refresh interceptors so the test never reads stored tokens.
-    ApiClient.instance.dio.interceptors.clear();
+    dio.interceptors.clear();
+  });
+
+  tearDown(() {
+    // The Dio instance is a process-wide singleton: put back what setUp removed.
+    final dio = ApiClient.instance.dio;
+    dio.interceptors
+      ..clear()
+      ..addAll(savedInterceptors);
+    dio.httpClientAdapter = savedAdapter;
   });
 
   group('SocialImportRepository.cancelJob', () {
