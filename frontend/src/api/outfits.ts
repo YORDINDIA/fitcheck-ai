@@ -2,7 +2,7 @@
  * Outfits API endpoints
  */
 
-import { apiClient, LONG_RUNNING_TIMEOUT_MS } from './client';
+import { apiClient, LONG_RUNNING_TIMEOUT_MS, skipToast } from './client';
 import { getApiError } from '@/lib/errors';
 import type { AxiosRequestConfig } from 'axios';
 import type {
@@ -274,9 +274,13 @@ export interface PublicOutfit {
   items: PublicOutfitItem[];
 }
 
+/**
+ * The shared-outfit page renders its own error state, so skip the global toast.
+ * Otherwise the same not-found shows twice.
+ */
 export async function getPublicOutfit(outfitId: string): Promise<PublicOutfit> {
   try {
-    const response = await apiClient.get<ApiEnvelope<PublicOutfit>>(`/api/v1/outfits/public/${outfitId}`)
+    const response = await apiClient.get<ApiEnvelope<PublicOutfit>>(`/api/v1/outfits/public/${outfitId}`, skipToast)
     return response.data.data
   } catch (error) {
     throw getApiError(error)
