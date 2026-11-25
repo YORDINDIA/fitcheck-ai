@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import uuid
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -58,7 +59,8 @@ def build_request(
         value = args.pop(placeholder, None)
         if value is None:
             raise ValueError(f"Missing required path parameter: {placeholder}")
-        path = path.replace("{" + placeholder + "}", str(value))
+        # Encode each value so it cannot add path segments or "../" traversal.
+        path = path.replace("{" + placeholder + "}", quote(str(value), safe=""))
 
     body = args.pop("body", None)
     # Drop empty optional values so agents can omit query params freely.

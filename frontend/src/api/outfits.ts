@@ -2,9 +2,8 @@
  * Outfits API endpoints
  */
 
-import { apiClient } from './client';
+import { apiClient, LONG_RUNNING_TIMEOUT_MS } from './client';
 import { getApiError } from '@/lib/errors';
-import { UPLOAD_TIMEOUT_MS } from '@/lib/endpoints';
 import type { AxiosRequestConfig } from 'axios';
 import type {
   ApiEnvelope,
@@ -215,7 +214,7 @@ export async function uploadOutfitImage(
         // concurrency; the 30s abort left the server working and surfaced as a
         // late multipart 400. Set here rather than via LONG_RUNNING_PREFIXES
         // because this path is templated (see endpoints.ts).
-        timeout: UPLOAD_TIMEOUT_MS,
+        timeout: LONG_RUNNING_TIMEOUT_MS,
       }
     );
     return response.data.data;

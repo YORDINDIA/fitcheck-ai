@@ -2559,7 +2559,7 @@ async def test_search_items_escapes_ilike_wildcards():
 
     assert result["data"]["items"] == []
     or_expr = next(c for c in calls if c[0] == "or")[1]
-    assert "%50\% off\_%" in or_expr
+    assert r"%50\% off\_%" in or_expr
     assert or_expr.startswith("name.ilike.")
 
 
@@ -2596,7 +2596,7 @@ async def test_list_items_escapes_ilike_wildcards(monkeypatch):
     assert result["data"]["items"] == []
     assert "50% off" in seen
     or_filters = [f for f in db.filters if f[1] == "or"]
-    assert any("%50\% off%" in f[3] for f in or_filters)
+    assert any(r"%50\% off%" in f[3] for f in or_filters)
 
 
 @pytest.mark.asyncio
@@ -2626,4 +2626,4 @@ async def test_check_duplicates_fallback_escapes_ilike_wildcards(monkeypatch):
     assert result["message"] == "Fallback text-based duplicate check"
     assert "50% tee" in seen
     ilike_filters = [f for f in db.filters if f[1] == "ilike"]
-    assert any("%50\% tee%" in f[3] for f in ilike_filters)
+    assert any(r"%50\% tee%" in f[3] for f in ilike_filters)
