@@ -20,8 +20,8 @@ Read the whole FitCheck AI repository. Find what is broken, inconsistent, ineffi
 - [x] P1: static audit of every area. Skipped and sampled files listed below. Findings consolidated below.
 - [x] P2 and P3: 161 web jobs screenshotted or failure recorded. 149 at 1440x900 cover all 128 sitemap URLs plus protected and unknown routes. 12 at 390x844. Admin root and sign-in at two sizes. 95 goldens reviewed. `flutter test --tags golden`: 87 passed, 1 skipped, 0 failed.
 - [x] P4: top five hierarchy and density problems ranked below.
-- [ ] P5: sure fixes committed in small commits. Lanes green after each commit.
-- [ ] P6: `scripts/check_all.sh` run on the final head. Owner list written.
+- [x] P5: sure fixes committed in 11 small commits, from `75bc8db3` to `0392d4fb`. Lanes run after each group. Results are in Verification.
+- [x] P6: `scripts/check_all.sh` run on the final head (`0392d4fb`, exit 0). Re-shoot compared. Owner list written.
 
 ## Context
 
@@ -45,6 +45,13 @@ Read the whole FitCheck AI repository. Find what is broken, inconsistent, ineffi
 | 2026-11-24 | Admin capture: 4 of 4 OK. Golden review finished. `add_manual_light.png` checked at full size: the sticky bar clips the last colour row, which is normal scrolling. |
 | 2026-11-24 | P3 review written: `output/audit/screens/web/review.md`. P4 ranking written below. P1 findings consolidated below. |
 | 2026-11-24 | Owner answers: commit the whole `.gitignore`. Untrack `.claude/settings.local.json`. |
+| 2026-11-25 | P5 committed as 11 commits, `75bc8db3` to `0392d4fb`. Working tree clean at `0392d4fb`. |
+| 2026-11-25 | Final-head `scripts/check_all.sh` on `0392d4fb`: exit 0. Flutter `+575 ~1`. Backend pytest `4463 passed, 4 skipped`. Vitest `564 passed`. Log: `output/audit/logs/p6-check-all-0392d4fb.log`. |
+| 2026-11-25 | Admin lanes on `0392d4fb`: all pass. Vitest 261 passed. Initial bundle 589.3 KB minified, 185.2 KB gzip. Log: `output/audit/logs/p6-admin-lanes-0392d4fb.log`. |
+| 2026-11-25 | Web build on `0392d4fb` with prerender and no IndexNow ping (`vite build`, then the two prerender scripts). Exit 0. Log: `output/audit/logs/p6-web-build-prerender-0392d4fb.log`. |
+| 2026-11-25 | Found that `vite preview` serves the prerendered home page for unknown paths. `netlify.toml` serves `app-shell.html`. Re-shot through `output/audit/tools/serve-netlify.cjs`, which follows the Netlify rules. Edge functions and CSP are not emulated. |
+| 2026-11-25 | Re-shot 161 web jobs on the Netlify-equivalent server: 161 HTTP 200, 0 errors. 158 of 161 rows match the baseline on every tracked metric. Details under Verification. |
+| 2026-11-25 | Admin e2e on `0392d4fb`: 14 of 14 pass. `/api/**` is stubbed in the browser, so the backend was not used. |
 
 ## Decision log
 
@@ -60,6 +67,10 @@ Read the whole FitCheck AI repository. Find what is broken, inconsistent, ineffi
 | 2026-11-24 | Ignore only `.claude/settings.local.json*`, not all of `.claude/`. | The owner's approved scope is this one file. Other `.claude` files stay trackable. Recheck at commit (d). |
 | 2026-11-24 | Rank tap targets against 44 px. | Apple HIG and WCAG 2.5.5 use 44 px. WCAG 2.2 AA needs 24 px. The 24 px count was not measured. |
 | 2026-11-24 | The golden clip at the sticky "Save piece" bar is not a defect. | Normal scroll behavior in a golden frame. |
+| 2026-11-25 | Re-shoot through a server that follows `netlify.toml` routing, not `vite preview`. | Netlify serves `app-shell.html` for any path with no static file (the `/*` rule in `frontend/netlify.toml`, without `force`). `vite preview` serves the prerendered home page. That changes how unknown paths and `/gamification` look. Edge functions and CSP are not emulated. |
+| 2026-11-25 | Percent-encode MCP path parameters (`741fe417`). | Fixes B-04. Behavior change for `/`, `?`, `#`, and spaces. Owner should check MCP clients. |
+| 2026-11-25 | Add group (h) and land it before (g). | Group (h) holds B-04, B-07, and W-06. The spec lists (a) to (g) only. Lanes ran after (h) (`h-*` logs) and again after (g) (`g-*` logs and the final check_all). |
+| 2026-11-25 | Re-scope W-11. | Browsers get a client redirect to `/` by design (`App.tsx:157`). The soft-404 case is crawlers on `/gamification`, a `KNOWN_PREFIXES` entry in `not-found.ts`. |
 
 ## Baseline (P0)
 
@@ -95,7 +106,7 @@ Baseline logs: `output/audit/baseline/` (run 1) and `output/audit/baseline/rerun
 
 Ranked by pages affected times severity. Problems that repeat across templates rank above one-off problems.
 
-1. **Tap targets under 44 px in the shared header and footer.** The header logo link is 128x34 px. The header "Start free" button is 102x40 px (120x40 px on mobile). Footer links are small. 148 of 149 desktop pages and 12 of 12 mobile pages have at least one. Median: 32 per desktop page, 30 per mobile page.
+1. **Tap targets under 44 px in the shared header and footer.** The header logo link is 128x34 px. The header "Start free" button is 102x40 px on desktop. The metrics also list unlabeled 120x40 px links on both sizes. Footer links are small. 148 of 149 desktop pages and 12 of 12 mobile pages have at least one. Median: 32 per desktop page, 30 per mobile page.
 2. **Home page is very long.** 11,197 px on desktop, 12,819 px on mobile. Eleven H2 sections. Pricing starts near 6,800 px. The next longest page is `/blog` at 6,156 px.
 3. **Home demo labels at 11.2 px.** Twelve elements, desktop only. The same content renders on three routes: home, `/gamification`, and an unknown path.
 4. **Shared-outfit not-found state shows one error twice.** An in-page card and a toast both say the outfit was not found.
@@ -241,15 +252,126 @@ SIMPLIFY items fixed: F1, F2, F5, F6, F8, B4, B5, B6, FL1, FL3, FL5, S1 to S3. S
 
 ## Fixed in this audit
 
-Filled in at P5 and P6.
+Commits on `refactor/untangle-knots`, oldest first. The group letters follow the P5 list in the spec. Group (h) is not on that list. It holds three sure bugs that the P1 table assigned to P5h.
+
+| Commit | Group | Closes | Change |
+|--------|-------|--------|--------|
+| `75bc8db3` | (b) | none | Added this plan. Added audit output and local-config ignore lines to `.gitignore`, including the three lines that were uncommitted before the audit. |
+| `3dc21ebd` | (a) | B-01 | `run-dev.sh` and `scripts/check_all.sh` run `"$VENV/bin/python" -m uvicorn` and `-m pytest`. |
+| `eac3f351` | (c) | R-02 (references) | Deleted `SIMPLIFY.md` and `UI_UX_IMPROVEMENTS.md`. Open items moved to `tech-debt-tracker.md` as TD-147 to TD-157. Fixed two comments that cited the deleted files. |
+| `eaf7df34` | (d) | none | Stopped tracking `.claude/settings.local.json`. The file stays on disk and is ignored. |
+| `b5a06dd5` | (e) | B-02, B-03, B-05, B-13, R-04 | Removed `passlib` and `beautifulsoup4` from `requirements.txt`. Removed the `WIDGET_MIME_TYPE` duplicate, the two `_now()` copies, and an unused variable in `translate_arb.py`. Removed unused helpers in API route modules and services. Backend pytest: 4461 passed, 94.70% coverage. |
+| `96bdb488` | (e) | W-01, W-02, W-03, W-04, W-05, W-07 | Removed the `icon-sm` button variant, the `@/agents` and `@/assets` aliases, the bare `isAuthenticated()` helpers, the dead `storeUser` and `clearUser` copies in `lib/auth.ts`, four unused helpers in `lib/utils.ts`, and the `formatDate` wrapper. Blog pages import from `@/i18n`. |
+| `f3a9fd4d` | (e) | A-01, A-02, A-03 | Removed `isDev` and `isProd` from `env.ts` and `groupHasResults`. Added `gifts` to the admin lint feature list. |
+| `8315b11a` | (e) | F-01, F-02 | Removed `cupertino_icons` and the `flutter_appauth` placeholder from the Gradle file and the Android manifest. Lock file updated. |
+| `5909c75c` | (f) | B-19, B-20, B-21, R-01, W-08, A-04, A-05 | Fixed stale README, RBAC, and schema references. The schema generator dedupes ALTER references. `db-schema.md` regenerated: 117 to 86 lines. |
+| `741fe417` | (h) | B-04, B-07, W-06 | MCP path parameters are percent-encoded in `executor.py`. Regression tests added. Removed the `UPLOAD_TIMEOUT_MS` re-export that caused an import cycle. Fixed three invalid escape sequences. |
+| `0392d4fb` | (g) | Top-five item 4 | The shared-outfit not-found page no longer shows a toast. The in-page card stays. Test added. |
+
+Behavior change to review: `741fe417` changes MCP output for path values that contain `/`, `?`, `#`, or spaces. Those characters are now encoded. Before the change, the value `x/../../auth/login` reached another route.
 
 ## Owner review list
 
-Filled in at P6. Until then, every row marked Owner in the findings tables is on the working list.
+The items below come from the P1 tables. Counts were not re-run in P6 unless the Verification section says so. Every item needs an owner decision. None changed in this audit unless the Fixed section says so.
+
+### Top five hierarchy and density problems
+
+1. **Tap targets under 44 px in the shared header and footer.** Header logo 128x34 px. Header "Start free" 102x40 px on desktop. Unlabeled 120x40 px links on both sizes. 148 of 149 desktop pages and 12 of 12 mobile pages have at least one.
+2. **Home page is very long.** 11,197 px on desktop, 12,819 px on mobile. Eleven H2 sections. Pricing starts near 6,800 px.
+3. **Home demo labels at 11.2 px.** Twelve elements on the home page. Unknown paths and `/gamification` redirect to `/` in the browser, so the same labels appear there too. Re-checked in P6, see Verification.
+4. **Shared-outfit not-found showed one error twice.** Fixed in `0392d4fb`. Owner: confirm the copy.
+5. **`/auth/callback` has no heading.** Red status text sits on a blank page while the page redirects.
+
+### Release, security, and data
+
+- F-14: release signing falls back to the debug key in `flutter/android/app/build.gradle.kts` (lines 53-57). High priority.
+- A-06: admin CSP `connect-src` lacks the Sentry ingest host (`admin/netlify.toml:40`). Not checked in a browser.
+- B-18: one of 8 SECURITY DEFINER functions lacks `search_path` and REVOKE. Not identified.
+- B-14: `pytest`, `pytest-asyncio`, `pytest-cov`, and `ruff` ship in the production requirements.
+- B-16: no `backend/.dockerignore`. `COPY . .` would copy `.venv` (327 MB) and tests (13 MB).
+- B-15: `backend/Dockerfile` creates `/app/logs`. The README says logs go to stdout.
+- B-17: `scripts/check_migrations.py` POLICY_RE misses unquoted policy names (migrations 016 and 023).
+- B-22: migration prefix 002 is used twice. Documented.
+- B-08, B-09, B-10: unused code. Delete or keep: `verify_access_token`, `revoke_all_for_user`, `_b64url_encode`, 23 unused model definitions, and `exceptions.py:457`.
+- R-08: `infra/images-worker/worker.js:11-12,25-30` can return 404 for legacy-key requests. Not checked in production.
+- Untangle items, unchanged: migration 066 (owner applies after the new build is live; check that `SELECT count(*) FROM photoshoot_jobs WHERE status='complete';` returns 0), storage `--delete` policy and orphans (TD-146), account deletion and legacy-key photos (TD-146), merge timing (waits on TD-146).
+- MCP behavior change from `741fe417`: path values with `/`, `?`, `#`, or spaces are now encoded. Check any client that relied on the old output.
+
+### Web
+
+- W-11: soft 404 for crawlers on `/gamification`. Browsers get a client redirect to `/` by design (`frontend/src/App.tsx:157`). The `not-found` edge function treats `/gamification` as a known path (`KNOWN_PREFIXES`), so crawlers get HTTP 200. Decide: remove the prefix or keep it.
+- W-09: `frontend/Dockerfile:5` and `Dockerfile.dev:2` use Node 18. CI uses Node 20.
+- W-10: crawler lists differ between `og-tags.ts` and `seo-html.ts`. `/gift/` is missing from `not-found.ts`. `isCrawler` and `escapeHtml` are duplicated.
+- W-12: `netlify.toml` forces the woff2 Content-Type on `/fonts/*`.
+- Multi-pose code: `generateMultiPoseOutfit`, `MultiPoseOutfitResult`, `PosePreset`, and `POSE_PRESETS` in `frontend/src/api/ai.ts`. `docs/product-specs/implementation-status.md` (line 80) lists the feature as shipped. Decide: ship it or delete it.
+
+### Admin
+
+- A-07: refund and storage-cleanup flags in `admin/src/config/feature-flags.ts`. Use not verified.
+- A-08: 23 uses of `text-[9px]`, `text-[10px]`, and `text-[11px]`. About 19 English literals sit outside `t()`.
+
+### Flutter
+
+- F-03: `locale_format.dart` has no importers. `docs/FLUTTER.md` (line 281) says it is used.
+- F-04: `features/feedback/index.dart` barrel has no importers.
+- F-07: `feedback_repository.dart:38,87,94` calls `Platform.isIOS` without a `kIsWeb` guard.
+- F-08: 205 `?? 'English'` fallbacks across 28 files.
+- F-09: widget literals not from ARB: wardrobe 19, core widgets 19, subscription 4, calendar 4, auth 2, gifts 1. Non-widget English: wardrobe 106, subscription 63, settings 31.
+- F-10: mixed logging. `print(` in three files. 36 `debugPrint` calls, 24 unguarded.
+- F-11: 24 providers have zero readers in `lib/`.
+- F-12: `flutter/assets/images/auth_background.jpg` (97 KB) is unreferenced.
+- F-13: `auth_screens_golden_test.dart:44` skips `splash_light` with no reason.
+- F-15: smaller items. macOS entitlements lack Sign in with Apple. `flutter/web/**` has 7 files. Windows `generated_plugins.cmake` may be stale. Template `RunnerTests.swift` asserts nothing. `dashboard_provider_test.dart:68` has a race.
+- Goldens: the local run used Flutter 3.47.4. CI pins 3.47.5, which has not been run.
+
+### Docs, scripts, assets, and store
+
+- R-03: eight done plans sit in `docs/exec-plans/active/`.
+- R-05: `scripts/check_web_locales.py` is not in CI (TD-136). Logic is duplicated.
+- R-06: `apply_script_fixes.py` and `fix_arb_locales.py` have no references. `plan.mjs:139` points to a missing `scripts/growth`.
+- R-10, R-11: 54 dead links in 13 frame-packet `.md` files. Distinct font weights map to one file in `04-snap-catalog.html` and `12-start-free.html`.
+- R-12: `.agents` has 364 files. The owner counted 243. The `react-best-practices` rename was not applied.
+- R-13: 13 duplicate `voice/NN-2.wav` files. Absolute `/Users/...` paths in video scripts.
+- R-14: `store/creative` holds byte-identical locale frame copies (67.5 MB) and `.cache/html` (13.7 MB). The renders stay (owner decision).
+- R-15, R-16, R-17: root `video.mp4`, `flutter/web`, and Docker files stay (owner decision). TD-003 stays open.
+- R-18: `fitcheck-pr27` worktree (0.58 GB) and five stashes. Not touched.
+- U-04: route `/wardrobe` while the UI says Closet (TD-155).
+- Store and i18n: 49 locales not human-reviewed (copy quality, not code). Store creative reports 15 warnings: `ta-IN` fallback copy and headline overflow. APP_IPAD_13 has 49 locales incomplete. 51 locale catalogs report "identical to English" (report-level).
+
+### Not verified
+
+- Logged-in pages and admin past sign-in: code review only, per owner decision.
+- Android debug build: SDK licenses are not accepted. Owner step: `flutter doctor --android-licenses`.
+- Netlify edge functions (`not-found`, `og-tags`, `seo-html`) and CSP headers: not run. The local server follows `netlify.toml` routing only.
+- Flutter goldens on CI's 3.47.5: not run. The local run used 3.47.4.
 
 ## Verification
 
-- Baseline lanes: as in the table above.
+- Final head is `0392d4fb` for code. The docs commit that adds these results changes no code.
+- `scripts/check_all.sh` (default options) on `0392d4fb`: exit 0. Log: `output/audit/logs/p6-check-all-0392d4fb.log`.
+  - Architecture, docs structure, theme tokens, and iOS deployment target (minimum 15.0): pass.
+  - markdownlint: 167 files, 0 issues.
+  - Migrations: 67 files, checks OK. RTL: 0 physical-direction sites. App Store listing: 50 of 50 locales.
+  - Locale coverage: no errors. 49 locales are not marked reviewed (warning, fixed by native review). Mean catalog coverage 98.7%.
+  - Store creative: pass with 15 warning lines. 14 are `ta-IN`: the headline overflows and the authored fallback copy is rendered. 1 is `APP_IPAD_13`: 49 locales incomplete.
+  - Backend ruff: all checks passed. Backend pytest: 4463 passed, 4 skipped, 65 warnings. Coverage 94.71% (threshold 90%). 66 s.
+  - Frontend lint: pass (`--max-warnings 0`). Frontend vitest: 82 files, 564 tests passed. Frontend build: skipped by default (see the prerender build below).
+  - Flutter gen-l10n and analyze: pass (check_all exit 0). Flutter test without goldens: `+575 ~1`, all tests passed.
+- Admin lanes on `0392d4fb`: `ADMIN_LANES_OK`. Lint, typecheck, vitest (37 files, 261 tests), `check:schema`, and build pass. Initial chunk: 589.3 KB minified, 185.2 KB gzip. The budget applies to gzip: 250 KB warn, 320 KB fail. Log: `output/audit/logs/p6-admin-lanes-0392d4fb.log`.
+- Admin e2e on `0392d4fb`: 14 of 14 pass (Chromium and mobile Chromium). Log: `output/audit/logs/p6-admin-e2e-0392d4fb.log`.
+- Web type check (`tsc`) on `0392d4fb`: exit 0. Log: `output/audit/logs/p6-web-tsc-0392d4fb.log`.
+- Web build with prerender on `0392d4fb`: exit 0. 42 routes rendered. Run as `vite build` plus the two prerender scripts, so the IndexNow postbuild step did not run. Log: `output/audit/logs/p6-web-build-prerender-0392d4fb.log`.
+- Goldens: `flutter test --tags golden` on Flutter 3.47.4: `+87 ~1`, all passed (1 skipped, `splash_light`). Log: `output/audit/logs/e4-flutter-golden.log`. Run at `8315b11a`. No Flutter code changed after it.
+- Code after each lane head: no backend change after `741fe417`, no web change after `0392d4fb`, and no Flutter change after `8315b11a`. The only admin change after `f3a9fd4d` is a README edit (`5909c75c`). The lanes above cover the final code.
+- Re-shoot on the Netlify-equivalent server: 161 of 161 HTTP 200, 0 runner errors. Output: `output/audit/screens/web-final/`. Log: `output/audit/logs/p6-web-shoot-final.log`.
+  - Against the baseline (`output/audit/screens/web/`, `vite preview`): 158 of 161 rows match on every tracked metric.
+  - `/shared/outfits/...` at 1440: console messages 2 to 1, text 114 to 80 characters. This is the fix in `0392d4fb`.
+  - `/` at 1440: failed requests 1 to 0. The baseline review lists one aborted home image request (`ERR_ABORTED`). Not reproduced.
+  - `/blog` at 1440: height 6,156 to 4,105 px. Text 8,059 to 4,618 characters. Blog code changed only in an import path (`96bdb488`). The removed wrapper called the same i18n `formatDate` with the same argument. No code change explains the difference. Cause not confirmed in a browser.
+  - Top five on the final head: #1, #2, #3, and #5 still present. #4 fixed in `0392d4fb`.
+  - W-11 unchanged in the browser. Unknown paths and `/gamification` return HTTP 200 with the app shell, then navigate to `/`. The crawler soft 404 comes from the `not-found` edge function. This run did not execute that function.
+  - Telemetry: no Sentry or PostHog request in the final re-shoot. Third-party hosts: `images.unsplash.com` only (88 pages).
+- Per-group lane logs are in `output/audit/logs/`. (e1) `commit-e1-backend-pytest.log`: 4461 passed, 94.70% coverage. (e4) `e4-flutter-analyze.log`: no issues. (g) `g-vitest.log`: 564 passed. (h) `h-backend-ruff.log`: all checks passed. `h-architecture.log`: passed. `h-backend-pytest.log`: 4463 passed, 94.71%. `h-web-test.log`: 562 passed. `h-web-lint.log`: no errors. `h-web-tsc.log`: no errors.
 - P3 review: `output/audit/screens/web/review.md`. Goldens: `output/audit/logs/flutter-golden.log`.
 - P5 lanes after each commit: backend `ruff check .`, targeted pytest, and `python scripts/check_architecture.py`. Web `npm run lint`, `npm test`, and `npm run build`. Admin `npm run lint`, `npm run typecheck`, `npm test`, `npm run check:schema`, and `npm run build`. Flutter `flutter analyze` and `flutter test --exclude-tags golden`. Docs `python scripts/check_docs_structure.py`.
 
