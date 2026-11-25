@@ -81,10 +81,6 @@ export function getAccessToken(): string | null {
   return getTokens()?.access_token || null;
 }
 
-export function isAuthenticated(): boolean {
-  return Boolean(getAccessToken());
-}
-
 export function syncPersistedTokens(tokens: AuthTokens): void {
   // Keep Zustand persist in sync so rehydrate does not restore stale tokens.
   try {
@@ -98,18 +94,6 @@ export function syncPersistedTokens(tokens: AuthTokens): void {
   } catch {
     // Non-fatal: request-path tokens are already updated via setTokens.
   }
-}
-
-export function storeUser(user: unknown): void {
-  try {
-    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
-  } catch {
-    // Non-fatal; user will be refetched on next route load.
-  }
-}
-
-export function clearUser(): void {
-  localStorage.removeItem(USER_STORAGE_KEY);
 }
 
 export { hasForcedLogout };

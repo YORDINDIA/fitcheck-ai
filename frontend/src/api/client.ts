@@ -125,10 +125,6 @@ function isAuthEndpoint(url: string | undefined): boolean {
   return AUTH_ENDPOINTS.some((endpoint) => url.includes(endpoint));
 }
 
-export function isAuthenticated(): boolean {
-  return Boolean(getAccessToken());
-}
-
 /** Single-flight refresh: concurrent callers share one in-flight request. */
 let refreshPromise: Promise<void> | null = null;
 

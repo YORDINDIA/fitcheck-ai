@@ -2,7 +2,7 @@
  * Authentication API endpoints
  */
 
-import { apiClient, getTokens, setTokens, clearTokens } from './client';
+import { apiClient, setTokens, clearTokens } from './client';
 import { getApiError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
 import { ENDPOINTS } from '@/lib/endpoints';
@@ -118,14 +118,6 @@ export async function confirmPasswordReset(data: {
   } catch (error) {
     throw getApiError(error);
   }
-}
-
-/**
- * Check if user is authenticated (has valid tokens)
- */
-export function isAuthenticated(): boolean {
-  const tokens = getTokens();
-  return !!tokens?.access_token;
 }
 
 /**

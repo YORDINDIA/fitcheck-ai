@@ -7,7 +7,8 @@ import SEO from '@/components/seo/SEO'
 import { BreadcrumbJsonLd, buildArticleSchema } from '@/components/seo/JsonLd'
 import { Calendar, Clock, ArrowLeft, User, ArrowRight, Loader2 } from 'lucide-react'
 import { useBlogPost, useBlogPosts } from '@/hooks/useBlog'
-import { escapeHtml, formatDate, sanitizeMarkdownUrl } from '@/lib/utils'
+import { formatDate } from '@/i18n'
+import { escapeHtml, sanitizeMarkdownUrl } from '@/lib/utils'
 
 export default function BlogPostPage() {
   const { slug } = useParams<{ slug: string }>()
