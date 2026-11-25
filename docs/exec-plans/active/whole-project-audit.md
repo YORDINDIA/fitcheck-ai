@@ -107,7 +107,7 @@ Sources: `output/audit/screens/web/results.json` (metrics) and `output/audit/scr
 
 Type: Broken, Inconsistent, Inefficient, Unneeded, or Hierarchy/density.  
 Confidence: High = reproduced or counted by command. Medium = one check, or reported without reproduction. Low = reported, not verified.  
-Plan: P5a, P5c, P5e, P5f, or P5h = planned fix commit. Debt = moves to `tech-debt-tracker.md`. Owner = owner review list.
+Plan: P5a, P5c, P5e, P5f, or P5h = planned fix commit. Debt or TD-nnn = row in `tech-debt-tracker.md`. Owner = owner review list.
 
 ### Backend, MCP, and tests
 
@@ -118,14 +118,14 @@ Plan: P5a, P5c, P5e, P5f, or P5h = planned fix commit. Debt = moves to `tech-deb
 | B-03 | Unneeded | `beautifulsoup4` in `backend/requirements.txt`. No `bs4` imports. | High, grep | P5e |
 | B-04 | Broken | MCP path parameters are inserted without escaping: `backend/app/mcp/executor.py:61`. Reproduced: `x/../../auth/login` reaches another route. | High, reproduced | P5h. Behavior change for values with `/`, `?`, `#`, or spaces |
 | B-05 | Inconsistent | `WIDGET_MIME_TYPE` in `backend/app/mcp/server.py:132` duplicates `WIDGET_MIME` in `backend/app/mcp/widgets.py:28`. | High | P5e if the duplicate is unused, else dedupe |
-| B-06 | Unneeded | `_SUPPORTED_PLATFORMS` has zero references (SIMPLIFY B7). | Medium | P5e after a repo-wide grep, else Debt |
+| B-06 | Unneeded | Obsolete. `_SUPPORTED_PLATFORMS` does not exist (grep, 2026-11-25). The open SIMPLIFY B7 question is TD-149. | Medium | TD-149 |
 | B-07 | Broken | Three invalid escape sequences (SyntaxWarning) in `backend/tests/integration/test_items_routes_coverage.py:2562, 2599, 2629`. | High, compile with warnings | P5h: raw strings |
 | B-08 | Unneeded | `verify_access_token` (`backend/app/services/mcp_oauth_service.py:189`) and `revoke_all_for_user` (`:454`) have no callers. | Medium | Owner |
 | B-09 | Unneeded | `_b64url_encode` (`backend/app/services/apple_iap_service.py:95`) is used only by its own test. | Medium | Owner |
 | B-10 | Unneeded | 23 model definitions in `backend/app/models/*` have no users. `backend/app/core/exceptions.py:457` is unused. | Medium | Owner |
-| B-11 | Inefficient | `social_scraper_service`: 4 broad `except Exception` blocks and 29 "exhausted" messages (SIMPLIFY B1). | Medium | Debt |
-| B-12 | Inefficient | 58 `sleep(` calls in backend tests, down from 85 (SIMPLIFY B2, partly done). | High, count | Debt |
-| B-13 | Inconsistent | `_now()` is duplicated in `backend/app/services/item_service.py:28` and `user_service.py:29`. | High | Debt |
+| B-11 | Inefficient | `social_scraper_service`: 4 broad `except Exception` blocks and 29 "exhausted" messages (SIMPLIFY B1). | Medium | TD-147 |
+| B-12 | Inefficient | 58 `sleep(` calls in 23 backend test files, down from 85. The two async files SIMPLIFY B2 named no longer have any. | High, count | TD-148 |
+| B-13 | Inconsistent | `_now()` is duplicated in `backend/app/services/item_service.py:28` and `user_service.py:29`. Both only call `utcnow_iso()`. | High | P5e: call `utcnow_iso()` directly, delete both copies |
 | B-14 | Inconsistent | `pytest` and `ruff` ship in the production requirements. | High | Owner: split dev requirements |
 | B-15 | Inconsistent | `backend/Dockerfile` creates `/app/logs`. The README says logs go to stdout. | Medium | Owner |
 | B-16 | Inefficient | No `backend/.dockerignore`. `COPY . .` would copy `.venv` (327 MB) and tests (13 MB). | High, sizes measured | Owner |
@@ -148,14 +148,14 @@ Verified clean: ruff F401, F811, and F841 are clean for `app`, `db`, and `script
 | W-04 | Unneeded | `storeUser` and `clearUser` in `frontend/src/lib/auth.ts:103,111`. No callers. | High, grep | P5e |
 | W-05 | Unneeded | `frontend/src/lib/utils.ts`: `calculateCostPerWear` (line 44), `debounce` (60), `generateId` (82), `sleep` (89). Keep the `sleep` copies in `client.ts:248`, `retry.ts:118`, and `photoshootStore.ts:36`. | High, grep | P5e for the unused helpers |
 | W-06 | Broken | Import cycle. `frontend/src/lib/endpoints.ts:142` re-exports `UPLOAD_TIMEOUT_MS` from `@/api/client`. `api/outfits.ts:7` imports it through endpoints. `client.ts:19` imports endpoints. | High, reproduced by grep | P5h |
-| W-07 | Inconsistent | `formatDate` in `frontend/src/i18n/runtime.ts:94` and `frontend/src/lib/utils.ts:26`. | Medium | Debt |
+| W-07 | Inconsistent | `formatDate` in `frontend/src/i18n/runtime.ts:94` and `frontend/src/lib/utils.ts:26`. The `utils` copy only forwards to `runtime`, and two blog pages import it. | Medium | P5e: import from `@/i18n`, delete the wrapper |
 | W-08 | Inconsistent | `frontend/nginx.conf:37,60` say "(for docker-compose)". Compose uses `Dockerfile.dev`. | High | P5f |
 | W-09 | Inconsistent | `frontend/Dockerfile:5` and `Dockerfile.dev:2` use `node:18-alpine`. CI uses Node 20. | High | Owner |
 | W-10 | Inconsistent | Crawler lists differ between the `og-tags` and `seo-html` edge functions. `/gift/` is missing from the not-found KNOWN_PREFIXES. `isCrawler` and `escapeHtml` are duplicated. | Medium | Owner |
 | W-11 | Broken | Unknown paths and `/gamification` return HTTP 200 and show the home page. This is a soft 404. | High, observed in run 2 | Owner |
 | W-12 | Inconsistent | `netlify.toml:191` forces the woff2 Content-Type on `/fonts/*`, including a license `.txt`. | Medium | Owner |
-| W-13 | Inconsistent | `outfitStore` still imports `skipToast` from `../api/client` (SIMPLIFY F3, partly done). | High, grep | Debt |
-| W-14 | Unneeded | SIMPLIFY F7 `usePolling` hook is not present. Check whether the item still applies. | Low | Debt, verify |
+| W-13 | Inconsistent | `outfitStore` still imports `skipToast` from `../api/client` (SIMPLIFY F3, partly done). | High, grep | TD-150 |
+| W-14 | Inconsistent | SIMPLIFY F7 `usePolling` was never added. Timers remain in `useSocialImportQueue.ts:313` and `useBatchSSE.ts:183`, so the item still applies. | Medium, grep | TD-151 |
 
 ### Admin (`admin/`)
 
@@ -179,7 +179,7 @@ Verified clean: ruff F401, F811, and F841 are clean for `app`, `db`, and `script
 | F-03 | Unneeded | `flutter/lib/core/utils/locale_format.dart` has no importers. `docs/FLUTTER.md` (line 281) says it is used. | High, grep | Owner |
 | F-04 | Unneeded | `flutter/lib/features/feedback/index.dart` barrel has no importers. | High, grep | Owner |
 | F-05 | Unneeded | `flutter/lib/features/subscription/views/subscription_page.dart:9` imports `models/subscription_model.dart`. Many names are unreferenced by grep. | Medium | P5e only if the analyzer reports an unused import |
-| F-06 | Inconsistent | `auth` imports `subscription` in `auth/services/user_initialization_service.dart` and `auth/views/register_page.dart:12` (SIMPLIFY FL4). | Medium | Debt |
+| F-06 | Inconsistent | `auth` imports the subscription providers in `auth/providers/auth_provider.dart:14` and `auth/views/register_page.dart:12` (SIMPLIFY FL4). `user_initialization_service.dart` imports only core code. | Medium | TD-152 |
 | F-07 | Broken | `flutter/lib/features/feedback/data/feedback_repository.dart:38,87,94` calls `Platform.isIOS` without a `kIsWeb` guard. | Medium | Owner |
 | F-08 | Inconsistent | 205 `?? 'English'` fallbacks across 28 files. | High, count | Owner |
 | F-09 | Inconsistent | Widget literals not from ARB: wardrobe 19, core widgets 19, subscription 4, calendar 4, auth 2, gifts 1. Non-widget English: wardrobe 106, subscription 63, settings 31. | High, count | Owner |
@@ -189,8 +189,9 @@ Verified clean: ruff F401, F811, and F841 are clean for `app`, `db`, and `script
 | F-13 | Inconsistent | `flutter/test/visual/auth_screens_golden_test.dart:44` skips `splash_light` with no reason. | High | Owner |
 | F-14 | Broken | Release signing falls back to the debug key: `flutter/android/app/build.gradle.kts:56-59`. | High, read | Owner. Release risk, high priority |
 | F-15 | Inconsistent | Smaller items: macOS entitlements lack Sign in with Apple. `flutter/web/**` has 7 files. Windows `generated_plugins.cmake` may be stale. Template `RunnerTests.swift` asserts nothing. `dashboard_provider_test.dart:68` has a race. | Low | Owner |
-| F-16 | Inconsistent | `getInstance()` left in `flutter/lib/core/services/secure_local_storage.dart:37` (SIMPLIFY FL2). | High, grep | Debt |
-| F-17 | Unneeded | SIMPLIFY FL7 `auth_controller.dart` is not found. The file moved. Verify. | Low | Debt, verify |
+| F-16 | Obsolete | `secure_local_storage.dart:37` is the one-time migration of the legacy session key, so it stays. SIMPLIFY FL2 is otherwise done: other reads go through `PersistenceService`. | High, grep | None (done) |
+| F-17 | Unneeded | The auth controller moved to `auth/providers/auth_provider.dart` (422 lines). SIMPLIFY FL7 measured 496. | Low | TD-154 |
+| F-18 | Inconsistent | Three silent `catch (_) {}` blocks: `core/services/network_service.dart:32`, `core/network/api_interceptors.dart:100`, `features/onboarding/intro_seen_provider.dart:28` (SIMPLIFY FL6). The dashboard catch blocks it named are gone. | Low | TD-153 |
 
 ### Docs, scripts, infra, assets, and store
 
@@ -202,9 +203,9 @@ Verified clean: ruff F401, F811, and F841 are clean for `app`, `db`, and `script
 | R-04 | Unneeded | `scripts/i18n/translate_arb.py:452` has an unused variable `path` (F841). | High, ruff | P5e |
 | R-05 | Inconsistent | `scripts/check_web_locales.py` is not in CI (TD-136). Duplicate logic: `check_locales` and `check_web_locales`, `translate_arb` and `translate_web`, blog publish and verify. | High | Owner |
 | R-06 | Unneeded | `scripts/apply_script_fixes.py` and `scripts/fix_arb_locales.py` have no references. `plan.mjs:139` points to a missing `scripts/growth`. | Medium | Owner |
-| R-07 | Inefficient | `asc.mjs:185` and `fonts.mjs:66,71` fetch without a timeout. | High, grep | Debt |
+| R-07 | Inefficient | `scripts/asc/asc.mjs:185` and `scripts/creative/fonts.mjs:66,71` fetch without a timeout. | High, grep | TD-156 |
 | R-08 | Broken | `infra/images-worker/worker.js:11-12,25-30` can return 404 for legacy-key requests. | Medium | Owner |
-| R-09 | Inconsistent | `widgets/vite.config.ts` empties the output folder in the wrong order. Latent bug at `widgets/src/wardrobe-grid.tsx:57`. | Low | Debt |
+| R-09 | Inconsistent | `widgets/vite.config.ts:23` sets `emptyOutDir` only for `listWidgets()[0]`, which follows `readdirSync` order. Latent: it deletes earlier outputs if that pass does not run first. | Low | TD-157 |
 | R-10 | Unneeded | `videos/fitcheck-ai-explainer/compositions/frames/04-snap-catalog.html:4-14` and `12-start-free.html` map distinct font weights to the same file. | Medium | Owner |
 | R-11 | Broken | 54 dead links in 13 frame-packet `.md` files. | High, count | Owner |
 | R-12 | Inconsistent | `.agents/skills/react-best-practices/` rename was not applied. The skills-refresh plan says done. `.agents` has 364 files. The owner counted 243. | Medium | Owner |
@@ -219,13 +220,14 @@ Verified clean: ruff F401, F811, and F841 are clean for `app`, `db`, and `script
 
 | ID | Type | Finding and evidence | Confidence | Plan |
 |----|------|----------------------|------------|------|
-| U-01 | Inconsistent | Phase F, photo to auto-outfit pipeline, is deferred. The `outfit_suggestion` SSE event has 0 references. | High, grep | Debt |
-| U-02 | Inconsistent | Auto-extract and default outfit per upload are deferred. | High | Debt |
-| U-03 | Inconsistent | Transparent PNG via rembg (2.5) is deferred. The backend has 2 rembg references, so this is partly done. | Medium | Debt |
+| U-01 | Obsolete | Phase F is built as client orchestration (`docs/exec-plans/completed/2026-08-01-auto-outfit-from-upload.md`). The `outfit_suggestion` SSE event was never built. | High, grep | None (done) |
+| U-02 | Obsolete | Auto-extract and default outfit per upload ship in `BatchExtractionFlow` (same completed plan). | High, grep | None (done) |
+| U-03 | Obsolete | rembg was rejected on purpose. Backdrop removal uses Pillow only and writes WebP with alpha (`backend/app/utils/background_removal.py:15`; `docs/BACKEND.md`, line 522). | High, read | None (decided) |
+| U-04 | Inconsistent | The route stays `/wardrobe` while the UI says Closet. No `/closet` route or redirect exists (UI_UX section 6). | Low | TD-155 |
 
 ### Already fixed or obsolete (not carried forward)
 
-SIMPLIFY items fixed: F1, F2, F5, F6, F8, B4, B5, B6, FL1, FL3, FL5, S1 to S3. SIMPLIFY F4 is largely done (`ProfilePage` is 619 lines). SIMPLIFY R1 is obsolete. UI_UX Phases 1, 3, and 4 are implemented per that doc. Items B3 and FL2 are covered above or fixed.
+SIMPLIFY items fixed: F1, F2, F5, F6, F8, B4, B5, B6, FL1, FL3, FL5, S1 to S3. SIMPLIFY F4 is done enough: five panels exist and `ProfilePage` is 619 lines, so it has no row. SIMPLIFY R1 is obsolete. UI_UX Phases 1 to 4 are implemented, and the photo-to-outfit and rembg deferrals are obsolete (U-01 to U-03). SIMPLIFY FL6 is partly done, and F-18 covers the rest. Items B3 and FL2 are covered above or fixed.
 
 ## Skipped and sampled files
 
@@ -253,4 +255,4 @@ Filled in at P6. Until then, every row marked Owner in the findings tables is on
 
 ## Deferred debt
 
-Debt rows above move to `docs/exec-plans/tech-debt-tracker.md` as TD-147 onward in P5c. The TD IDs are filled in then.
+Debt rows moved to `docs/exec-plans/tech-debt-tracker.md` as TD-147 to TD-157 in commit (c). Plan cells now name the TD ID.
