@@ -35,9 +35,6 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-
-        // Placeholder for OAuth redirect scheme (used by flutter_appauth)
-        manifestPlaceholders["appAuthRedirectScheme"] = "fitcheck.ai"
     }
 
     signingConfigs {
