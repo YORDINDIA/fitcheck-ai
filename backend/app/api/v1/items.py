@@ -71,10 +71,6 @@ logger = get_context_logger(__name__)
 router = APIRouter()
 
 
-def _now() -> str:
-    return utcnow_iso()
-
-
 class BatchDeleteItemsRequest(BaseModel):
     item_ids: List[str] = Field(default_factory=list, min_length=1)
 
@@ -517,7 +513,7 @@ async def update_item(
 
         if "purchase_date" in update_dict and update_dict["purchase_date"] is not None:
             update_dict["purchase_date"] = update_dict["purchase_date"].date().isoformat()
-        update_dict["updated_at"] = _now()
+        update_dict["updated_at"] = utcnow_iso()
 
         result = await item_service.update_item_row(db, item_id_str=item_id_str, user_id=user_id, update_dict=update_dict)
         row = (result.data or [None])[0]
@@ -706,7 +702,7 @@ async def mark_worn(
             if not existing or not existing.data:
                 raise ItemNotFoundError(item_id=item_id_str)
             current = int(existing.data.get("usage_times_worn", 0))
-            update = {"usage_times_worn": current + 1, "usage_last_worn": _now(), "updated_at": _now()}
+            update = {"usage_times_worn": current + 1, "usage_last_worn": utcnow_iso(), "updated_at": utcnow_iso()}
             await item_service.update_item_usage_worn(db, item_id_str=item_id_str, user_id=user_id, update=update)
             return {"data": {"id": item_id_str, "usage_times_worn": current + 1}, "message": "OK"}
 
@@ -759,7 +755,7 @@ async def upload_item_image(
             is_primary=bool(is_primary),
         )
 
-        now = _now()
+        now = utcnow_iso()
         image_id = str(uuid.uuid4())
         img_row = {
             "id": image_id,
@@ -1160,7 +1156,7 @@ async def categorize_item(
             "style": style,
             "seasonal_tags": seasonal_tags,
             "materials": materials,
-            "updated_at": _now(),
+            "updated_at": utcnow_iso(),
         }
         await item_service.update_item_metadata(db, item_id_str=item_id_str, user_id=user_id, update=update)
 
@@ -1218,7 +1214,7 @@ async def update_item_categories(
             if list_field in update and update[list_field] is not None:
                 update[list_field] = normalize_tag_list(update[list_field])
 
-        update["updated_at"] = _now()
+        update["updated_at"] = utcnow_iso()
         res = await item_service.update_item_categories_row(db, item_id_str=item_id_str, user_id=user_id, update=update)
         row = (res.data or [None])[0]
         if not row:

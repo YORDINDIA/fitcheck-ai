@@ -61,10 +61,6 @@ logger = get_context_logger(__name__)
 router = APIRouter()
 
 
-def _now() -> str:
-    return utcnow_iso()
-
-
 def _is_owned_avatar_key(key: str, user_id: str) -> bool:
     """True when ``key`` is this user's own avatar object (any layout).
 
@@ -255,7 +251,7 @@ async def update_current_user(
             update_payload.pop(admin_only, None)
 
         while True:
-            update_payload["updated_at"] = _now()
+            update_payload["updated_at"] = utcnow_iso()
             try:
                 rows = await user_service.update_user_row(db, user_id=user_id, update_payload=update_payload)
                 break
@@ -486,7 +482,7 @@ async def export_user_data(
         )
 
         payload = {
-            "generated_at": _now(),
+            "generated_at": utcnow_iso(),
             "note": "Metadata export: image files are not included; rows carry their storage keys.",
             "user": user_rows[0],
             "preferences": (preferences or [None])[0],
@@ -625,7 +621,7 @@ async def get_user_preferences(
         prefs_data, _ = user_service.get_or_create_record(
             db, "user_preferences", user_id, _PREFERENCES_DEFAULTS, UserPreferences
         )
-        prefs_data["last_updated"] = _now()
+        prefs_data["last_updated"] = utcnow_iso()
         return {"data": prefs_data, "message": "OK"}
 
     except (UserNotFoundError, ValidationError, DatabaseError):
@@ -784,7 +780,7 @@ async def create_body_profile(
     # The per-user lock serializes the check-and-insert within this process.
     async with PER_USER_LOCK(user_id):
         try:
-            now = _now()
+            now = utcnow_iso()
             count = await user_service.count_body_profiles(db, user_id=user_id)
 
             payload = request.model_dump()

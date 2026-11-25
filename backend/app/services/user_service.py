@@ -26,10 +26,6 @@ from app.utils.db import execute_with_reconnect, run_sync_with_reconnect
 logger = get_context_logger(__name__)
 
 
-def _now() -> str:
-    return utcnow_iso()
-
-
 def _first_row(result_data: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """Extract first row from query result."""
     return (result_data or [None])[0] if result_data else None
@@ -103,7 +99,7 @@ def upsert_record(
     """
     update_dict = update_data.model_dump(exclude_unset=True)
     if updated_field:
-        update_dict[updated_field] = _now()
+        update_dict[updated_field] = utcnow_iso()
 
     existing = run_sync_with_reconnect(
         lambda d: d.table(table).select("user_id").eq("user_id", user_id).execute(),
@@ -124,9 +120,9 @@ def upsert_record(
             **update_dict,
         }
         if created_field:
-            insert[created_field] = _now()
+            insert[created_field] = utcnow_iso()
         if updated_field:
-            insert[updated_field] = _now()
+            insert[updated_field] = utcnow_iso()
         # Same reconnect treatment as the update branch: the insert is an
         # upsert on the user_id PK, so a retry after a lost response
         # collapses onto the existing row (exact-once) instead of running on
@@ -281,7 +277,7 @@ async def fetch_current_avatar_row(db: Any, *, user_id: str) -> Optional[Dict[st
 
 
 async def set_user_avatar(db: Any, *, user_id: str, avatar_url: str) -> None:
-    await asyncio.to_thread(db.table("users").update({"avatar_url": avatar_url, "updated_at": _now()}).eq("id", user_id).execute)
+    await asyncio.to_thread(db.table("users").update({"avatar_url": avatar_url, "updated_at": utcnow_iso()}).eq("id", user_id).execute)
 
 
 # ============================================================================
@@ -329,7 +325,7 @@ async def update_body_profile_row(db: Any, *, user_id: str, profile_id_str: str,
         raise BodyProfileNotFoundError(profile_id=profile_id_str)
 
     update = update_data.model_dump(exclude_unset=True)
-    update["updated_at"] = _now()
+    update["updated_at"] = utcnow_iso()
 
     if update.get("is_default") is True:
         await asyncio.to_thread(db.table("body_profiles").update({"is_default": False}).eq("user_id", user_id).execute)
@@ -366,7 +362,7 @@ async def delete_body_profile_row(db: Any, *, user_id: str, profile_id_str: str)
         )
         if remaining.data:
             new_default_id = remaining.data[0]["id"]
-            await asyncio.to_thread(db.table("body_profiles").update({"is_default": True, "updated_at": _now()}).eq("id", new_default_id).execute)
+            await asyncio.to_thread(db.table("body_profiles").update({"is_default": True, "updated_at": utcnow_iso()}).eq("id", new_default_id).execute)
             await asyncio.to_thread(db.table("users").update({"body_profile_id": new_default_id}).eq("id", user_id).execute)
         else:
             await asyncio.to_thread(db.table("users").update({"body_profile_id": None}).eq("id", user_id).execute)
@@ -399,7 +395,7 @@ async def upsert_body_profile_row(db: Any, *, user_id: str, update_data: Any) ->
         .execute
     )
 
-    now = _now()
+    now = utcnow_iso()
     if not existing or not existing.data:
         # Creating requires full payload; validate via BodyProfileCreate.
         # A partial payload raises pydantic's ValidationError, which is

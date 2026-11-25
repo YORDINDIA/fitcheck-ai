@@ -25,10 +25,6 @@ from app.utils.db import (
 )
 
 
-def _now() -> str:
-    return utcnow_iso()
-
-
 # ============================================================================
 # List, search, and browse
 # ============================================================================
@@ -236,7 +232,7 @@ async def fetch_item_favorite_state(db: Any, *, item_id_str: str, user_id: str) 
 
 
 async def set_item_favorite(db: Any, *, item_id_str: str, user_id: str, new_value: bool) -> Any:
-    return await asyncio.to_thread(db.table("items").update({"is_favorite": new_value, "updated_at": _now()}).eq("id", item_id_str).eq("user_id", user_id).execute)
+    return await asyncio.to_thread(db.table("items").update({"is_favorite": new_value, "updated_at": utcnow_iso()}).eq("id", item_id_str).eq("user_id", user_id).execute)
 
 
 # ============================================================================

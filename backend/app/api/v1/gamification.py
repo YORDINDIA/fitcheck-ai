@@ -57,10 +57,6 @@ MILESTONES = [
 ]
 
 
-def _now() -> str:
-    return utcnow_iso()
-
-
 def _safe_int(value: Any, default: int = 0) -> int:
     try:
         return int(value)
@@ -158,7 +154,7 @@ async def get_streak(
         result = await get_user_streak_row(db, user_id)
         row = result.data if result else None
         if not row:
-            now = _now()
+            now = utcnow_iso()
             insert = {
                 "user_id": user_id,
                 "current_streak": 0,

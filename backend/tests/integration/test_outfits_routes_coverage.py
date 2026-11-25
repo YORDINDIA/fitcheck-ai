@@ -608,8 +608,8 @@ def test_collection_counts_skips_rows_without_an_id():
     assert outfits_module._collection_counts(db, [COLLECTION_ID, "zz"]) == {COLLECTION_ID: 2}
 
 
-def test_now_returns_an_iso_string():
-    assert isinstance(outfits_module._now(), str)
+def test_utcnow_iso_returns_a_string():
+    assert isinstance(outfits_module.utcnow_iso(), str)
 
 
 # ---------------------------------------------------------------------------

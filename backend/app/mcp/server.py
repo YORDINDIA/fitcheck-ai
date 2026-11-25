@@ -21,6 +21,7 @@ from mcp import types
 from app.mcp.auth import get_authorization
 from app.mcp.executor import call_endpoint
 from app.mcp.generate import MCPTool
+from app.mcp.widgets import WIDGET_MIME
 
 logger = logging.getLogger(__name__)
 
@@ -120,13 +121,9 @@ def build_mcp_server(
             return [
                 ReadResourceContents(
                     content=html,
-                    mime_type=WIDGET_MIME_TYPE,
+                    mime_type=WIDGET_MIME,
                     meta=meta,
                 )
             ]
 
     return server
-
-
-# Widget resource MIME type.
-WIDGET_MIME_TYPE = "text/html"

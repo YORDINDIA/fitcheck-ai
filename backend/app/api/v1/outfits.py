@@ -84,10 +84,6 @@ class AddCollectionOutfitRequest(BaseModel):
     outfit_id: str = Field(..., min_length=1)
 
 
-def _now() -> str:
-    return utcnow_iso()
-
-
 # ============================================================================
 # CRUD
 # ============================================================================
@@ -101,7 +97,7 @@ async def create_outfit(
 ):
     try:
         outfit_id = str(uuid.uuid4())
-        now = _now()
+        now = utcnow_iso()
 
         # Verify items exist and belong to user
         item_ids = [str(i) for i in request.item_ids]
@@ -421,7 +417,7 @@ async def update_outfit(
                 )
             update_dict["item_ids"] = item_ids
 
-        update_dict["updated_at"] = _now()
+        update_dict["updated_at"] = utcnow_iso()
         row = await outfit_service.update_outfit_row(
             db, outfit_id=outfit_id_str, user_id=user_id, update_dict=update_dict
         )
@@ -550,7 +546,7 @@ async def create_collection(
 ):
     try:
         collection_id = str(uuid.uuid4())
-        now = _now()
+        now = utcnow_iso()
         insert = {
             "id": collection_id,
             "user_id": user_id,
@@ -630,7 +626,7 @@ async def update_collection(
         update_dict = update.model_dump(exclude_unset=True)
         outfit_ids = update_dict.pop("outfit_ids", None)
         if update_dict:
-            update_dict["updated_at"] = _now()
+            update_dict["updated_at"] = utcnow_iso()
             await outfit_service.update_collection_row(
                 db, collection_id=collection_id_str, update_dict=update_dict
             )
@@ -1059,7 +1055,7 @@ async def start_generation(
             raise OutfitNotFoundError(outfit_id=outfit_id_str)
 
         generation_id = str(uuid.uuid4())
-        now = _now()
+        now = utcnow_iso()
 
         insert = {
             "id": generation_id,
@@ -1197,7 +1193,7 @@ async def upload_outfit_image(
                         user_id=user_id,
                         outfit_id=outfit_id_str,
                         image_url=existing["image_url"],
-                        completed_at=_now(),
+                        completed_at=utcnow_iso(),
                     )
                 return {"data": existing, "message": "Created"}
 
@@ -1213,7 +1209,7 @@ async def upload_outfit_image(
             generation_type="ai",
         )
 
-        now = _now()
+        now = utcnow_iso()
         img_row = {
             "id": str(uuid.uuid4()),
             "outfit_id": outfit_id_str,
