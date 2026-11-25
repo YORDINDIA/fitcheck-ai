@@ -7,7 +7,7 @@ FitCheck AI is a multi-platform wardrobe intelligence product with AI-assisted i
 - `backend/` — FastAPI API and business logic
 - `frontend/` — React + TypeScript web app (Vite)
 - `admin/` — Internal admin console (React 19 SPA, server-enforced RBAC)
-- `flutter/` — Flutter mobile app (GetX)
+- `flutter/` — Flutter mobile app (Riverpod and go_router)
 - `infra/` — Cloudflare images worker
 - `docs/` — Agent-first knowledge base (product, design, plans, quality)
 - `scripts/` — Harness checks (architecture + docs structure)

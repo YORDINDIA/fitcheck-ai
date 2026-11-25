@@ -10,8 +10,8 @@ Supabase-backed auth as the other clients. All authorization is
 > library, server-driven data tables, OpenAPI codegen contract, and all
 > feature modules (users, dashboard + revenue/trends, subscriptions + IAP,
 > gifts, quotas, content, promo, feedback, ops/storage, audit, search, settings)
-> are in place, with 33 Vitest files / 231 tests. Playwright e2e specs
-> (6 files / 8 critical journeys) are wired into CI via
+> are in place, with 37 Vitest files / 261 tests. Playwright e2e specs
+> (7 files / 14 test cases) are wired into CI via
 > `.github/workflows/admin-ci.yml` (runs on PRs touching `admin/**` and on
 > pushes to main); token-refresh end-to-end verification is still pending
 > (see "Known advisories / limitations").
@@ -27,8 +27,7 @@ npm run dev            # http://localhost:5173
 Dev runs on `:5173` and proxies `/api` → `http://localhost:8000` (the backend;
 `cd ../backend && uvicorn app.main:app --reload --port 8000`). No env file is
 needed locally — all vars are optional. Open `http://localhost:5173` and log
-in with an admin account (`@fitcheckaiapp.com` emails resolve to `admin` via
-the legacy fallback, or set the `role` column via migration 037).
+in with an admin account (set the `role` column via migration 037).
 
 ## Environment variables
 
@@ -154,7 +153,7 @@ codegen instead.
 
 Roles (`backend/app/core/permissions.py` is authoritative): `super_admin`,
 `admin`, `ops`, `support`, `content_editor`, plus the legacy fallback (a
-`True` `is_admin` flag or an `@fitcheckaiapp.com` email resolves to `admin`
+`True` `is_admin` flag resolves to `admin`
 unless an explicit role is set).
 
 | Permission | super_admin | admin | ops | support | content_editor |
@@ -164,9 +163,12 @@ unless an explicit role is set).
 | `users.read` | x | x | x | x | |
 | `users.write` | x | x | x | x | |
 | `subscriptions.read` | x | x | x | x | |
+| `subscriptions.write` | x | x | | | |
 | `subscriptions.refund` | x | x | x | | |
 | `iap.read` | x | x | x | x | |
+| `iap.write` | x | x | x | | |
 | `quotas.read` | x | x | | x | |
+| `quotas.write` | x | x | | | |
 | `ops.read` | x | x | x | | |
 | `storage.cleanup` | x | x | x | | |
 | `audit.read` | x | x | x | x | |
@@ -212,10 +214,10 @@ src/
 
 | Layer | Tool | Status |
 |-------|------|--------|
-| Unit / integration | Vitest + RTL + MSW | 33 files / 231 tests passing; tests never hit the real network |
+| Unit / integration | Vitest + RTL + MSW | 37 files / 261 tests passing; tests never hit the real network |
 | A11y | vitest-axe | wired into unit tests (axe on shared components + pages) |
 | Contract | `npm run check:schema` | wired (CI drift check) |
-| E2E | Playwright (Chromium) | 6 files / 8 critical journeys (`npm run e2e`); wired into CI (`.github/workflows/admin-ci.yml`); token-refresh journey still pending (see advisories) |
+| E2E | Playwright (Chromium) | 7 files / 14 test cases (`npm run e2e`); wired into CI (`.github/workflows/admin-ci.yml`); token-refresh journey still pending (see advisories) |
 
 `src/test/utils.tsx` renders with all providers (Query, Theme, Router,
 Toaster); MSW handlers live in `src/test/msw/handlers/` and fixtures mirror

@@ -60,7 +60,7 @@ that lacked it (users, subscriptions, IAP, quotas, promo, feedback). Campaigns
   - `backend/app/api/v1/admin/dashboards.py`
   - `admin/src/features/dashboard/{components/TrendsCharts.tsx,pages/TrendsPage.tsx}`
   - `admin/src/shared/hooks/useCsvExport.ts`
-- Precedent: migration `040_admin_dashboard_rpcs.sql` (same security posture)
+- Precedent: migration `040_admin_dashboard_top_users.sql` (same security posture)
 
 ## Progress log
 
