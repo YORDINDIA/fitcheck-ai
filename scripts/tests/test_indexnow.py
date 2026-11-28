@@ -32,6 +32,7 @@ class IndexNowTests(unittest.TestCase):
                  'return {ok:true,status:200}};await import('
                  + json.dumps((root / "scripts/ping-indexnow.mjs").as_uri()) + ')'],
                 env=env, capture_output=True, text=True, check=True,
+                cwd=str(root),
             )
             self.assertTrue((root / "dist/.well-known/indexnow/test-key.txt").exists())
             return result.stdout
