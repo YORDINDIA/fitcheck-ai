@@ -78,7 +78,7 @@ server-enforced, so a non-admin Google account gets 403 and is bounced.
 | i18n | i18next + react-i18next (`src/shared/i18n/en/*.json`) |
 | Error reporting | @sentry/react (only when `VITE_SENTRY_DSN` is set) |
 | Tests | Vitest 3 + Testing Library + MSW + jest-dom + vitest-axe |
-| API types | openapi-typescript + openapi-fetch (codegen from `contracts/openapi.json`) |
+| API types | openapi-typescript + native fetch (codegen from `contracts/openapi.json`) |
 
 Version parity note: the main `frontend/` is on React 18 / Vite 5 / Tailwind 3
 — deliberately not matched. Only visual tokens and API contracts must stay in
@@ -90,7 +90,7 @@ sync (via the monorepo design language and OpenAPI codegen, never shared code).
 pages (route components, no logic)
   → features/<feature>/{components,hooks,api}   (feature logic lives here)
     → shared/{ui,lib,hooks,api,stores}          (cross-cutting)
-      → openapi-fetch client                    (only import point of the network)
+      → native fetch client                    (only import point of the network)
 ```
 
 ### Patterns
