@@ -1,31 +1,85 @@
 # Development Setup
 
-Last updated: 2026-09-14
+Last updated: 2026-11-23
 
 ## Overview
 
 This guide covers local development for the full FitCheck AI repository.
+See the [clean-checkout audit](setup-audit.md) for reproduced failures, fixes,
+and verification limits.
 
 Important project rules:
 - Do not use Docker for local development.
 - Use hosted Supabase (do not run Supabase locally).
-- In this workspace, required keys are already available in the root `.env`.
+- A fresh clone contains templates, not credentials. Preserve any existing
+  workspace env files; never overwrite them with templates.
 
 ## Prerequisites
 
-- Python 3.12+
-- Node.js 18+
-- npm 9+
-- Hosted Supabase project
-- Optional: Flutter SDK (for mobile app development)
-- Optional: Pinecone + AI provider keys for advanced AI/vector flows
+- Git, Bash, and curl (used by the combined runner). Commands below use a POSIX shell on Linux/macOS (Windows: WSL).
+- [Python 3.12](https://www.python.org/downloads/), with pip and venv support.
+  On Debian/Ubuntu, install `python3.12-venv` if venv reports missing ensurepip.
+  The instructions use `python3.12` explicitly; an unversioned `python` may
+  not exist or may select another interpreter.
+- A C compiler and Python 3.12 development headers: the pinned `pyswisseph`
+  builds a native extension. On Debian/Ubuntu with distro Python 3.12:
+  `sudo apt-get update && sudo apt-get install -y build-essential python3.12-dev python3.12-venv`.
+  On macOS, install Xcode Command Line Tools (`xcode-select --install`) and
+  Python 3.12 from python.org or your package manager.
+- [Node.js 24 LTS](https://nodejs.org/en/download), including npm.
+  The locked Supabase/React Router packages require at least Node 20;
+  the former Node 18 recommendation is unsupported.
+- Hosted Supabase project for authenticated app use, not unit tests.
+- Optional: Flutter SDK; Pinecone and AI provider keys for their respective flows.
+
+Check the tools, then clone:
+
+```bash
+git --version
+python3.12 --version
+node --version
+npm --version
+git clone https://github.com/YORDINDIA/fitcheck-ai.git
+cd fitcheck-ai
+```
+
+All following shell blocks start at the repository root unless stated otherwise.
+Subshells `(cd ... && ...)` keep your terminal at the root between steps.
+
+## First verification (no service credentials)
+
+```bash
+(cd frontend && npm ci && npm run lint && npm test && npm run build)
+```
+
+Expected: lint passes, Vitest passes, and the production bundle is generated in
+`frontend/dist/`. Build scripts optionally fetch public blog metadata; failure
+to reach the blog API is non-fatal. Local/preview builds do not submit IndexNow
+notifications (`CONTEXT=production` on Netlify enables submission).
 
 ## Environment Files
 
 Reference templates:
 - Backend: `backend/.env.example`
 - Frontend: `frontend/.env.example`
+- Admin: `admin/.env.example`
 - Flutter: `flutter/.env.example`
+
+For app development (not the credential-free checks), copy templates without
+overwriting existing files:
+
+```bash
+test -e backend/.env || cp backend/.env.example backend/.env
+test -e frontend/.env || cp frontend/.env.example frontend/.env
+```
+
+Fill backend Supabase URL, publishable key and secret key using a **development**
+project's API settings. Mirror only URL and publishable key into the frontend's
+`VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. Never expose the secret
+key to the browser. See the backend template for JWT, encryption, object-storage
+and optional provider settings. Template placeholders are not working credentials.
+Configure Supabase Auth redirect URLs for your local web callback
+(`http://localhost:3000/auth/callback`) when using OAuth.
 
 Backend loads environment values from:
 - `backend/.env`
@@ -34,16 +88,14 @@ Backend loads environment values from:
 ## 1. Backend Setup
 
 ```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+(cd backend && python3.12 -m venv .venv &&
+  .venv/bin/python -m pip install -r requirements.txt)
 ```
 
 Run backend:
 
 ```bash
-uvicorn app.main:app --reload --port 8000
+(cd backend && .venv/bin/python -m uvicorn app.main:app --reload --port 8000)
 ```
 
 Backend URLs:
@@ -56,9 +108,7 @@ Backend URLs:
 ## 2. Frontend Setup
 
 ```bash
-cd frontend
-npm install
-npm run dev
+(cd frontend && npm ci && npm run dev)
 ```
 
 Frontend URL:
@@ -77,7 +127,7 @@ Frontend env keys used (from `frontend/.env.example`):
 
 ## 3. One-Command Web + API Startup
 
-From repo root:
+After installing both apps and filling their env files, from repo root:
 
 ```bash
 ./run-dev.sh
@@ -91,9 +141,10 @@ This starts:
 
 1. Open your Supabase SQL Editor.
 2. Apply **all** migrations in numeric order from
-   `backend/db/supabase/migrations/` (60 files, numbered `001`..`059` — note
-   `002` has two files: `002_astrology_profile.sql` and
-   `002_user_profile_trigger.sql`). Do not skip any: the backend treats a
+   `backend/db/supabase/migrations/`. List the current files with
+   `ls backend/db/supabase/migrations/*.sql | sort`; do not rely on a fixed
+   migration count. Note that `002` has two files:
+   `002_astrology_profile.sql` and `002_user_profile_trigger.sql`. Do not skip any: the backend treats a
    partial schema as broken (`GET /ready` fails closed on missing
    tables/columns).
 3. Every migration is **re-runnable**: a partial or repeated application
@@ -109,8 +160,8 @@ This starts:
    apply run aborts partway (e.g. a `42710 duplicate object` error from a
    pre-fix file), fix or finish the file, then re-run every not-yet-applied
    file in order — re-running an already-applied file is safe.
-   (Regression-checked 2026-08-08: all 43 files applied twice in sequence on
-   a scratch Postgres 17; the static contract now covers all 60 files.)
+   (The historical 2026-08-08 database rehearsal covered 43 files; the
+   static test is not proof that all current migrations were applied live.)
 3. File storage does **not** live in Supabase. Uploads go to a private
    S3-compatible object-storage bucket (Cloudflare R2) configured by the
    `OBJECT_STORAGE_*` vars in `backend/.env.example`
@@ -164,45 +215,55 @@ alias of `/health` (see `backend/app/api/v1/health.py` and
 ## 5. Flutter Setup (Optional)
 
 ```bash
-cd flutter
-flutter pub get
+(cd flutter &&
+  (test -e .env || cp .env.example .env) &&
+  flutter pub get)
 ```
 
 Run with explicit defines:
 
 ```bash
-flutter run \
+(cd flutter && flutter run \
   --dart-define=API_BASE_URL=http://localhost:8000 \
   --dart-define=SUPABASE_URL=... \
-  --dart-define=SUPABASE_ANON_KEY=...
+  --dart-define=SUPABASE_ANON_KEY=...)
 ```
 
-Flutter can also read an asset `.env` file via `EnvConfig`.
+Use Flutter 3.47.5 (CI version). The `.env` asset is required even with
+dart-defines. See [Flutter setup](../../flutter/README.md) for SDK and device
+networking prerequisites. Fill only public client credentials in this file.
 
 ## 6. Validation Commands
 
-- Backend tests:
+- Backend tests (no hosted credentials required): supply the same dummy values
+  as CI because settings are validated during test collection. Tests block
+  outbound network by default; these placeholders are **not** app credentials.
 
 ```bash
-cd backend && pytest
+(cd backend &&
+  SUPABASE_URL=https://ci-placeholder.supabase.co \
+  SUPABASE_PUBLISHABLE_KEY=ci-placeholder-publishable-key \
+  SUPABASE_SECRET_KEY=ci-placeholder-secret-key \
+  SUPABASE_JWT_SECRET=ci-placeholder-jwt-secret-at-least-32-characters \
+  .venv/bin/python -m pytest)
 ```
 
 - Frontend lint and build:
 
 ```bash
-cd frontend && npm run lint && npm run build
+(cd frontend && npm run lint && npm test && npm run build)
 ```
 
 - Flutter tests:
 
 ```bash
-cd flutter && flutter test
+(cd flutter && flutter test --exclude-tags golden)
 ```
 
 ## Troubleshooting
 
 - `schema_ready: false` on `/ready`:
-  - Re-run missing Supabase migrations in numeric order (001..059).
+  - Re-run missing Supabase migrations in numeric order (use the current migration directory listing).
   - If the log says `failed for a non-schema reason (code=504)`, it is a
     Supabase Gateway Timeout, not a missing table. Retry `/ready`; do not
     re-apply `001_full_schema.sql`.

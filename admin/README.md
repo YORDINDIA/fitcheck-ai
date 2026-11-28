@@ -10,24 +10,45 @@ Supabase-backed auth as the other clients. All authorization is
 > library, server-driven data tables, OpenAPI codegen contract, and all
 > feature modules (users, dashboard + revenue/trends, subscriptions + IAP,
 > gifts, quotas, content, promo, feedback, ops/storage, audit, search, settings)
-> are in place, with 37 Vitest files / 261 tests. Playwright e2e specs
-> (7 files / 14 test cases) are wired into CI via
+> are in place, with 33 Vitest files / 231 tests. Playwright e2e specs
+> (6 files / 8 critical journeys) are wired into CI via
 > `.github/workflows/admin-ci.yml` (runs on PRs touching `admin/**` and on
 > pushes to main); token-refresh end-to-end verification is still pending
 > (see "Known advisories / limitations").
 
 ## Quickstart
 
+Use Node 24 LTS with npm. The locked Supabase packages require Node >=22
+and Vite 7 requires 22.12+ on that line; the older package-level Node 20
+minimum does not cover the complete locked dependency tree.
+From the repository root:
+
 ```bash
 cd admin
-npm install
+npm ci
 npm run dev            # http://localhost:5173
 ```
 
 Dev runs on `:5173` and proxies `/api` → `http://localhost:8000` (the backend;
-`cd ../backend && uvicorn app.main:app --reload --port 8000`). No env file is
-needed locally — all vars are optional. Open `http://localhost:5173` and log
-in with an admin account (set the `role` column via migration 037).
+`cd ../backend && .venv/bin/python -m uvicorn app.main:app --reload --port 8000`). No env file is
+needed for the admin shell or its tests — all admin vars are optional.
+The backend still needs its own dependencies and development credentials;
+complete [local setup](../docs/references/local-setup.md) first for real login. Open `http://localhost:5173` and log
+in with a development account assigned an explicit privileged `role` by an
+authorized project administrator (schema introduced by migration 037).
+Email domain alone does not grant admin access.
+
+For a credential-free check, from `admin/` after `npm ci`:
+
+```bash
+npm run lint && npm run typecheck && npm test && npm run build
+npm run check:schema && npm run check:bundle
+```
+
+Build before `check:bundle`: it reads generated `dist/` assets. The schema
+check uses the committed contract, not a running API. Playwright is optional:
+install its Chromium browser with `npx playwright install --with-deps chromium`
+after installing packages, then build and run `npm run e2e`.
 
 ## Environment variables
 
@@ -86,7 +107,7 @@ sync (via the monorepo design language and OpenAPI codegen, never shared code).
 
 ## Architecture (one-pager)
 
-```
+```text
 pages (route components, no logic)
   → features/<feature>/{components,hooks,api}   (feature logic lives here)
     → shared/{ui,lib,hooks,api,stores}          (cross-cutting)
@@ -153,8 +174,8 @@ codegen instead.
 
 Roles (`backend/app/core/permissions.py` is authoritative): `super_admin`,
 `admin`, `ops`, `support`, `content_editor`, plus the legacy fallback (a
-`True` `is_admin` flag resolves to `admin`
-unless an explicit role is set).
+`True` `is_admin` flag resolves to `admin` unless an explicit privileged role
+is set). Email domains never grant privileges.
 
 | Permission | super_admin | admin | ops | support | content_editor |
 |------------|:-----------:|:-----:|:---:|:-------:|:--------------:|
@@ -163,12 +184,9 @@ unless an explicit role is set).
 | `users.read` | x | x | x | x | |
 | `users.write` | x | x | x | x | |
 | `subscriptions.read` | x | x | x | x | |
-| `subscriptions.write` | x | x | | | |
 | `subscriptions.refund` | x | x | x | | |
 | `iap.read` | x | x | x | x | |
-| `iap.write` | x | x | x | | |
 | `quotas.read` | x | x | | x | |
-| `quotas.write` | x | x | | | |
 | `ops.read` | x | x | x | | |
 | `storage.cleanup` | x | x | x | | |
 | `audit.read` | x | x | x | x | |
@@ -194,7 +212,7 @@ in `index.html`).
 
 ## Layout
 
-```
+```text
 src/
   config/            env (zod-validated) + feature flags (build-time)
   shared/
@@ -214,10 +232,10 @@ src/
 
 | Layer | Tool | Status |
 |-------|------|--------|
-| Unit / integration | Vitest + RTL + MSW | 37 files / 261 tests passing; tests never hit the real network |
+| Unit / integration | Vitest + RTL + MSW | 33 files / 231 tests passing; tests never hit the real network |
 | A11y | vitest-axe | wired into unit tests (axe on shared components + pages) |
 | Contract | `npm run check:schema` | wired (CI drift check) |
-| E2E | Playwright (Chromium) | 7 files / 14 test cases (`npm run e2e`); wired into CI (`.github/workflows/admin-ci.yml`); token-refresh journey still pending (see advisories) |
+| E2E | Playwright (Chromium) | 6 files / 8 critical journeys (`npm run e2e`); wired into CI (`.github/workflows/admin-ci.yml`); token-refresh journey still pending (see advisories) |
 
 `src/test/utils.tsx` renders with all providers (Query, Theme, Router,
 Toaster); MSW handlers live in `src/test/msw/handlers/` and fixtures mirror
