@@ -11,6 +11,7 @@ from unittest.mock import Mock
 import pytest
 
 from app.api.v1 import deps
+from app.services import user_service
 from app.core import user_profile_cache
 from app.core.exceptions import AuthenticationError
 from app.core.security import TokenData
@@ -161,7 +162,7 @@ async def test_second_call_hits_cache_without_db(monkeypatch):
         lookup_calls += 1
         return _profile_result()
 
-    monkeypatch.setattr(deps, "execute_with_reconnect", _lookup)
+    monkeypatch.setattr(user_service, "execute_with_reconnect", _lookup)
 
     first = await deps.get_current_user(db=Mock(), token_data=_token())
     second = await deps.get_current_user(db=Mock(), token_data=_token())
@@ -178,7 +179,7 @@ async def test_email_injection_does_not_leak_into_cached_copy(monkeypatch):
     async def _lookup(callable_, *_a, **_k):
         return _profile_result(email=None)
 
-    monkeypatch.setattr(deps, "execute_with_reconnect", _lookup)
+    monkeypatch.setattr(user_service, "execute_with_reconnect", _lookup)
 
     first = await deps.get_current_user(db=Mock(), token_data=_token(email="a@x.com"))
     cached = user_profile_cache.get("user-1")
@@ -195,7 +196,7 @@ async def test_suspended_cached_profile_is_rejected(monkeypatch):
     async def _lookup(callable_, *_a, **_k):
         return _profile_result(is_active=False)
 
-    monkeypatch.setattr(deps, "execute_with_reconnect", _lookup)
+    monkeypatch.setattr(user_service, "execute_with_reconnect", _lookup)
 
     with pytest.raises(AuthenticationError, match="suspended"):
         await deps.get_current_user(db=Mock(), token_data=_token())
@@ -210,7 +211,7 @@ async def test_invalidate_forces_reload(monkeypatch):
         lookup_calls += 1
         return _profile_result(full_name=f"Name{lookup_calls}")
 
-    monkeypatch.setattr(deps, "execute_with_reconnect", _lookup)
+    monkeypatch.setattr(user_service, "execute_with_reconnect", _lookup)
 
     await deps.get_current_user(db=Mock(), token_data=_token())
     user_profile_cache.invalidate("user-1")
@@ -231,7 +232,7 @@ async def test_missing_profile_not_cached(monkeypatch):
         lookup_calls += 1
         return None  # no row yet
 
-    monkeypatch.setattr(deps, "execute_with_reconnect", _lookup)
+    monkeypatch.setattr(user_service, "execute_with_reconnect", _lookup)
     client = Mock()
     client.auth.admin.get_user_by_id.return_value = Mock(
         user=Mock(user_metadata={}, email="auth@example.com")

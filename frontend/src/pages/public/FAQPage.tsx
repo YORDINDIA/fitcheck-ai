@@ -1,18 +1,11 @@
-import SEO from '@/components/seo/SEO'
-import { Badge } from '@/components/ui/badge'
-import { AnimatedSection } from '@/components/landing/AnimatedSection'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
-import { ChevronDown, Mail } from 'lucide-react'
-import { Link } from 'react-router-dom'
-import { trialRegisterHref } from '@/lib/trial-offer'
-import { cn } from '@/lib/utils'
 import { useState } from 'react'
+import { Mail } from 'lucide-react'
+
+import { CrayonBox, CrayonLink } from '@/components/crayon/CrayonPrimitives'
 import { BreadcrumbJsonLd } from '@/components/seo/JsonLd'
+import SEO from '@/components/seo/SEO'
 import { freeVsProSummary, platformsSummary } from '@/lib/plan-limits'
+import { trialRegisterHref } from '@/lib/trial-offer'
 
 const faqCategories = [
   {
@@ -20,162 +13,189 @@ const faqCategories = [
     questions: [
       {
         q: 'How does FitCheck AI work?',
-        a: 'FitCheck AI uses advanced computer vision and machine learning to help you organize your wardrobe and create outfits. Simply upload photos of your clothes, and our AI automatically catalogs them with details like color, category, and style. You can then create outfits, get AI-powered recommendations, and visualize looks with our virtual try-on feature.'
+        a: 'FitCheck AI uses advanced computer vision and machine learning to help you organize your wardrobe and create outfits. Simply upload photos of your clothes, and our AI automatically catalogs them with details like color, category, and style. You can then create outfits, get AI-powered recommendations, and visualize looks with our virtual try-on feature.',
       },
       {
         q: 'Is FitCheck AI free to use?',
-        a: `Yes. ${freeVsProSummary()}`
+        a: `Yes. ${freeVsProSummary()}`,
       },
       {
         q: 'Do I need to download an app?',
-        a: platformsSummary()
+        a: platformsSummary(),
       },
       {
         q: 'What devices and browsers are supported?',
-        a: 'FitCheck AI works on modern browsers including Chrome, Safari, Firefox, and Edge. The iOS app is on the App Store and the Android app is on Google Play. The web app is fully responsive on phones, tablets, and desktops.'
-      }
-    ]
+        a: 'FitCheck AI works on modern browsers including Chrome, Safari, Firefox, and Edge. The iOS app is on the App Store and the Android app is on Google Play. The web app is fully responsive on phones, tablets, and desktops.',
+      },
+    ],
   },
   {
     category: 'AI Features',
     questions: [
       {
         q: 'How accurate is the AI item extraction?',
-        a: 'AI item extraction can suggest clothing items, colors, and categories from a photo. Use clear, well-lit images and review every suggested detail before saving it to your wardrobe.'
+        a: 'AI item extraction can suggest clothing items, colors, and categories from a photo. Use clear, well-lit images and review every suggested detail before saving it to your wardrobe.',
       },
       {
         q: 'What is the AI Photoshoot Generator?',
-        a: 'The AI Photoshoot Generator creates professional-quality photos from your uploaded selfies. Choose from styles like LinkedIn professional, dating app photos, Instagram lifestyle, or model portfolio shots. Upload 1-4 reference photos, and our AI generates stunning images perfect for your needs.'
+        a: 'The AI Photoshoot Generator creates professional-quality photos from your uploaded selfies. Choose from styles like LinkedIn professional, dating app photos, Instagram lifestyle, or model portfolio shots. Upload 1-4 reference photos, and our AI generates stunning images perfect for your needs.',
       },
       {
         q: 'How do outfit recommendations work?',
-        a: 'Our AI analyzes your entire wardrobe, style preferences, past outfit choices, weather conditions, and even your calendar events to suggest perfect outfits. Recommendations consider color coordination, occasion appropriateness, weather suitability, and your personal style patterns.'
+        a: 'Our AI analyzes your entire wardrobe, style preferences, past outfit choices, weather conditions, and even your calendar events to suggest perfect outfits. Recommendations consider color coordination, occasion appropriateness, weather suitability, and your personal style patterns.',
       },
       {
         q: 'What is virtual try-on?',
-        a: 'Virtual try-on uses generative AI to visualize how outfit combinations would look when worn. Upload a photo of yourself or use your AI photoshoot avatar, and see realistic renderings of any outfit from your wardrobe before you wear it.'
+        a: 'Virtual try-on uses generative AI to visualize how outfit combinations would look when worn. Upload a photo of yourself or use your AI photoshoot avatar, and see realistic renderings of any outfit from your wardrobe before you wear it.',
       },
       {
         q: 'Can the AI extract multiple items from one photo?',
-        a: 'Yes! Our advanced AI can detect and separate multiple clothing items from a single photograph. This makes cataloging your wardrobe much faster—you can lay out several items, take one photo, and the AI will identify each piece individually.'
-      }
-    ]
+        a: 'Yes! Our advanced AI can detect and separate multiple clothing items from a single photograph. This makes cataloging your wardrobe much faster—you can lay out several items, take one photo, and the AI will identify each piece individually.',
+      },
+    ],
   },
   {
     category: 'Privacy & Security',
     questions: [
       {
         q: 'Is my wardrobe data private?',
-        a: 'Absolutely. Your wardrobe data is private by default and encrypted both in transit and at rest. We never sell your data to third parties. Only you can see your wardrobe unless you explicitly choose to share specific outfits via public links.'
+        a: 'Absolutely. Your wardrobe data is private by default and encrypted both in transit and at rest. We never sell your data to third parties. Only you can see your wardrobe unless you explicitly choose to share specific outfits via public links.',
       },
       {
         q: 'What happens to my photos?',
-        a: 'Your photos are stored securely in encrypted cloud storage. They are used solely to provide FitCheck AI services to you. You can delete your photos and account data at any time, and we will permanently remove all associated data within 30 days.'
+        a: 'Your photos are stored securely in encrypted cloud storage. They are used solely to provide FitCheck AI services to you. You can delete your photos and account data at any time, and we will permanently remove all associated data within 30 days.',
       },
       {
         q: 'Can I export my data?',
-        a: 'Yes! You can export your complete wardrobe data, including item details and photos, at any time. We provide exports in standard formats like CSV and JSON for easy portability.'
+        a: 'Yes! You can export your complete wardrobe data, including item details and photos, at any time. We provide exports in standard formats like CSV and JSON for easy portability.',
       },
       {
         q: 'Is my payment information secure?',
-        a: 'Yes. On iOS, subscriptions are purchased through Apple In-App Purchase and billed by Apple; on Android, through Google Play Billing. On the web, payments are handled by Stripe, a PCI-compliant payment processor. Your card details are never stored on our servers, and all transactions are encrypted.'
-      }
-    ]
+        a: 'Yes. On iOS, subscriptions are purchased through Apple In-App Purchase and billed by Apple; on Android, through Google Play Billing. On the web, payments are handled by Stripe, a PCI-compliant payment processor. Your card details are never stored on our servers, and all transactions are encrypted.',
+      },
+    ],
   },
   {
     category: 'Account & Billing',
     questions: [
       {
         q: 'How do I upgrade to Pro?',
-        a: 'You can upgrade to Pro from your account settings or by clicking "Upgrade" in the app. In the mobile apps, purchases go through the App Store or Google Play; on the web, through our checkout. Your subscription automatically renews monthly or annually depending on your chosen plan.'
+        a: 'You can upgrade to Pro from your account settings or by clicking "Upgrade" in the app. In the mobile apps, purchases go through the App Store or Google Play; on the web, through our checkout. Your subscription automatically renews monthly or annually depending on your chosen plan.',
       },
       {
         q: 'Can I cancel my subscription?',
-        a: 'Yes. Subscriptions purchased through the App Store or Google Play are managed in the store\'s subscription settings; web subscriptions can be cancelled from your account settings. You will continue to have access to Pro features until the end of your current billing period, after which your account will revert to the free plan.'
+        a: "Yes. Subscriptions purchased through the App Store or Google Play are managed in the store's subscription settings; web subscriptions can be cancelled from your account settings. You will continue to have access to Pro features until the end of your current billing period, after which your account will revert to the free plan.",
       },
       {
         q: 'Do you offer refunds?',
-        a: 'For web purchases, we offer a 14-day money-back guarantee for new Pro subscriptions — contact our support team within 14 days of your purchase for a full refund. Purchases made through the App Store or Google Play are subject to the store\'s refund terms.'
+        a: "For web purchases, we offer a 14-day money-back guarantee for new Pro subscriptions — contact our support team within 14 days of your purchase for a full refund. Purchases made through the App Store or Google Play are subject to the store's refund terms.",
       },
       {
         q: 'How does the referral program work?',
-        a: 'When you refer friends to FitCheck AI, both you and your friend receive 1 month of Pro free when they sign up using your referral code. There is no limit to how many friends you can refer!'
-      }
-    ]
+        a: 'When you refer friends to FitCheck AI, both you and your friend receive 1 month of Pro free when they sign up using your referral code. There is no limit to how many friends you can refer!',
+      },
+    ],
   },
   {
     category: 'Comparisons & Buying Decisions',
     questions: [
       {
         q: 'What is the best free virtual closet app?',
-        a: 'The best free virtual closet is the one that lets you digitize real clothes quickly and still get outfit help. FitCheck AI offers a free plan with wardrobe item limits and monthly AI generations so you can validate value before upgrading. Compare options on our best virtual closet apps guide.'
+        a: 'The best free virtual closet is the one that lets you digitize real clothes quickly and still get outfit help. FitCheck AI offers a free plan with wardrobe item limits and monthly AI generations so you can validate value before upgrading. Compare options on our best virtual closet apps guide.',
       },
       {
         q: 'How is FitCheck AI different from Acloset or Whering?',
-        a: 'FitCheck AI emphasizes AI photo extraction, generative virtual try-on, AI photoshoot generation, and cost-per-wear style analytics in one product. Acloset and Whering are strong digital wardrobe apps with different feature mixes — see our comparison pages for a side-by-side overview.'
+        a: 'FitCheck AI emphasizes AI photo extraction, generative virtual try-on, AI photoshoot generation, and cost-per-wear style analytics in one product. Acloset and Whering are strong digital wardrobe apps with different feature mixes — see our comparison pages for a side-by-side overview.',
       },
       {
         q: 'Can virtual try-on replace trying clothes in a store?',
-        a: 'Virtual try-on is decision support, not a perfect fit guarantee. It helps you visualize color, silhouette, and full outfits with clothes you already own. Always check size charts for purchases; use try-on to reduce obvious mismatches before you buy or pack.'
+        a: 'Virtual try-on is decision support, not a perfect fit guarantee. It helps you visualize color, silhouette, and full outfits with clothes you already own. Always check size charts for purchases; use try-on to reduce obvious mismatches before you buy or pack.',
       },
       {
         q: 'Does FitCheck AI work for festive and wedding guest outfits?',
-        a: 'Yes. Digitize ethnic and formal pieces, tag occasions, and generate event-ready looks from your real wardrobe. See our festive and wedding outfit planning page for a practical workflow.'
-      }
-    ]
-  }
+        a: 'Yes. Digitize ethnic and formal pieces, tag occasions, and generate event-ready looks from your real wardrobe. See our festive and wedding outfit planning page for a practical workflow.',
+      },
+    ],
+  },
 ]
 
-// Generate FAQ schema
 function generateFaqSchema() {
-  const allQuestions = faqCategories.flatMap(cat =>
-    cat.questions.map(q => ({
+  const allQuestions = faqCategories.flatMap((cat) =>
+    cat.questions.map((q) => ({
       '@type': 'Question',
       name: q.q,
       acceptedAnswer: {
         '@type': 'Answer',
-        text: q.a
-      }
-    }))
+        text: q.a,
+      },
+    })),
   )
 
   return {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
-    mainEntity: allQuestions
+    mainEntity: allQuestions,
   }
 }
 
-function FAQItem({ question, answer }: { question: string; answer: string }) {
+function FAQItem({
+  index,
+  question,
+  answer,
+}: {
+  index: number
+  question: string
+  answer: string
+}) {
   const [isOpen, setIsOpen] = useState(false)
+  const num = String(index + 1).padStart(2, '0')
+  const triggerId = `faq-page-btn-${index}`
+  const panelId = `faq-page-panel-${index}`
 
   return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <CollapsibleTrigger className="flex items-center justify-between w-full p-6 bg-white dark:bg-gray-800 rounded-lg text-start-left hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors group border border-gray-200 dark:border-gray-700">
-        <span className="font-medium text-gray-900 dark:text-white pe-4">{question}</span>
-        <ChevronDown
-          className={cn(
-            'w-5 h-5 text-muted-foreground transition-transform shrink-0',
-            isOpen && 'rotate-180'
-          )}
-        />
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="px-6 pb-6 pt-2 bg-white dark:bg-gray-800 rounded-b-lg border-x border-b border-gray-200 dark:border-gray-700 -mt-2">
-          <p className="text-gray-600 dark:text-gray-400">{answer}</p>
+    <li className="cp-faq-item" data-open={isOpen}>
+      <button
+        id={triggerId}
+        type="button"
+        aria-expanded={isOpen}
+        aria-controls={panelId}
+        onClick={() => setIsOpen((v) => !v)}
+        className="cp-faq-btn"
+      >
+        <span className="cp-faq-n">{num}</span>
+        <span className="cp-faq-q">{question}</span>
+        <span className="cp-pm" aria-hidden="true">
+          {isOpen ? '−' : '+'}
+        </span>
+      </button>
+      <div
+        id={panelId}
+        role="region"
+        aria-labelledby={triggerId}
+        className="cp-faq-a"
+        ref={(el) => {
+          if (el) {
+            const panel = el as HTMLDivElement & { inert: boolean }
+            panel.inert = !isOpen
+          }
+        }}
+      >
+        <div>
+          <p className="cp-faq-body">{answer}</p>
         </div>
-      </CollapsibleContent>
-    </Collapsible>
+      </div>
+    </li>
   )
 }
 
 const breadcrumbs = [
   { name: 'Home', url: 'https://fitcheckaiapp.com/' },
-  { name: 'FAQ', url: 'https://fitcheckaiapp.com/faq' }
+  { name: 'FAQ', url: 'https://fitcheckaiapp.com/faq' },
 ]
 
 export default function FAQPage() {
   const faqSchema = generateFaqSchema()
+  let counter = 0
 
   return (
     <>
@@ -188,79 +208,52 @@ export default function FAQPage() {
       />
       <BreadcrumbJsonLd items={breadcrumbs} />
 
-      <div className="pt-20">
-        <section className="py-16 md:py-24 bg-stone-50 dark:bg-stone-950">
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-            <AnimatedSection>
-              <div className="text-center mb-16">
-                <Badge className="mb-4 border-0 bg-secondary text-secondary-foreground">
-                  FAQ
-                </Badge>
-                <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-6">
-                  Frequently Asked Questions
-                </h1>
-                <p className="text-lg text-gray-600 dark:text-gray-300">
-                  Everything you need to know about FitCheck AI
-                </p>
-              </div>
-            </AnimatedSection>
-
-            <div className="space-y-8 md:space-y-12">
-              {faqCategories.map((category, catIndex) => (
-                <AnimatedSection key={category.category} delay={catIndex * 100}>
-                  <div>
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
-                      {category.category}
-                    </h2>
-                    <div className="space-y-4">
-                      {category.questions.map((q, qIndex) => (
-                        <FAQItem key={qIndex} question={q.q} answer={q.a} />
-                      ))}
-                    </div>
-                  </div>
-                </AnimatedSection>
-              ))}
-            </div>
-
-            <AnimatedSection delay={400}>
-              <div className="mt-16 text-center p-6 bg-secondary rounded-2xl md:p-8">
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-                  Still have questions?
-                </h3>
-                <p className="text-gray-600 dark:text-gray-300 mb-4">
-                  Our support team is here to help you get the most out of FitCheck AI.
-                </p>
-                <a
-                  href="mailto:support@fitcheckaiapp.com"
-                  className="inline-flex min-h-11 items-center gap-2 text-primary font-medium hover:underline"
-                >
-                  <Mail className="w-4 h-4" />
-                  Contact Support
-                </a>
-              </div>
-            </AnimatedSection>
-          </div>
+      <div className="cp-wrap">
+        <section className="cp-doc-head">
+          <p className="cp-eyebrow">FAQ</p>
+          <h1>Frequently Asked Questions</h1>
+          <p className="cp-lead">Everything you need to know about FitCheck AI.</p>
         </section>
 
-        {/* CTA Section */}
-        <section className="py-16 md:py-24 bg-stone-900">
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-            <AnimatedSection>
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-                Ready to transform your wardrobe?
-              </h2>
-              <p className="text-xl text-stone-300 mb-8">
-                Start with the clothes you already own
-              </p>
-              <Link
-                to={trialRegisterHref()}
-                className="inline-flex min-h-11 items-center gap-2 bg-on-image text-on-image-foreground px-8 py-4 rounded-full font-semibold text-lg transition-colors hover:bg-on-image/90"
-              >
+        <div className="mx-auto mt-12 max-w-[820px] space-y-12">
+          {faqCategories.map((category) => (
+            <section key={category.category}>
+              <h2 className="cp-hand text-3xl text-[var(--cp-ink)]">{category.category}</h2>
+              <ol className="cp-faq !mt-4">
+                {category.questions.map((q) => {
+                  const idx = counter++
+                  return <FAQItem key={q.q} index={idx} question={q.q} answer={q.a} />
+                })}
+              </ol>
+            </section>
+          ))}
+
+          <CrayonBox fill="var(--cp-sky)" radius={26} className="cp-mailcard">
+            <h2 className="cp-hand text-3xl text-[var(--cp-ink)]">Still have questions?</h2>
+            <p className="text-sm font-medium text-[var(--cp-ink-2)]">
+              Our support team is here to help you get the most out of FitCheck AI.
+            </p>
+            <a
+              href="mailto:support@fitcheckaiapp.com"
+              className="addr inline-flex min-h-11 items-center gap-2 hover:text-[var(--cp-orange-deep)]"
+            >
+              <Mail className="h-6 w-6" aria-hidden="true" />
+              support@fitcheckaiapp.com
+            </a>
+          </CrayonBox>
+
+          <CrayonBox solid="var(--cp-yellow-banner)" radius={32} showLine={false} className="cp-doc-cta">
+            <h2>Ready to transform your wardrobe?</h2>
+            <p className="mx-auto max-w-xl text-base font-medium text-[var(--cp-ink-2)]">
+              Start with the clothes you already own.
+            </p>
+            <div className="cp-ctas">
+              <CrayonLink to={trialRegisterHref()} variant="dark">
                 Get Started Free
-              </Link>
-            </AnimatedSection>
-          </div>
-        </section>
+              </CrayonLink>
+            </div>
+          </CrayonBox>
+        </div>
       </div>
     </>
   )

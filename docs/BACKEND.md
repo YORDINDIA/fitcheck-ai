@@ -1,6 +1,6 @@
 # Backend
 
-Last updated: 2026-10-26
+Last updated: 2026-11-28
 
 Deep guide for the FastAPI app under `backend/`. Architecture layers: root `ARCHITECTURE.md`. Package-local agent entry: `backend/AGENTS.md` (thin pointer here).
 
@@ -37,7 +37,7 @@ app/
 
 ## Layers (summary)
 
-- **Routes** (`api/v1/`): HTTP only; use `Depends(get_db)`, `Depends(get_current_user)`.
+- **Routes** (`api/v1/`): HTTP only; use `Depends(get_db)`, `Depends(get_current_user)`. No direct `.table(` calls. Queries live in services, and `scripts/check_architecture.py` fails on them.
 - **Services**: domain logic, AI, storage, jobs.
 - **Models**: request/response contracts.
 - **Core**: settings, JWT, exceptions, middleware.
@@ -154,9 +154,10 @@ File storage is a **private S3-compatible bucket** — Railway Bucket (since the
   - `OBJECT_STORAGE_ENDPOINT`, `OBJECT_STORAGE_REGION`, `OBJECT_STORAGE_ACCESS_KEY_ID`, `OBJECT_STORAGE_SECRET_ACCESS_KEY`, `OBJECT_STORAGE_BUCKET` — the only storage variables the backend reads (no provider-specific aliases).
   - `IMAGE_SERVING_MODE` (`presigned` default | `worker`), `IMAGE_CDN_BASE_URL` (Worker custom domain), `THUMBNAIL_SERVING` (`false` default; emit `thumbnail_url` → `_thumb` keys).
 - **Migration tooling** (see `docs/exec-plans/completed/2026-08-04-railway-bucket-migration-contract.md` and `docs/exec-plans/active/2026-08-05-railway-egress-rca.md` for the live execution logs; the one-time Supabase→Railway→R2 copy scripts have been removed — storage is on R2):
-  - `backend/scripts/storage_inventory.py` — orphan / missing report against the active bucket (dry-run by default; `--delete` to remove orphans). Thumb-aware: `_thumb` siblings of referenced keys are never orphans. **Part of the weekly storage routine**: run `--delete` (2h grace protects in-flight uploads) alongside `cleanup_temp_assets.py --delete` so DB-unreferenced objects (replaced avatars, deleted-item leftovers, failed uploads) are removed the same week they appear — measured at 192MB / 296 objects before the leak fixes.
+  - `backend/scripts/storage_inventory.py` — orphan / missing report against the active bucket (dry-run by default; `--delete` to remove orphans). Thumb-aware: `_thumb` siblings of referenced keys are never orphans. **Part of the weekly storage routine**. Do not pass `--delete` to this script yet. The avatar repair ran on 2026-11-21. It left 54 unreferenced avatar objects (52 legacy originals and thumbnails, and 2 older files). Until TD-146 closes, a delete run would remove them after the 2h grace. After the owner reviews the remaining orphans, run `--delete` (2h grace protects in-flight uploads) alongside `cleanup_temp_assets.py --delete`, so DB-unreferenced objects (replaced avatars, deleted-item leftovers, failed uploads) are removed the same week they appear — measured at 192MB / 296 objects before the leak fixes.
+  - `backend/scripts/repair_avatar_links.py` (one-time, TD-146). Repairs legacy `users.avatar_url` links. Dry-run by default. `--apply` copies only when the target is missing, updates each row with a compare-and-set, and never deletes a bucket object. It writes a key-only JSONL audit (`AUDIT_FILE`). Applied 2026-11-21 (122 rows). Run it again only after a fresh dry run.
   - `backend/scripts/cleanup_temp_assets.py` — **manual weekly cleanup** of the `tmp/` folder (dry-run default; `--delete` to delete; optional `--source` / `--min-age-hours`; JSONL audit). Temp previews are never DB-referenced and become unreachable once their 1h presigned URL expires, so this script is the only thing that removes them.
-  - `backend/scripts/migrate_temp_keys_layout.py` — **optional** one-time rewrite of legacy per-user preview keys (`{user}/tmp/...`, `{user}/generated/...`) to the top-level folders (dry-run default; `--apply` to execute; server-side copy-then-delete; idempotent). Not required for correctness: legacy keys keep serving via the dual-layout allowlists and `cleanup_temp_assets.py` removes old-layout tmp objects regardless. Run it (outside active review flows) only if you want a single-layout bucket or R2 lifecycle rules on the `tmp/` prefix.
+  - `backend/scripts/migrate_temp_keys_layout.py` — **optional** one-time rewrite of legacy per-user preview keys (`{user}/tmp/...`, `{user}/generated/...`) to the top-level folders (dry-run default; `--apply` to execute; server-side copy-then-delete; idempotent). Legacy keys fail by design (2026-09-01 decision), so this script does not restore serving for them. Its target layout (top-level `tmp/` and `generated/`) is not the current `users/{user}/tmp|generated/` layout that `storage_keys.py` mints and parses. Do not run `--apply` until the script writes the current layout.
   - `backend/scripts/generate_thumbnails.py` — backfill `_thumb` siblings for existing canonical keys (dry-run default; `--apply`), resumable via age/audit.
   - `backend/scripts/recompress_assets.py` — one-time backfill of the pre-compression corpus: downloads each canonical/`generated` object, re-encodes to the WebP q82 @ 2048px profile (keep-smaller), overwrites the SAME key in place, and regenerates/backfills the `_thumb` sibling (dry-run default; `--apply`; JSONL audit; resume-safe). Keys are unchanged, so no DB row or client-held URL goes stale.
 
@@ -579,6 +580,14 @@ That failure mode hit production on 2026-07-31: every `POST /api/v1/ai/batch-ext
 The same migration-gap class also breaks **durable job creation**: batch (`extraction_jobs`, migration 016) and photoshoot (`photoshoot_jobs`, migration 023) mirror rows are written on every job start, and a missing table/column (`PGRST205`/`42703`) or a stale `valid_batch_size` CHECK (`23514`, 016 allows ≤10 while the API sends up to 50) previously escaped as an opaque 500. `BatchJobService.create_job` / `PhotoshootJobService.create_job` now wrap those raw postgrest errors into the same friendly retryable 503 and log the migration hint (via `job_persistence_migration_hint` in `app/utils/db.py`), with the exception type embedded in the log message text because Railway's plain-text drain does not render structured `extra` fields. At boot, `_seed_schema_status_in_thread` (in `app/main.py`) probes the hosted DB for the quota RPCs (`missing_quota_rpcs`) and logs a runbook hint when any are absent, and the `/ready` table check now includes `extraction_jobs` / `photoshoot_jobs`.
 
 The same policy covers **item writes** (observed 2026-08-08: opaque 500s on `POST /items` when the hosted schema lacked migration 019's `source_image_url` / `source_image_storage_path` columns, and 22001 "value too long" while 036's wider `image_url` columns were pending). `create_item` detects the gap via `items_schema_migration_hint` (`app/utils/db.py`), logs the hint with the exception type in the message text, and raises `SchemaNotInitializedError` → friendly 503; readiness fails closed on the two 019 columns. All `items.py` catch-alls embed the exception type in the log message so the cause survives plain-text drains.
+
+**Migration 066 is written but NOT applied.** It changes the photoshoot job status from `complete` to `completed` (knot 6, commit B). Do not run it until the new app build is live for users. The web and Flutter builds from commit `8b52992` accept both values. Installed Flutter builds from before that commit do not recognize `completed`. Then apply the migration to hosted Supabase, and deploy the backend that writes `completed` in the same short window. Until the migration runs, that backend fails its job writes against the old CHECK constraint. After it runs, a backend instance that still runs the old code fails its photoshoot job writes until it is replaced.
+
+```bash
+psql "$SUPABASE_DB_URL" -f backend/db/supabase/migrations/066_photoshoot_status_completed.sql
+```
+
+Afterwards, `SELECT count(*) FROM photoshoot_jobs WHERE status = 'complete';` must return 0.
 
 ## Billing: subscriptions (Stripe web + store IAP)
 

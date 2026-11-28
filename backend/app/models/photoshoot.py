@@ -25,7 +25,7 @@ class PhotoshootStatus(str, Enum):
     """Status of a photoshoot generation session."""
     PENDING = "pending"
     GENERATING = "generating"
-    COMPLETE = "complete"
+    COMPLETE = "completed"
     FAILED = "failed"
 
 
@@ -33,7 +33,7 @@ class PhotoshootJobStatus(str, Enum):
     """Status of a photoshoot generation job (for SSE streaming)."""
     PENDING = "pending"
     PROCESSING = "processing"
-    COMPLETE = "complete"
+    COMPLETE = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
 

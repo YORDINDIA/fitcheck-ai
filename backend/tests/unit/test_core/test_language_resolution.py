@@ -19,6 +19,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from app.api.v1 import deps
+from app.services import user_service
 from app.api.v1.deps import get_active_user_id, get_current_user
 from app.core import middleware
 from app.core.i18n import (
@@ -239,7 +240,7 @@ async def test_get_current_user_applies_stored_language(monkeypatch):
         result.data = dict(profile)
         return result
 
-    monkeypatch.setattr(deps, "execute_with_reconnect", _lookup)
+    monkeypatch.setattr(user_service, "execute_with_reconnect", _lookup)
     set_request_language("en")  # Accept-Language resolved to English
 
     await get_current_user(db=Mock(), token_data=_token())
@@ -256,7 +257,7 @@ async def test_get_current_user_without_settings_keeps_header_language(monkeypat
         result.data = {"id": "user-1", "email": "user@example.com", "is_active": True}
         return result
 
-    monkeypatch.setattr(deps, "execute_with_reconnect", _lookup)
+    monkeypatch.setattr(user_service, "execute_with_reconnect", _lookup)
     set_request_language("hi")
 
     await get_current_user(db=Mock(), token_data=_token())
@@ -271,7 +272,7 @@ async def test_get_active_user_id_applies_stored_language(monkeypatch):
         result.data = {"is_active": True, "user_settings": {"language": "ar-SA"}}
         return result
 
-    monkeypatch.setattr(deps, "execute_with_reconnect", _lookup)
+    monkeypatch.setattr(user_service, "execute_with_reconnect", _lookup)
     set_request_language("en")
 
     user_id = await get_active_user_id(db=Mock(), token_data=_token())
@@ -287,7 +288,7 @@ async def test_get_active_user_id_ignores_missing_settings_embed(monkeypatch):
         result.data = {"is_active": True}
         return result
 
-    monkeypatch.setattr(deps, "execute_with_reconnect", _lookup)
+    monkeypatch.setattr(user_service, "execute_with_reconnect", _lookup)
     set_request_language("ta")
 
     await get_active_user_id(db=Mock(), token_data=_token())
@@ -332,7 +333,7 @@ async def test_get_current_user_honours_an_explicit_english_choice(monkeypatch):
         }
         return result
 
-    monkeypatch.setattr(deps, "execute_with_reconnect", _lookup)
+    monkeypatch.setattr(user_service, "execute_with_reconnect", _lookup)
     set_request_language("ja")
 
     await get_current_user(db=Mock(), token_data=_token())
@@ -380,7 +381,7 @@ async def test_rejected_embed_falls_back_to_a_plain_select(monkeypatch):
     async def _run_query(builder, _db, **_kwargs):
         return builder(_Recorder())
 
-    monkeypatch.setattr(deps, "execute_with_reconnect", _run_query)
+    monkeypatch.setattr(user_service, "execute_with_reconnect", _run_query)
     set_request_language("hi")
 
     user = await get_current_user(db=Mock(), token_data=_token())
@@ -451,7 +452,7 @@ async def test_a_missing_column_degrades_to_the_stored_language(monkeypatch):
     async def _run_query(builder, _db, **_kwargs):
         return builder(_Recorder())
 
-    monkeypatch.setattr(deps, "execute_with_reconnect", _run_query)
+    monkeypatch.setattr(user_service, "execute_with_reconnect", _run_query)
     set_request_language("hi")
 
     user = await get_current_user(db=Mock(), token_data=_token())

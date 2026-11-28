@@ -159,7 +159,8 @@ def test_backfill_predicate_matches_only_default_rows():
     Every pre-065 row is a default because the only shipped writers of
     `user_settings.language` write the literal 'en' on profile creation:
     migrations 001/002/008 triggers, api/v1/auth.py (3 sites) and
-    api/v1/deps.py. Nothing read the column, and the one client that writes a
+    services/user_service.py (the profile-creation write moved there from
+    api/v1/deps.py). Nothing read the column, and the one client that writes a
     deliberate choice (flutter/lib/core/i18n/locale_controller.dart) is
     untracked, so it is in no shipped build.
 
@@ -169,7 +170,7 @@ def test_backfill_predicate_matches_only_default_rows():
     """
     repo = Path(__file__).resolve().parents[4]
     shipped_writers: list[str] = []
-    for rel in ("backend/app/api/v1/auth.py", "backend/app/api/v1/deps.py"):
+    for rel in ("backend/app/api/v1/auth.py", "backend/app/services/user_service.py"):
         text = (repo / rel).read_text(encoding="utf-8")
         for line_no, line in enumerate(text.splitlines(), start=1):
             if re.search(r'"language"\s*:', line):

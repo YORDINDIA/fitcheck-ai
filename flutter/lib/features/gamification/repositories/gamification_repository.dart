@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/exceptions/app_exceptions.dart';
@@ -10,7 +9,7 @@ class GamificationRepository {
 
   /// Get user's streak
   Future<StreakModel> getStreak() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get('${ApiConstants.gamification}/streak');
       final payload = response.data as Map<String, dynamic>;
       final data = payload['data'] as Map<String, dynamic>? ?? <String, dynamic>{};
@@ -21,14 +20,12 @@ class GamificationRepository {
         nextMilestone: _toInt(next?['days']),
         lastActiveAt: _parseDate(data['last_planned']),
       );
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get achievements
   Future<List<AchievementModel>> getAchievements() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get('${ApiConstants.gamification}/achievements');
       final payload = response.data as Map<String, dynamic>;
       final data = payload['data'] as Map<String, dynamic>? ?? <String, dynamic>{};
@@ -74,14 +71,12 @@ class GamificationRepository {
           unlockedAt: _parseDate(earnedRow?['earned_at']),
         );
       }).toList();
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get leaderboard
   Future<List<LeaderboardEntry>> getLeaderboard() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get('${ApiConstants.gamification}/leaderboard');
       final payload = response.data as Map<String, dynamic>;
       final data = payload['data'] as Map<String, dynamic>? ?? <String, dynamic>{};
@@ -95,9 +90,7 @@ class GamificationRepository {
           rank: _toInt(entry['rank'], fallback: 0),
         );
       }).toList();
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   int _toInt(dynamic value, {int fallback = 0}) {

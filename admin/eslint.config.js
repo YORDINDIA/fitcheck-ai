@@ -29,6 +29,7 @@ const featureDirs = [
   'content',
   'promo',
   'feedback',
+  'gifts',
   'ops',
   'audit',
   'search',

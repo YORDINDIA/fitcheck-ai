@@ -2,8 +2,8 @@
  * Outfits API endpoints
  */
 
-import { apiClient, getApiError } from './client';
-import { UPLOAD_TIMEOUT_MS } from '@/lib/endpoints';
+import { apiClient, LONG_RUNNING_TIMEOUT_MS, skipToast } from './client';
+import { getApiError } from '@/lib/errors';
 import type { AxiosRequestConfig } from 'axios';
 import type {
   ApiEnvelope,
@@ -214,7 +214,7 @@ export async function uploadOutfitImage(
         // concurrency; the 30s abort left the server working and surfaced as a
         // late multipart 400. Set here rather than via LONG_RUNNING_PREFIXES
         // because this path is templated (see endpoints.ts).
-        timeout: UPLOAD_TIMEOUT_MS,
+        timeout: LONG_RUNNING_TIMEOUT_MS,
       }
     );
     return response.data.data;
@@ -274,9 +274,13 @@ export interface PublicOutfit {
   items: PublicOutfitItem[];
 }
 
+/**
+ * The shared-outfit page renders its own error state, so skip the global toast.
+ * Otherwise the same not-found shows twice.
+ */
 export async function getPublicOutfit(outfitId: string): Promise<PublicOutfit> {
   try {
-    const response = await apiClient.get<ApiEnvelope<PublicOutfit>>(`/api/v1/outfits/public/${outfitId}`)
+    const response = await apiClient.get<ApiEnvelope<PublicOutfit>>(`/api/v1/outfits/public/${outfitId}`, skipToast)
     return response.data.data
   } catch (error) {
     throw getApiError(error)

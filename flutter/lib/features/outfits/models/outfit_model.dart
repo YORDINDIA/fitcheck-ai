@@ -156,24 +156,6 @@ abstract class AIGenerationRequest with _$AIGenerationRequest {
       _$AIGenerationRequestFromJson(json);
 }
 
-/// AI generation status model
-@freezed
-abstract class GenerationStatus with _$GenerationStatus {
-  const factory GenerationStatus({
-    required String id,
-    required String status,
-    double? progress,
-    String? message,
-    String? imageUrl,
-    String? error,
-    @JsonKey(name: 'created_at') DateTime? createdAt,
-    @JsonKey(name: 'completed_at') DateTime? completedAt,
-  }) = _GenerationStatus;
-
-  factory GenerationStatus.fromJson(Map<String, dynamic> json) =>
-      _$GenerationStatusFromJson(json);
-}
-
 /// Shared outfit model
 @freezed
 abstract class SharedOutfitModel with _$SharedOutfitModel {

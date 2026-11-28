@@ -195,6 +195,40 @@ def test_build_request_requires_path_params():
 
 
 @pytest.mark.unit
+def test_build_request_percent_encodes_path_params():
+    path, _, _ = build_request("GET", "/api/v1/items/{item_id}", {"item_id": "a/b?c#d e"})
+    assert path == "/api/v1/items/a%2Fb%3Fc%23d%20e"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_call_endpoint_keeps_path_params_inside_their_segment():
+    """A path argument containing "../" must not reach another route."""
+    stub = FastAPI()
+
+    @stub.get("/api/v1/items/{item_id}")
+    async def get_item(item_id: str):
+        return {"route": "item", "item_id": item_id}
+
+    @stub.get("/api/v1/auth/login")
+    async def login():
+        return {"route": "login"}
+
+    set_asgi_app(stub)
+    try:
+        result = await call_endpoint(
+            "GET", "/api/v1/items/{item_id}", {"item_id": "x/../../auth/login"}, "Bearer t"
+        )
+    finally:
+        from app.main import app as real_app
+
+        set_asgi_app(real_app)
+
+    assert result.get("route") != "login"
+    assert result["error"]["status"] == 404
+
+
+@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_call_endpoint_loopback_forwards_auth_and_parses_json():
     seen: dict[str, Any] = {}

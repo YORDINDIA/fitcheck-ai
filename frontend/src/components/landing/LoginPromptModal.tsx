@@ -10,7 +10,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
+import { CrayonLink } from '@/components/crayon/CrayonPrimitives'
 import { Shirt, ArrowRight, Check } from 'lucide-react'
 
 interface LoginPromptModalProps {
@@ -22,50 +22,49 @@ interface LoginPromptModalProps {
 export function LoginPromptModal({ isOpen, onClose, feature }: LoginPromptModalProps) {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md border-stone-200 dark:border-stone-800">
+      <DialogContent className="cp rounded-2xl border-0 bg-[var(--cp-surface)] text-[var(--cp-ink)] shadow-[0_0_0_3px_var(--cp-ink),6px_7px_0_var(--cp-shadow-ink)] sm:max-w-md">
         <DialogHeader>
-          <div className="flex justify-center mb-4">
-            <div className="w-14 h-14 rounded-xl bg-primary flex items-center justify-center">
-              <Shirt className="w-7 h-7 text-white" />
+          <div className="mb-4 flex justify-center">
+            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[var(--cp-orange)] text-white shadow-[0_0_0_2.5px_var(--cp-ink)]">
+              <Shirt className="h-7 w-7" aria-hidden="true" />
             </div>
           </div>
-          <DialogTitle className="text-center text-xl font-semibold text-stone-900 dark:text-stone-50">
+          <DialogTitle className="cp-hand text-center text-3xl text-[var(--cp-ink)]">
             Save your work
           </DialogTitle>
-          <DialogDescription className="text-center text-stone-600 dark:text-stone-400">
-            Create a free account to {feature}. Your uploads and results are saved inside the app, where you can keep building.
+          <DialogDescription className="text-center text-[var(--cp-ink-2)]">
+            Create a free account to {feature}. Your uploads and results are saved inside the app,
+            where you can keep building.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 mt-4">
-          <ul className="space-y-2 text-sm text-stone-600 dark:text-stone-400">
+        <div className="mt-4 space-y-4">
+          <ul className="space-y-2 text-sm font-medium text-[var(--cp-ink-2)]">
             <li className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-primary shrink-0" />
+              <Check className="h-4 w-4 shrink-0 text-[var(--cp-orange)]" aria-hidden="true" />
               Keep extracted items in your wardrobe
             </li>
             <li className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-primary shrink-0" />
+              <Check className="h-4 w-4 shrink-0 text-[var(--cp-orange)]" aria-hidden="true" />
               Save try-ons and photoshoot results
             </li>
             <li className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-primary shrink-0" />
+              <Check className="h-4 w-4 shrink-0 text-[var(--cp-orange)]" aria-hidden="true" />
               Daily outfit recommendations
             </li>
           </ul>
 
-          <div className="flex flex-col gap-2">
-            <Button
-              className="w-full bg-primary hover:bg-primary-pressed text-white"
-              asChild
+          <div className="flex flex-col gap-2.5">
+            <CrayonLink to="/auth/register" variant="orange" size="sm" className="w-full">
+              Start free
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </CrayonLink>
+            <Link
+              to="/auth/login"
+              className="inline-flex min-h-11 items-center justify-center rounded-xl text-sm font-semibold text-[var(--cp-ink-2)] hover:text-[var(--cp-orange-deep)]"
             >
-              <Link to="/auth/register">
-                Start free
-                <ArrowRight className="w-4 h-4 ms-2" />
-              </Link>
-            </Button>
-            <Button variant="ghost" className="w-full text-stone-600 dark:text-stone-400" asChild>
-              <Link to="/auth/login">Already have an account? Log in</Link>
-            </Button>
+              Already have an account? Log in
+            </Link>
           </div>
         </div>
       </DialogContent>

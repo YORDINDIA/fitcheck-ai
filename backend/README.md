@@ -75,6 +75,15 @@ Current route modules in `app/api/v1/`:
 - `waitlist.py`
 - `demo.py`
 - `social_import.py` (feature-flagged)
+- `blog.py`
+- `gifts.py`
+- `health.py`
+- `i18n.py`
+- `iap.py`
+- `images.py`
+- `oauth.py`
+- `promo.py`
+- `admin/` (package of admin routers; see `app/api/v1/admin/__init__.py`)
 
 ## Testing
 

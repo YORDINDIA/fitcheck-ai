@@ -1,5 +1,3 @@
-import 'package:dio/dio.dart';
-
 import '../../../core/constants/api_constants.dart';
 import '../../../core/exceptions/app_exceptions.dart';
 import '../../../core/network/api_client.dart';
@@ -12,12 +10,10 @@ class GiftRepository {
   final ApiClient _apiClient;
 
   Future<GiftDashboardSummary> getSummary() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get('${ApiConstants.gifts}/summary');
       return GiftDashboardSummary.fromJson(_dataMap(response.data));
-    } on DioException catch (error) {
-      throw handleDioException(error);
-    }
+    });
   }
 
   Future<GiftVoucher> createComplimentary({
@@ -30,7 +26,7 @@ class GiftRepository {
     GiftOccasion? occasion,
     String? occasionGreeting,
   }) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.gifts}/complimentary',
         data: {
@@ -46,20 +42,16 @@ class GiftRepository {
         },
       );
       return GiftVoucher.fromJson(_dataMap(response.data));
-    } on DioException catch (error) {
-      throw handleDioException(error);
-    }
+    });
   }
 
   Future<GiftClaimResult> claimAssigned(String voucherId) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.gifts}/$voucherId/claim-assigned',
       );
       return GiftClaimResult.fromJson(_dataMap(response.data));
-    } on DioException catch (error) {
-      throw handleDioException(error);
-    }
+    });
   }
 
   Map<String, dynamic> _dataMap(dynamic payload) {

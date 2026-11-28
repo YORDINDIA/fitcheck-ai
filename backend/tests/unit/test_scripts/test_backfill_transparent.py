@@ -108,24 +108,20 @@ class TestStorageKeyRecovery:
     def test_neither_available_is_unresolvable(self):
         assert bf.resolve_storage_key({"storage_path": None, "image_url": None}) is None
 
-    def test_legacy_storage_path_is_migrated_to_users_home(self):
+    def test_legacy_storage_path_is_returned_as_stored(self):
         """A pre-``users/``-layout ``storage_path`` (``{user}/items/{hex}.png``)
-        is reduced through ``key_from_path`` so the R2 download resolves the
-        migrated object instead of 404ing on the legacy key."""
+        is not remapped (app/core/storage_keys.py). The R2 download uses the key
+        as stored, so it can 404 when the layout migration moved the object."""
         legacy = (
             "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/items/"
             "11111111111111111111111111111111.png"
         )
         row = {"storage_path": legacy, "image_url": None}
-        assert bf.resolve_storage_key(row) == (
-            "users/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/items/"
-            "11111111111111111111111111111111.png"
-        )
+        assert bf.resolve_storage_key(row) == legacy
 
-    def test_legacy_public_url_is_migrated_to_users_home(self):
-        """The URL-derived branch is also routed through ``key_from_path``: a
-        legacy Supabase URL whose key is a bare legacy canonical key resolves
-        to its ``users/`` home."""
+    def test_legacy_public_url_resolves_to_its_stored_key(self):
+        """The URL-derived branch goes through ``key_from_path``: a legacy
+        Supabase URL resolves to the bucket key it embeds, returned as stored."""
         url = (
             "https://proj.supabase.co/storage/v1/object/public/fitcheck-images/"
             "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/items/"
@@ -133,7 +129,7 @@ class TestStorageKeyRecovery:
         )
         row = {"storage_path": None, "image_url": url}
         assert bf.resolve_storage_key(row) == (
-            "users/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/items/"
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/items/"
             "22222222222222222222222222222222.png"
         )
 

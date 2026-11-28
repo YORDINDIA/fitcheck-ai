@@ -58,6 +58,3 @@ export function isGoogleAuthConfigured(): boolean {
     import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
   )
 }
-
-export const isDev = import.meta.env.DEV
-export const isProd = import.meta.env.PROD

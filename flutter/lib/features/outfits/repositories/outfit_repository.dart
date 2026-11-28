@@ -21,7 +21,7 @@ class OutfitRepository {
     bool? favoritesOnly,
     bool? draftsOnly,
   }) async {
-    try {
+    return runDioRequest(() async {
       final queryParams = <String, dynamic>{
         'page': page,
         'limit': limit,
@@ -48,35 +48,29 @@ class OutfitRepository {
       );
 
       return _parseOutfitsList(response.data, page: page, limit: limit);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get single outfit
   Future<OutfitModel> getOutfit(String outfitId) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get(
         '${ApiConstants.outfits}/$outfitId',
       );
       return _parseOutfit(response.data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Create new outfit
   Future<OutfitModel> createOutfit(CreateOutfitRequest request) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         ApiConstants.outfits,
         data: request
             .toNonNullJson(), // Use toNonNullJson to exclude null values
       );
       return _parseOutfit(response.data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Update outfit
@@ -84,67 +78,55 @@ class OutfitRepository {
     String outfitId,
     UpdateOutfitRequest request,
   ) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.put(
         '${ApiConstants.outfits}/$outfitId',
         data: request.toJson(),
       );
       return _parseOutfit(response.data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Delete outfit
   Future<void> deleteOutfit(String outfitId) async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.delete('${ApiConstants.outfits}/$outfitId');
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Toggle outfit favorite
   Future<OutfitModel> toggleFavorite(String outfitId) async {
-    try {
+    return runDioRequest(() async {
       await _apiClient.post('${ApiConstants.outfits}/$outfitId/favorite');
       return await getOutfit(outfitId);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Mark outfit as worn
   Future<OutfitModel> markAsWorn(String outfitId) async {
-    try {
+    return runDioRequest(() async {
       await _apiClient.post('${ApiConstants.outfits}/$outfitId/wear');
       return await getOutfit(outfitId);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Duplicate outfit
   Future<OutfitModel> duplicateOutfit(String outfitId) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.outfits}/$outfitId/duplicate',
       );
       return _parseOutfit(response.data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Delete a single outfit image
   Future<void> deleteOutfitImage(String outfitId, String imageId) async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.delete(
         '${ApiConstants.outfits}/$outfitId/images/$imageId',
       );
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Upload outfit images
@@ -161,7 +143,7 @@ class OutfitRepository {
     List<File> images,
   ) async {
     final uploaded = <OutfitImage>[];
-    try {
+    return runDioRequest(() async {
       for (var i = 0; i < images.length; i += 3) {
         final end = i + 3 > images.length ? images.length : i + 3;
         final results = await Future.wait(
@@ -172,9 +154,7 @@ class OutfitRepository {
         }
       }
       return uploaded;
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Upload a single outfit image; null when the response carries no data.
@@ -199,7 +179,7 @@ class OutfitRepository {
     bool isPrimary = true,
     String? pose,
   }) async {
-    try {
+    return runDioRequest(() async {
       // Detect image format from data URL prefix and determine MIME type/extension
       final dataUrlRegex = RegExp(
         r'^data:image/(\w+);base64,',
@@ -239,9 +219,7 @@ class OutfitRepository {
         return OutfitImage.fromJson(_normalizeOutfitImageJson(dataMap));
       }
       return null;
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Upload an outfit image from an HTTP(S) URL (for AI-generated
@@ -314,7 +292,7 @@ class OutfitRepository {
     String? style,
     String? background,
   }) async {
-    try {
+    return runDioRequest(() async {
       // Use extended timeout for AI generation (can take up to 5 minutes)
       final response = await _apiClient.postWithExtendedTimeout(
         '${ApiConstants.ai}/generate-outfit',
@@ -329,33 +307,12 @@ class OutfitRepository {
       return OutfitVisualizationResult.fromJson(
         _normalizeVisualizationJson(data),
       );
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
-  }
-
-  /// Get generation status
-  Future<GenerationStatus> getGenerationStatus(String taskId) async {
-    try {
-      final response = await _apiClient.get(
-        '${ApiConstants.outfits}/generation/$taskId',
-      );
-      final data = _extractDataMap(response.data);
-      final normalized = Map<String, dynamic>.from(data);
-      normalized['id'] = taskId;
-      final images = normalized['images'];
-      if (images is List && images.isNotEmpty) {
-        normalized['imageUrl'] = images.first.toString();
-      }
-      return GenerationStatus.fromJson(normalized);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Share outfit publicly
   Future<String> shareOutfit(String outfitId) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.outfits}/$outfitId/share',
       );
@@ -372,14 +329,12 @@ class OutfitRepository {
         return url;
       }
       throw Exception('Share URL unavailable');
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get wear history for an outfit
   Future<List<WearHistoryEntry>> getWearHistory(String outfitId) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get(
         '${ApiConstants.outfits}/$outfitId/wear-history',
       );
@@ -389,14 +344,12 @@ class OutfitRepository {
           .whereType<Map<String, dynamic>>()
           .map((e) => WearHistoryEntry.fromJson(e))
           .toList();
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get public shared outfit
   Future<SharedOutfitModel> getSharedOutfit(String shareId) async {
-    try {
+    return runDioRequest(() async {
       // A10b-10: the endpoint is `/outfits/public/{id}` — the old
       // `/outfits/shared/{id}` path does not exist, so the shared page
       // always 404'd into "Outfit not found".
@@ -442,14 +395,12 @@ class OutfitRepository {
         sharedJson['season'] = _normalizeSeasonValue(season);
       }
       return SharedOutfitModel.fromJson(sharedJson);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get outfit collections
   Future<List<Map<String, dynamic>>> getCollections() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get(
         '${ApiConstants.outfits}/collections',
       );
@@ -460,9 +411,7 @@ class OutfitRepository {
       }
       final list = _extractDataList(response.data);
       return list.whereType<Map<String, dynamic>>().toList();
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Create collection
@@ -471,7 +420,7 @@ class OutfitRepository {
     List<String> outfitIds, {
     String? description,
   }) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.outfits}/collections',
         data: {
@@ -482,9 +431,7 @@ class OutfitRepository {
         },
       );
       return _extractDataMap(response.data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Update collection
@@ -494,7 +441,7 @@ class OutfitRepository {
     List<String> outfitIds, {
     String? description,
   }) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.put(
         '${ApiConstants.outfits}/collections/$collectionId',
         data: {
@@ -504,20 +451,16 @@ class OutfitRepository {
         },
       );
       return _extractDataMap(response.data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Delete collection
   Future<void> deleteCollection(String collectionId) async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.delete(
         '${ApiConstants.outfits}/collections/$collectionId',
       );
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Add outfit to collection
@@ -525,15 +468,13 @@ class OutfitRepository {
     String collectionId,
     String outfitId,
   ) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.outfits}/collections/$collectionId/outfits',
         data: {'outfit_id': outfitId},
       );
       return _extractDataMap(response.data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Add a user-selected set of outfits to a collection in order.
@@ -572,13 +513,11 @@ class OutfitRepository {
     String collectionId,
     String outfitId,
   ) async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.delete(
         '${ApiConstants.outfits}/collections/$collectionId/outfits/$outfitId',
       );
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Re-mint a fresh client-fetchable URL for a durable storage key.

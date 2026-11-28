@@ -449,7 +449,6 @@ def repair_catalogs(cache: dict, english: dict[str, str], template: dict) -> int
                 rows.pop(key, None)
                 dropped += 1
         covered = sum(1 for key in english if isinstance(rows.get(key), dict))
-        path = L10N / f"app_{code}.arb"
         # Always write, even when coverage is low. This used to delete the
         # catalog below the floor, on the theory that a missing catalog gives
         # cleaner English than a mixed screen. That reasoning breaks the moment
@@ -639,7 +638,7 @@ def main() -> int:
             f"{', '.join(skipped)}"
         )
     if quota_stopped:
-        remaining = [l["asc"] for l in selected if l["asc"] not in written]
+        remaining = [row["asc"] for row in selected if row["asc"] not in written]
         print(
             f"\nSTOPPED at {quota_stopped}: the Gemini daily quota is spent on every model.\n"
             f"{len(remaining)} locale(s) still need a catalog: {', '.join(remaining)}\n"

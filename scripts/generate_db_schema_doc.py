@@ -138,14 +138,17 @@ def main() -> None:
             ]
         )
 
+    # One line per (migration, table) pair: a migration can run several ALTER
+    # TABLE statements on the same table.
+    alter_refs = list(dict.fromkeys(alters))
     lines.extend(["", "## ALTER TABLE references", ""])
-    if not alters:
+    if not alter_refs:
         lines.append("_None detected._")
     else:
-        for mig, table in alters[:200]:
+        for mig, table in alter_refs[:200]:
             lines.append(f"- `{mig}` → `{table}`")
-        if len(alters) > 200:
-            lines.append(f"- … and {len(alters) - 200} more")
+        if len(alter_refs) > 200:
+            lines.append(f"- … and {len(alter_refs) - 200} more")
 
     lines.extend(
         [

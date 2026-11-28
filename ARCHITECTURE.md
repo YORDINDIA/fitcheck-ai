@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: 2026-08-08
+Last updated: 2026-11-20
 
 FitCheck AI is a monorepo: React web + Flutter mobile clients call a FastAPI backend. An internal admin console (`admin/`, React 19 SPA) calls the same backend's `/api/v1/admin/*` surface with server-enforced RBAC. Supabase is the system of record for the DB (Postgres) + Auth; file storage is a private S3-compatible bucket (Railway Bucket → Cloudflare R2 since the 2026-08-05 egress RCA; R2 egress is $0). Images are served to clients either as short-lived presigned URLs (default) or as stable, edge-cached URLs through a Cloudflare Worker (`infra/images-worker/`, `IMAGE_SERVING_MODE=worker`) with `_thumb` siblings for list/grid tiles. AI runs behind backend provider abstractions. Optional vector retrieval uses Pinecone.
 
@@ -156,6 +156,7 @@ Notes:
 - Import `app.services` from models, core, db, or utils.
 - Import `app.api` or `app.services` from `app/utils/` (utils are pure infrastructure helpers: crypto, retry, image processing, parallel work — no reverse deps into domain layers).
 - Put multi-step business workflows only in route handlers.
+- Call `.table(` from a route. Put the query in a service under `app/services/`. `scripts/check_architecture.py` fails on any `.table(` call under `app/api/`.
 - Run Docker or local Supabase for development.
 - Bypass service abstractions for one-off AI/vendor calls in routes.
 - Leave architecture-breaking “temporary” shortcuts without an entry in `docs/exec-plans/tech-debt-tracker.md`.

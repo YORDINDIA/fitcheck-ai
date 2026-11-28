@@ -1,12 +1,12 @@
 import { Link } from 'react-router-dom'
-import { trialRegisterHref } from '@/lib/trial-offer'
 import type { LucideIcon } from 'lucide-react'
 import { ArrowRight, Check, Sparkles } from 'lucide-react'
+
+import { CrayonBox, CrayonLink, PaperCard } from '@/components/crayon/CrayonPrimitives'
 import SEO from '@/components/seo/SEO'
 import { BreadcrumbJsonLd, buildHowToSchema } from '@/components/seo/JsonLd'
 import { SEO_CONFIG } from '@/components/seo/seo-config'
-import { Button } from '@/components/ui/button'
-import { AnimatedSection } from './AnimatedSection'
+import { trialRegisterHref } from '@/lib/trial-offer'
 
 export interface FeaturePageItem {
   icon: LucideIcon
@@ -37,7 +37,6 @@ export interface FeaturePageTemplateProps {
   keywords: string
   eyebrow: string
   heroImage: string
-  /** Responsive variants (srcset) for the hero image. Omit to serve `heroImage` only. */
   heroImageSrcSet?: string
   heroImageAlt: string
   preparationTitle: string
@@ -48,15 +47,11 @@ export interface FeaturePageTemplateProps {
   contextDescription: string
   contextItems: string[]
   relatedFeatures: RelatedFeature[]
-  /** Real plan numbers for the GEO statistics lever (optional). */
   stats?: FeatureStat[]
 }
 
-/**
- * Shared public feature-page structure. It keeps the five capability pages
- * comparable and avoids publishing performance or accuracy assertions unless
- * product has supplied approved evidence for them.
- */
+const RELATED_FILLS = ['var(--cp-sky)', 'var(--cp-mint)', 'var(--cp-lilac)']
+
 export function FeaturePageTemplate({
   title,
   description,
@@ -98,166 +93,195 @@ export function FeaturePageTemplate({
       />
       <BreadcrumbJsonLd items={breadcrumbs} />
 
-      <div className="pt-16 landing-surface">
-        <section className="border-b border-stone-200 bg-stone-50 py-14 dark:border-stone-800 dark:bg-stone-950 md:py-20">
-          <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[1fr_0.9fr] lg:items-center lg:px-8">
-            <AnimatedSection>
-              <p className="mb-4 flex items-center gap-2 text-sm font-semibold text-primary">
-                <Sparkles className="h-4 w-4" aria-hidden />
-                {eyebrow}
-              </p>
-              <h1 className="landing-display max-w-3xl text-3xl font-semibold leading-tight text-stone-900 dark:text-stone-50 sm:text-4xl md:text-5xl">
-                {title}
-              </h1>
-              <p className="mt-5 max-w-2xl text-base leading-relaxed text-stone-600 dark:text-stone-400 md:text-lg">
-                {description}
-              </p>
-              {stats && stats.length > 0 && (
-                <div className="mt-8 grid max-w-xl grid-cols-2 gap-3 sm:grid-cols-3">
-                  {stats.map((stat) => (
-                    <div
-                      key={stat.label}
-                      className="rounded-xl border border-stone-200 bg-white px-4 py-3 dark:border-stone-800 dark:bg-stone-900"
-                    >
-                      <p className="landing-display text-xl font-semibold text-stone-900 dark:text-stone-50">
-                        {stat.value}
-                      </p>
-                      <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
-                        {stat.label}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                <Button asChild size="lg" className="h-12 px-6">
-                  <Link to={trialRegisterHref()}>
-                    Start free
-                    <ArrowRight className="ms-2 h-4 w-4" />
-                  </Link>
-                </Button>
-                <Button asChild size="lg" variant="outline" className="h-12 px-6">
-                  <Link to="/features">Explore all features</Link>
-                </Button>
-              </div>
-            </AnimatedSection>
+      <div className="cp-wrap">
+        <section className="cp-doc-head">
+          <nav className="cp-crumbs" aria-label="Breadcrumb">
+            <Link to="/">Home</Link>
+            <span aria-hidden>/</span>
+            <Link to="/features">Features</Link>
+            <span aria-hidden>/</span>
+            <span className="text-[var(--cp-ink)]">{title}</span>
+          </nav>
 
-            <AnimatedSection>
-              <figure className="overflow-hidden rounded-2xl border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900">
-                <img
-                  src={heroImage}
-                  srcSet={heroImageSrcSet}
-                  sizes="(min-width: 1024px) 47vw, 92vw"
-                  alt={heroImageAlt}
-                  className="aspect-[4/3] h-full w-full object-cover"
-                  loading="eager"
-                  decoding="async"
-                />
-              </figure>
-            </AnimatedSection>
+          <p className="cp-eyebrow inline-flex items-center justify-center gap-2">
+            <Sparkles className="h-4 w-4" aria-hidden="true" />
+            {eyebrow}
+          </p>
+          <h1>{title}</h1>
+          <p className="cp-lead">{description}</p>
+
+          <div className="cp-ctas">
+            <CrayonLink to={trialRegisterHref()} variant="orange">
+              Start free
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </CrayonLink>
+            <CrayonLink to="/features" variant="dark">
+              Explore all features
+            </CrayonLink>
           </div>
+
+          {stats && stats.length > 0 && (
+            <div className="mx-auto mt-10 grid max-w-2xl grid-cols-2 gap-3 sm:grid-cols-3">
+              {stats.map((stat) => (
+                <PaperCard key={stat.label} className="px-4 py-3 text-left">
+                  <p className="cp-hand text-3xl text-[var(--cp-orange-deep)]">{stat.value}</p>
+                  <p className="mt-1 text-xs font-semibold text-[var(--cp-ink-3)]">{stat.label}</p>
+                </PaperCard>
+              ))}
+            </div>
+          )}
+
+          <PaperCard className="mx-auto mt-10 max-w-3xl overflow-hidden p-2.5">
+            <img
+              src={heroImage}
+              srcSet={heroImageSrcSet}
+              sizes="(min-width: 1024px) 720px, 92vw"
+              alt={heroImageAlt}
+              className="aspect-[16/10] h-auto w-full rounded-[12px] object-cover"
+              loading="eager"
+              decoding="async"
+            />
+          </PaperCard>
         </section>
 
-        <section className="bg-white px-4 py-12 dark:bg-stone-950 sm:px-6 md:py-16 lg:px-8">
-          <div className="mx-auto grid max-w-7xl gap-px overflow-hidden rounded-2xl border border-stone-200 bg-stone-200 dark:border-stone-800 dark:bg-stone-800 md:grid-cols-3">
+        <section className="cp-sec px-4 sm:px-6 lg:px-8">
+          <div data-testid="feature-trust-strip" className="grid gap-5 md:grid-cols-3">
             {[
               ['Your inputs stay in context', 'Use your photos, wardrobe, and choices to guide the flow.'],
               ['Review before the next step', 'Keep control of what is saved, shared, or retried.'],
               ['Clear status while work runs', 'Queued, processing, completed, and failed states stay explicit.'],
-            ].map(([heading, detail]) => (
-              <div key={heading} className="bg-white p-6 dark:bg-stone-950">
-                <h2 className="text-base font-semibold text-stone-900 dark:text-stone-50">{heading}</h2>
-                <p className="mt-2 text-sm leading-relaxed text-stone-600 dark:text-stone-400">{detail}</p>
-              </div>
+            ].map(([heading, detail], i) => (
+              <CrayonBox
+                key={heading}
+                fill={RELATED_FILLS[i % RELATED_FILLS.length]}
+                radius={22}
+                className="bg-[var(--cp-surface)] p-5"
+              >
+                <div className="cp-paper p-4">
+                  <h2 className="text-base font-bold text-[var(--cp-ink)]">{heading}</h2>
+                  <p className="mt-2 text-sm leading-relaxed text-[var(--cp-ink-2)]">{detail}</p>
+                </div>
+              </CrayonBox>
             ))}
           </div>
         </section>
 
-        <section className="bg-stone-50 py-16 dark:bg-stone-900/40 md:py-20">
-          <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.8fr_1.2fr] lg:px-8">
-            <div>
-              <h2 className="landing-display text-3xl font-semibold text-stone-900 dark:text-stone-50">
-                {preparationTitle}
-              </h2>
-              <p className="mt-3 text-stone-600 dark:text-stone-400">
-                A focused start produces more useful results and makes review easier.
-              </p>
-              <ul className="mt-6 space-y-3">
-                {preparation.map((item) => (
-                  <li key={item} className="flex gap-3 text-sm leading-relaxed text-stone-700 dark:text-stone-300">
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {features.map((feature) => {
-                const Icon = feature.icon
-                return (
-                  <article key={feature.title} className="rounded-2xl border border-stone-200 bg-white p-6 dark:border-stone-800 dark:bg-stone-950">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary text-primary">
-                      <Icon className="h-5 w-5" aria-hidden />
-                    </div>
-                    <h3 className="mt-5 text-lg font-semibold text-stone-900 dark:text-stone-50">{feature.title}</h3>
-                    <p className="mt-2 text-sm leading-relaxed text-stone-600 dark:text-stone-400">{feature.description}</p>
-                  </article>
-                )
-              })}
-            </div>
-          </div>
-        </section>
-
-        <section className="bg-white py-16 dark:bg-stone-950 md:py-20">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="max-w-2xl">
-              <h2 className="landing-display text-3xl font-semibold text-stone-900 dark:text-stone-50">How it works</h2>
-              <p className="mt-3 text-stone-600 dark:text-stone-400">A deliberate flow from input to a next useful action.</p>
-            </div>
-            <ol className="mt-10 grid overflow-hidden rounded-2xl border border-stone-200 dark:border-stone-800 md:grid-cols-4">
-              {steps.map((step, index) => (
-                <li key={step.title} className="border-b border-stone-200 p-6 last:border-b-0 dark:border-stone-800 md:border-b-0 md:border-r md:last:border-e-r-0">
-                  <p className="text-xs font-semibold tracking-[0.14em] text-primary">0{index + 1}</p>
-                  <h3 className="mt-4 text-lg font-semibold text-stone-900 dark:text-stone-50">{step.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-stone-600 dark:text-stone-400">{step.description}</p>
+        <section className="cp-sec grid gap-10 lg:grid-cols-[0.82fr_1.18fr] lg:items-start">
+          <div className="cp-left">
+            <p className="cp-eyebrow">BEFORE YOU START</p>
+            <h2 className="cp-h2">{preparationTitle}</h2>
+            <p className="cp-sub">
+              A focused start produces more useful results and makes review easier.
+            </p>
+            <ul className="mt-6 space-y-3">
+              {preparation.map((item) => (
+                <li
+                  key={item}
+                  className="flex items-start gap-3 text-sm font-medium leading-relaxed text-[var(--cp-ink-2)]"
+                >
+                  <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--cp-mint)] text-[var(--cp-ink)] shadow-[0_0_0_1.5px_var(--cp-ink)]">
+                    <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                  </span>
+                  {item}
                 </li>
               ))}
-            </ol>
+            </ul>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            {features.map((feature) => {
+              const Icon = feature.icon
+              return (
+                <PaperCard key={feature.title} className="p-5">
+                  <div className="grid h-11 w-11 place-items-center rounded-xl bg-[var(--cp-peach)] text-[var(--cp-ink)] shadow-[0_0_0_2px_var(--cp-ink)]">
+                    <Icon className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                  <h3 className="cp-hand mt-4 text-2xl text-[var(--cp-ink)]">{feature.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-[var(--cp-ink-2)]">
+                    {feature.description}
+                  </p>
+                </PaperCard>
+              )
+            })}
           </div>
         </section>
 
-        <section className="bg-stone-50 py-16 dark:bg-stone-900/40 md:py-20">
-          <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-2 lg:px-8">
-            <div className="rounded-2xl border border-stone-200 bg-white p-7 dark:border-stone-800 dark:bg-stone-950 md:p-9">
-              <p className="text-sm font-semibold text-primary">In context</p>
-              <h2 className="landing-display mt-3 text-3xl font-semibold text-stone-900 dark:text-stone-50">{contextTitle}</h2>
-              <p className="mt-4 leading-relaxed text-stone-600 dark:text-stone-400">{contextDescription}</p>
-              <ul className="mt-6 space-y-3 text-sm text-stone-700 dark:text-stone-300">
-                {contextItems.map((item) => <li key={item}>• {item}</li>)}
-              </ul>
-            </div>
-            <div className="rounded-2xl border border-stone-200 bg-stone-900 p-7 text-stone-50 dark:border-stone-800 md:p-9">
-              <h2 className="landing-display text-3xl font-semibold">Make the next choice easier</h2>
-              <p className="mt-4 leading-relaxed text-stone-300">Create an account to use this capability with your wardrobe. You can keep working while supported tasks run and return to clear results or recovery actions.</p>
-              <Button asChild size="lg" className="mt-7 h-12 bg-white px-6 text-stone-900 hover:bg-stone-100">
-                <Link to={trialRegisterHref()}>Create your free account <ArrowRight className="ms-2 h-4 w-4" /></Link>
-              </Button>
-            </div>
-          </div>
+        <section className="cp-sec">
+          <p className="cp-eyebrow">STEP BY STEP</p>
+          <h2 className="cp-h2">How it works</h2>
+          <p className="cp-sub">A deliberate flow from input to a next useful action.</p>
+
+          <ol className="mt-10 grid gap-4 md:grid-cols-4">
+            {steps.map((step, index) => (
+              <li key={step.title}>
+                <PaperCard className="h-full p-5">
+                  <p className="font-mono text-xs font-bold tracking-[0.14em] text-[var(--cp-orange-deep)]">
+                    0{index + 1}
+                  </p>
+                  <h3 className="cp-hand mt-3 text-2xl text-[var(--cp-ink)]">{step.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-[var(--cp-ink-2)]">
+                    {step.description}
+                  </p>
+                </PaperCard>
+              </li>
+            ))}
+          </ol>
         </section>
 
-        <section className="bg-white py-16 dark:bg-stone-950 md:py-20">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <h2 className="landing-display text-3xl font-semibold text-stone-900 dark:text-stone-50">Continue building your wardrobe system</h2>
-            <div className="mt-8 grid gap-4 md:grid-cols-3">
-              {relatedFeatures.map((feature) => (
-                <Link key={feature.href} to={feature.href} className="group rounded-2xl border border-stone-200 p-6 transition-colors hover:border-primary/40 dark:border-stone-800">
-                  <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-50">{feature.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-stone-600 dark:text-stone-400">{feature.description}</p>
-                  <span className="mt-5 inline-flex min-h-11 items-center text-sm font-semibold text-primary group-hover:text-primary-pressed">Explore <ArrowRight className="ms-1 h-4 w-4" /></span>
-                </Link>
+        <section className="cp-sec grid gap-6 lg:grid-cols-2">
+          <PaperCard className="p-7 md:p-9">
+            <p className="font-mono text-xs font-bold uppercase tracking-[0.14em] text-[var(--cp-orange-deep)]">
+              In context
+            </p>
+            <h2 className="cp-hand mt-2 text-4xl text-[var(--cp-ink)]">{contextTitle}</h2>
+            <p className="mt-3 leading-relaxed text-[var(--cp-ink-2)]">{contextDescription}</p>
+            <ul className="mt-5 space-y-2.5 text-sm font-medium text-[var(--cp-ink-2)]">
+              {contextItems.map((item) => (
+                <li key={item}>• {item}</li>
               ))}
+            </ul>
+          </PaperCard>
+
+          <CrayonBox
+            solid="var(--cp-navy)"
+            radius={26}
+            showLine={false}
+            className="flex flex-col justify-between p-7 text-white md:p-9"
+          >
+            <div>
+              <h2 className="cp-hand text-4xl text-white">Make the next choice easier</h2>
+              <p className="mt-3 leading-relaxed text-[var(--cp-navy-sub)]">
+                Create an account to use this capability with your wardrobe. Keep working while
+                supported tasks run and return to clear results.
+              </p>
             </div>
+            <div className="mt-7">
+              <CrayonLink to={trialRegisterHref()} variant="yellow" size="sm">
+                Create your free account
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </CrayonLink>
+            </div>
+          </CrayonBox>
+        </section>
+
+        <section className="cp-sec">
+          <h2 className="cp-h2">Keep building your wardrobe</h2>
+          <div className="mt-10 grid gap-5 md:grid-cols-3">
+            {relatedFeatures.map((feature, i) => (
+              <Link key={feature.href} to={feature.href} className="block">
+                <CrayonBox
+                  fill={RELATED_FILLS[i % RELATED_FILLS.length]}
+                  radius={24}
+                  className="cp-post h-full"
+                >
+                  <h3>{feature.title}</h3>
+                  <p className="post-box">{feature.description}</p>
+                  <span className="go">
+                    Explore <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                </CrayonBox>
+              </Link>
+            ))}
           </div>
         </section>
       </div>

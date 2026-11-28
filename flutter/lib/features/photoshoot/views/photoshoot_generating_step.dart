@@ -3,10 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/i18n/l10n.dart';
+import '../../../core/utils/error_handler.dart';
 import '../../../core/widgets/app_ui.dart';
 import '../models/photoshoot_models.dart';
 import '../providers/photoshoot_provider.dart';
 import 'photoshoot_image.dart';
+import 'referral_limit_dialog.dart';
 
 /// Step 3: live progress. Finished images fill their slots as they arrive;
 /// pending slots are skeletons. The bar follows real completed counts.
@@ -27,6 +29,7 @@ class PhotoshootGeneratingStep extends ConsumerWidget {
     final tokens = PaperTokens.of(context);
     final text = Theme.of(context).textTheme;
     final eta = _eta(s.etaSeconds);
+    final failedRun = !s.isGenerating && s.error != null;
     final byIndex = {for (final img in s.images) img.index: img};
 
     return Column(
@@ -42,7 +45,9 @@ class PhotoshootGeneratingStep extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      s.status.isEmpty
+                      failedRun
+                          ? ErrorHandler.localizedMessage(s.error)
+                          : s.status.isEmpty
                           ? context.l10n.photoshootStarting
                           : s.status,
                       maxLines: 1,
@@ -103,6 +108,24 @@ class PhotoshootGeneratingStep extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: AppConstants.spacing16),
+        if (failedRun)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              TextButton(
+                onPressed: () =>
+                    ref.read(photoshootProvider.notifier).backToOptions(),
+                style: TextButton.styleFrom(minimumSize: const Size(120, 48)),
+                child: Text(context.l10n.actionBack),
+              ),
+              TextButton(
+                onPressed: () => startPhotoshoot(context, ref),
+                style: TextButton.styleFrom(minimumSize: const Size(120, 48)),
+                child: Text(context.l10n.actionRetry),
+              ),
+            ],
+          )
+        else
         Center(
           child: TextButton(
             onPressed: s.jobId.isEmpty || s.cancelling

@@ -1,6 +1,6 @@
 # Database schema (generated)
 
-Generated: 2026-10-26
+Generated: 2026-11-25
 
 Source: `backend/db/supabase/migrations/`.
 Regenerate: `python scripts/generate_db_schema_doc.py`.
@@ -84,6 +84,7 @@ This is an orientation index for agents, not a substitute for reading migrations
 - `063_gift_occasion_and_trial_guards.sql`
 - `064_efficiency_indexes.sql`
 - `065_language_explicit.sql`
+- `066_photoshoot_status_completed.sql`
 
 ## Tables (CREATE TABLE)
 
@@ -167,15 +168,8 @@ These columns are added after their table's CREATE TABLE and are required (NOT N
 - `001_full_schema.sql` → `outfits`
 - `001_full_schema.sql` → `outfit_images`
 - `001_full_schema.sql` → `outfit_collections`
-- `001_full_schema.sql` → `users`
-- `001_full_schema.sql` → `user_preferences`
 - `001_full_schema.sql` → `user_settings`
-- `001_full_schema.sql` → `items`
-- `001_full_schema.sql` → `item_images`
 - `001_full_schema.sql` → `item_colors`
-- `001_full_schema.sql` → `outfits`
-- `001_full_schema.sql` → `outfit_images`
-- `001_full_schema.sql` → `outfit_collections`
 - `001_full_schema.sql` → `outfit_collection_items`
 - `001_full_schema.sql` → `body_profiles`
 - `001_full_schema.sql` → `outfit_generations`
@@ -191,33 +185,24 @@ These columns are added after their table's CREATE TABLE and are required (NOT N
 - `001_full_schema.sql` → `challenges`
 - `001_full_schema.sql` → `challenge_participations`
 - `002_astrology_profile.sql` → `users`
-- `002_astrology_profile.sql` → `users`
 - `003_remove_puter_add_ai_settings.sql` → `users`
 - `003_remove_puter_add_ai_settings.sql` → `user_ai_settings`
 - `004_add_user_gender.sql` → `users`
-- `004_add_user_gender.sql` → `users`
-- `004_add_user_gender.sql` → `users`
 - `005_waitlist.sql` → `waitlist`
-- `006_add_embedding_columns.sql` → `user_ai_settings`
 - `006_add_embedding_columns.sql` → `user_ai_settings`
 - `007_subscriptions_and_referrals.sql` → `referral_redemptions`
 - `007_subscriptions_and_referrals.sql` → `users`
 - `007_subscriptions_and_referrals.sql` → `subscriptions`
 - `007_subscriptions_and_referrals.sql` → `subscription_usage`
 - `007_subscriptions_and_referrals.sql` → `referral_codes`
-- `007_subscriptions_and_referrals.sql` → `referral_redemptions`
 - `009_support_tickets.sql` → `support_tickets`
 - `010_photoshoot_generator.sql` → `subscription_usage`
-- `010_photoshoot_generator.sql` → `subscription_usage`
-- `011_shared_outfits_unique_constraint.sql` → `shared_outfits`
 - `011_shared_outfits_unique_constraint.sql` → `shared_outfits`
 - `012_social_import_pipeline.sql` → `social_import_jobs`
 - `012_social_import_pipeline.sql` → `social_import_photos`
 - `012_social_import_pipeline.sql` → `social_import_items`
 - `012_social_import_pipeline.sql` → `social_import_auth_sessions`
 - `012_social_import_pipeline.sql` → `social_import_events`
-- `014_add_user_dob.sql` → `users`
-- `014_add_user_dob.sql` → `users`
 - `014_add_user_dob.sql` → `users`
 - `015_drop_date_of_birth.sql` → `users`
 - `016_extraction_jobs.sql` → `extraction_jobs`
@@ -227,24 +212,12 @@ These columns are added after their table's CREATE TABLE and are required (NOT N
 - `021_calendar_event_type.sql` → `calendar_events`
 - `022_wave_b_hardening.sql` → `stripe_webhook_events`
 - `023_durable_job_state.sql` → `extraction_jobs`
-- `023_durable_job_state.sql` → `extraction_jobs`
 - `023_durable_job_state.sql` → `photoshoot_jobs`
 - `025_calendar_all_day_events.sql` → `calendar_events`
 - `027_stripe_webhook_processing_state.sql` → `stripe_webhook_events`
-- `027_stripe_webhook_processing_state.sql` → `stripe_webhook_events`
-- `027_stripe_webhook_processing_state.sql` → `stripe_webhook_events`
-- `029_pr9_hardening.sql` → `extraction_jobs`
 - `029_pr9_hardening.sql` → `extraction_jobs`
 - `030_mobile_iap.sql` → `subscriptions`
-- `030_mobile_iap.sql` → `subscriptions`
-- `030_mobile_iap.sql` → `subscriptions`
-- `030_mobile_iap.sql` → `subscriptions`
-- `030_mobile_iap.sql` → `subscriptions`
 - `030_mobile_iap.sql` → `apple_iap_events`
-- `030_mobile_iap.sql` → `apple_iap_events`
-- `030_mobile_iap.sql` → `apple_iap_events`
-- `030_mobile_iap.sql` → `google_rtdn_events`
-- `030_mobile_iap.sql` → `google_rtdn_events`
 - `030_mobile_iap.sql` → `google_rtdn_events`
 - `031_promo_codes.sql` → `promo_codes`
 - `031_promo_codes.sql` → `promo_redemptions`
@@ -253,8 +226,6 @@ These columns are added after their table's CREATE TABLE and are required (NOT N
 - `036_widen_image_url_columns.sql` → `users`
 - `036_widen_image_url_columns.sql` → `item_images`
 - `036_widen_image_url_columns.sql` → `outfit_images`
-- `037_admin_roles.sql` → `users`
-- `037_admin_roles.sql` → `users`
 - `037_admin_roles.sql` → `users`
 - `037_admin_roles.sql` → `support_tickets`
 - `038_audit_events.sql` → `audit_events`
@@ -275,6 +246,7 @@ These columns are added after their table's CREATE TABLE and are required (NOT N
 - `063_gift_occasion_and_trial_guards.sql` → `gift_vouchers`
 - `064_efficiency_indexes.sql` → `items`
 - `065_language_explicit.sql` → `user_settings`
+- `066_photoshoot_status_completed.sql` → `photoshoot_jobs`
 
 ## Related
 

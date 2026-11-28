@@ -153,22 +153,6 @@ abstract class ExtractedItem with _$ExtractedItem {
       _$ExtractedItemFromJson(json);
 }
 
-/// AI extraction response model
-@freezed
-abstract class ExtractionResponse with _$ExtractionResponse {
-  const factory ExtractionResponse({
-    required String id,
-    required String status,
-    List<ExtractedItem>? items,
-    String? imageUrl,
-    String? error,
-    @JsonKey(name: 'created_at') DateTime? createdAt,
-  }) = _ExtractionResponse;
-
-  factory ExtractionResponse.fromJson(Map<String, dynamic> json) =>
-      _$ExtractionResponseFromJson(json);
-}
-
 /// Bounding box for detected items in an image
 @freezed
 abstract class BoundingBox with _$BoundingBox {

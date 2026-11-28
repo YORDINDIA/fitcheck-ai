@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import '../models/body_profile_model.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/constants/api_constants.dart';
@@ -10,7 +9,7 @@ class BodyProfileRepository {
 
   /// Get all body profiles
   Future<List<BodyProfileModel>> getBodyProfiles() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get('${ApiConstants.users}/body-profiles');
       final data = _extractData(response.data);
       final profiles = data['body_profiles'] as List? ?? [];
@@ -18,23 +17,19 @@ class BodyProfileRepository {
           .whereType<Map<String, dynamic>>()
           .map(BodyProfileModel.fromJson)
           .toList();
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Create body profile
   Future<BodyProfileModel> createBodyProfile(CreateBodyProfileRequest request) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.users}/body-profiles',
         data: request.toJson(),
       );
       final data = _extractData(response.data);
       return BodyProfileModel.fromJson(data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Update body profile
@@ -42,25 +37,21 @@ class BodyProfileRepository {
     String profileId,
     UpdateBodyProfileRequest request,
   ) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.put(
         '${ApiConstants.users}/body-profiles/$profileId',
         data: request.toJson(),
       );
       final data = _extractData(response.data);
       return BodyProfileModel.fromJson(data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Delete body profile
   Future<void> deleteBodyProfile(String profileId) async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.delete('${ApiConstants.users}/body-profiles/$profileId');
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Set profile as default

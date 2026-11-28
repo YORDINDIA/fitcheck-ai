@@ -36,6 +36,7 @@ from app.models.social_import import (
 from app.models.subscription import OperationType
 from app.services.ai_settings_service import AISettingsService
 from app.services.social_import_event_service import SocialImportEventService
+from app.services.social_import_job_store import SocialImportJobStore
 from app.services.social_import_pipeline_service import SocialImportPipelineService
 from app.services.social_auth_service import SocialAuthService
 from app.services.social_scraper_service import SocialScraperService
@@ -358,6 +359,7 @@ async def test_run_exception_marks_job_failed_and_publishes(monkeypatch):
 
     async def fake_set_job_status(db, *, job_id, user_id, status, error_message=None, **kwargs):
         status_updates.append((status, error_message))
+        return {"id": job_id}
 
     patch_store(monkeypatch, get_job=fake_get_job, set_job_status=fake_set_job_status)
     monkeypatch.setattr(SocialImportPipelineService, "_run_queue", fake_run_queue)
@@ -420,6 +422,7 @@ async def test_discover_all_photos_paginates_and_completes(monkeypatch):
 
     async def fake_set_job_status(db, *, job_id, user_id, status, error_message=None, **kwargs):
         statuses.append(status)
+        return {"id": job_id}
 
     async def fake_get_active_session(db, *, job_id, user_id):
         return None
@@ -442,8 +445,9 @@ async def test_discover_all_photos_paginates_and_completes(monkeypatch):
         inserted.append((start_ordinal, [p["id"] for p in photos]))
         return [{"id": p["id"]} for p in photos]
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
+        return {"id": job_id}
 
     patch_store(
         monkeypatch,
@@ -474,6 +478,170 @@ async def test_discover_all_photos_paginates_and_completes(monkeypatch):
     assert len(photo_events) == 2
 
 
+_TERMINAL_VALUES = {
+    SocialImportJobStatus.COMPLETED.value,
+    SocialImportJobStatus.CANCELLED.value,
+    SocialImportJobStatus.FAILED.value,
+}
+
+
+def _patch_terminal_aware_store(monkeypatch, state, calls):
+    """Store fakes that record every call and refuse guarded writes once the
+    job row (state["status"]) is terminal, like the real exclude_statuses guard."""
+
+    async def fake_get_job(db, *, job_id, user_id):
+        return make_job(status=state["status"])
+
+    async def fake_set_job_status(db, *, job_id, user_id, status, error_message=None, **kwargs):
+        calls["status_writes"].append(status.value)
+        if kwargs.get("exclude_statuses") and state["status"] in _TERMINAL_VALUES:
+            return None
+        state["status"] = status.value
+        return {"id": job_id}
+
+    async def fake_update_job(db, *, job_id, user_id, updates, exclude_statuses=None):
+        calls["job_updates"].append(dict(updates))
+        if exclude_statuses and state["status"] in _TERMINAL_VALUES:
+            return None
+        calls["applied"].append(dict(updates))
+        if "status" in updates:
+            state["status"] = updates["status"]
+        return {"id": job_id}
+
+    async def fake_add_discovered_photos(db, *, job_id, user_id, start_ordinal, photos):
+        calls["photo_writes"].append([p["id"] for p in photos])
+        return [{"id": p["id"]} for p in photos]
+
+    async def fake_store_scraper_session(db, **kwargs):
+        calls["session_writes"].append(kwargs)
+        return {}
+
+    patch_store(
+        monkeypatch,
+        get_job=fake_get_job,
+        set_job_status=fake_set_job_status,
+        update_job=fake_update_job,
+        add_discovered_photos=fake_add_discovered_photos,
+    )
+    monkeypatch.setattr(
+        SocialAuthService, "store_scraper_session", staticmethod(fake_store_scraper_session)
+    )
+
+
+def _new_calls():
+    return {
+        "status_writes": [],
+        "job_updates": [],
+        "applied": [],
+        "photo_writes": [],
+        "session_writes": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_discover_cancelled_during_fetch_writes_no_photos_session_or_cursor(monkeypatch):
+    """Findings 1 and 2: a job cancelled while discovery fetches gets no new
+    photos, no encrypted session, and no cursor/payload write."""
+    events = patch_event(monkeypatch)
+    state = {"status": SocialImportJobStatus.CREATED.value}
+    calls = _new_calls()
+    _patch_terminal_aware_store(monkeypatch, state, calls)
+
+    async def fake_get_active_session(db, *, job_id, user_id):
+        return {
+            "session_payload": {
+                "username": "ada",
+                "password": "pw",
+                "sessionid": "sid",
+                "csrftoken": "csrf",
+            }
+        }
+
+    async def fake_discover(normalized_url, platform, auth_session, cursor):
+        state["status"] = SocialImportJobStatus.CANCELLED.value  # cancel lands mid-fetch
+        return make_discovery_result(
+            photos=[SimpleNamespace(model_dump=lambda: {"id": "p1"})],
+            next_cursor="cursor-2",
+            exhausted=False,
+        )
+
+    monkeypatch.setattr(SocialAuthService, "get_active_session", staticmethod(fake_get_active_session))
+    monkeypatch.setattr(SocialScraperService, "discover_profile_photos", staticmethod(fake_discover))
+
+    service = make_service()
+    await service._discover_all_photos("job-1")
+
+    assert calls["photo_writes"] == []
+    assert calls["session_writes"] == []
+    assert not any("metadata" in u for u in calls["job_updates"])
+    assert not any("discovery_completed" in u for u in calls["job_updates"])
+    assert [e for e in events if e["event_type"] in {"photo_discovered", "auth_required"}] == []
+
+
+@pytest.mark.asyncio
+async def test_discover_cancelled_during_fetch_skips_two_factor_session_write(monkeypatch):
+    """Finding 2: the two-factor credential write must not run for a cancelled job."""
+    events = patch_event(monkeypatch)
+    state = {"status": SocialImportJobStatus.CREATED.value}
+    calls = _new_calls()
+    _patch_terminal_aware_store(monkeypatch, state, calls)
+
+    async def fake_get_active_session(db, *, job_id, user_id):
+        return {"session_payload": {"username": "ada", "password": "pw"}}
+
+    async def fake_discover(normalized_url, platform, auth_session, cursor):
+        state["status"] = SocialImportJobStatus.CANCELLED.value
+        return make_discovery_result(
+            requires_auth=True,
+            metadata={"reason": "two_factor_required", "two_factor_identifier": "tf-1"},
+        )
+
+    monkeypatch.setattr(SocialAuthService, "get_active_session", staticmethod(fake_get_active_session))
+    monkeypatch.setattr(SocialScraperService, "discover_profile_photos", staticmethod(fake_discover))
+
+    service = make_service()
+    await service._discover_all_photos("job-1")
+
+    assert calls["session_writes"] == []
+    assert not any("status" in u and u["status"] == SocialImportJobStatus.AWAITING_AUTH.value for u in calls["job_updates"])
+    assert [e for e in events if e["event_type"] == "auth_required"] == []
+
+
+@pytest.mark.asyncio
+async def test_discover_cancelled_after_photo_insert_writes_no_cursor(monkeypatch):
+    """Finding 1: the cursor/payload write is guarded, so a job that turns
+    terminal between the photo insert and the cursor write keeps no cursor."""
+    patch_event(monkeypatch)
+    state = {"status": SocialImportJobStatus.CREATED.value}
+    calls = _new_calls()
+    _patch_terminal_aware_store(monkeypatch, state, calls)
+
+    async def fake_add_after_cancel(db, *, job_id, user_id, start_ordinal, photos):
+        calls["photo_writes"].append([p["id"] for p in photos])
+        state["status"] = SocialImportJobStatus.CANCELLED.value  # cancel lands after insert
+        return [{"id": p["id"]} for p in photos]
+
+    async def fake_get_active_session(db, *, job_id, user_id):
+        return None
+
+    async def fake_discover(normalized_url, platform, auth_session, cursor):
+        return make_discovery_result(
+            photos=[SimpleNamespace(model_dump=lambda: {"id": "p1"})],
+            next_cursor="cursor-2",
+            exhausted=False,
+        )
+
+    monkeypatch.setattr(SocialImportJobStore, "add_discovered_photos", staticmethod(fake_add_after_cancel))
+    monkeypatch.setattr(SocialAuthService, "get_active_session", staticmethod(fake_get_active_session))
+    monkeypatch.setattr(SocialScraperService, "discover_profile_photos", staticmethod(fake_discover))
+
+    service = make_service()
+    await service._discover_all_photos("job-1")
+
+    assert not any("metadata" in u for u in calls["applied"])
+    assert not any("discovery_completed" in u for u in calls["applied"])
+
+
 async def _noop():
     return None
 
@@ -488,7 +656,7 @@ async def test_discover_all_photos_auth_required_persists_two_factor(monkeypatch
         return make_job()
 
     async def fake_set_job_status(*args, **kwargs):
-        return None
+        return make_job()
 
     async def fake_get_active_session(db, *, job_id, user_id):
         return {
@@ -519,7 +687,7 @@ async def test_discover_all_photos_auth_required_persists_two_factor(monkeypatch
             (username, password, two_factor_identifier, sessionid, csrftoken, ds_user_id)
         )
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
         return {"id": job_id}
 
@@ -546,7 +714,7 @@ async def test_discover_all_photos_auth_required_persists_two_factor(monkeypatch
         await service._discover_all_photos("job-1")
 
     assert stored_sessions == [("ada", "pw", "2fa-token", "sid", "csrf", "123")]
-    auth_update = updated[0]
+    auth_update = updated[-1]  # last write: the auth status after the live-job guard
     assert auth_update["status"] == SocialImportJobStatus.AWAITING_AUTH.value
     assert auth_update["auth_required"] is True
     assert auth_update["metadata"]["two_factor_identifier"] == "2fa-token"
@@ -563,7 +731,7 @@ async def test_discover_all_photos_auth_required_without_session_payload(monkeyp
         return make_job()
 
     async def fake_set_job_status(*args, **kwargs):
-        return None
+        return make_job()
 
     async def fake_get_active_session(db, *, job_id, user_id):
         return None
@@ -574,7 +742,7 @@ async def test_discover_all_photos_auth_required_without_session_payload(monkeyp
             metadata={"reason": "login_required", "checkpoint_url": "https://cp"},
         )
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         return {"id": job_id}
 
     patch_store(
@@ -610,7 +778,7 @@ async def test_discover_all_photos_surfaces_discovery_failure(monkeypatch):
         return make_job()
 
     async def fake_set_job_status(*args, **kwargs):
-        return None
+        return make_job()
 
     async def fake_get_active_session(db, *, job_id, user_id):
         return None
@@ -630,7 +798,7 @@ async def test_discover_all_photos_surfaces_discovery_failure(monkeypatch):
             metadata={"error_type": "fetch_failure", "message": "network down"},
         )
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
         return {"id": job_id}
 
@@ -653,7 +821,7 @@ async def test_discover_all_photos_surfaces_discovery_failure(monkeypatch):
     service = make_service()
     await service._discover_all_photos("job-1")
 
-    fail_update = updated[0]
+    fail_update = updated[-1]  # last write: the failure status after the live-job guard
     assert fail_update["status"] == SocialImportJobStatus.FAILED.value
     assert fail_update["error_message"] == "network down"
     assert fail_update["metadata"]["discovery_failure"] is True
@@ -670,7 +838,7 @@ async def test_discover_all_photos_wraps_retry_exhaustion(monkeypatch):
         return make_job()
 
     async def fake_set_job_status(*args, **kwargs):
-        return None
+        return make_job()
 
     async def fake_get_active_session(db, *, job_id, user_id):
         return None
@@ -697,7 +865,7 @@ async def test_discover_all_photos_uses_retry_on_transient_result(monkeypatch):
         return make_job()
 
     async def fake_set_job_status(*args, **kwargs):
-        return None
+        return make_job()
 
     async def fake_get_active_session(db, *, job_id, user_id):
         return None
@@ -743,7 +911,7 @@ async def test_discover_all_photos_hits_max_photo_cap(monkeypatch):
         return make_job()
 
     async def fake_set_job_status(*args, **kwargs):
-        return None
+        return make_job()
 
     async def fake_get_active_session(db, *, job_id, user_id):
         return None
@@ -759,7 +927,7 @@ async def test_discover_all_photos_hits_max_photo_cap(monkeypatch):
     async def fake_add_discovered_photos(db, *, job_id, user_id, start_ordinal, photos):
         return [{"id": p["id"]} for p in photos]
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         final_updates.append(dict(updates))
         return {"id": job_id}
 
@@ -897,7 +1065,7 @@ def patch_queue_collaborators(monkeypatch, job, slots, *, claimed=None, processe
     slots = {"awaiting": None, "buffered": None, "processing": None, **slots}
     patch_store(
         monkeypatch,
-        set_job_status=_async_value(None),
+        set_job_status=_async_value(make_job()),
         get_job=_async_value(job),
         get_slots=_async_value(slots),
         claim_next_queued_photo=_async_value(claimed),
@@ -919,7 +1087,7 @@ async def test_run_queue_capacity_exhausted_applies_backoff(monkeypatch):
     async def fake_get_job(db, *, job_id, user_id):
         return make_job()
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
         return {"id": job_id, **updates}
 
@@ -933,7 +1101,7 @@ async def test_run_queue_capacity_exhausted_applies_backoff(monkeypatch):
 
     patch_store(
         monkeypatch,
-        set_job_status=_async_value(None),
+        set_job_status=_async_value(make_job()),
         get_job=fake_get_job,
         update_job=fake_update_job,
     )
@@ -995,6 +1163,36 @@ async def test_handle_capacity_exhaustion_pauses_after_budget(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_handle_capacity_exhaustion_refused_failed_write_skips_counter_sync(monkeypatch):
+    """If the terminal guard refuses the FAILED write, the job is already
+    final: no counter sync and no job_failed event."""
+    events = patch_event(monkeypatch)
+    sync_calls = []
+
+    async def fake_get_job(db, *, job_id, user_id):
+        return make_job(metadata={"capacity_retry_attempts": 5})
+
+    async def fake_set_job_status(db, *, job_id, user_id, status, error_message=None, **kwargs):
+        return None
+
+    async def fake_sync(job_id):
+        sync_calls.append(job_id)
+
+    patch_store(
+        monkeypatch,
+        get_job=fake_get_job,
+        set_job_status=fake_set_job_status,
+    )
+    service = make_service()
+    monkeypatch.setattr(service, "_sync_job_counters", fake_sync)
+
+    await service._handle_capacity_exhaustion("job-1")
+
+    assert sync_calls == []
+    assert not [e for e in events if e["event_type"] == "job_failed"]
+
+
+@pytest.mark.asyncio
 async def test_handle_capacity_exhaustion_missing_job_is_noop(monkeypatch):
     patch_store(monkeypatch, get_job=_async_value(None))
     service = make_service()
@@ -1010,7 +1208,7 @@ async def test_clear_capacity_retry_state_resets_counter(monkeypatch):
     async def fake_get_job(db, *, job_id, user_id):
         return make_job(metadata={"capacity_retry_attempts": 3})
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
         return {"id": job_id}
 
@@ -1030,7 +1228,7 @@ async def test_clear_capacity_retry_state_resets_counter(monkeypatch):
 async def test_run_queue_job_missing_returns(monkeypatch):
     patch_store(
         monkeypatch,
-        set_job_status=_async_value(None),
+        set_job_status=_async_value(make_job()),
         get_job=_async_value(None),
     )
     service = make_service()
@@ -1047,7 +1245,7 @@ async def test_run_queue_terminal_statuses_return(monkeypatch):
     ):
         patch_store(
             monkeypatch,
-            set_job_status=_async_value(None),
+            set_job_status=_async_value(make_job()),
             get_job=_async_value(make_job(status=status.value)),
         )
         service = make_service()
@@ -1076,7 +1274,7 @@ async def test_run_queue_processes_processing_slot(monkeypatch):
         get_slots=_async_value(
             {"awaiting": None, "buffered": None, "processing": make_photo()}
         ),
-        set_job_status=_async_value(None),
+        set_job_status=_async_value(make_job()),
     )
     service = make_service()
     monkeypatch.setattr(service, "_process_single_photo", fake_process)
@@ -1094,7 +1292,7 @@ async def test_run_queue_waits_when_queue_full(monkeypatch):
 
     patch_store(
         monkeypatch,
-        set_job_status=_async_value(None),
+        set_job_status=_async_value(make_job()),
         get_job=_async_value(make_job()),
         get_slots=_async_value(
             {
@@ -1124,7 +1322,7 @@ async def test_run_queue_promotes_buffered_photo(monkeypatch):
 
     patch_store(
         monkeypatch,
-        set_job_status=_async_value(None),
+        set_job_status=_async_value(make_job()),
         get_job=_async_value(make_job()),
         get_slots=_async_value(
             {
@@ -1162,7 +1360,7 @@ async def test_run_queue_claims_and_processes_when_no_awaiting(monkeypatch):
 
     patch_store(
         monkeypatch,
-        set_job_status=_async_value(None),
+        set_job_status=_async_value(make_job()),
         get_job=fake_get_job,
         get_slots=_async_value(
             {"awaiting": None, "buffered": None, "processing": None}
@@ -1191,7 +1389,7 @@ async def test_run_queue_claims_background_photo_while_awaiting(monkeypatch):
 
     patch_store(
         monkeypatch,
-        set_job_status=_async_value(None),
+        set_job_status=_async_value(make_job()),
         get_job=fake_get_job,
         get_slots=_async_value(
             {
@@ -1218,7 +1416,7 @@ async def test_run_queue_completes_job(monkeypatch):
 
     patch_store(
         monkeypatch,
-        set_job_status=_async_value(None),
+        set_job_status=_async_value(make_job()),
         get_job=_async_value(make_job(discovery_completed=True)),
         get_slots=_async_value(
             {"awaiting": None, "buffered": None, "processing": None}
@@ -1242,7 +1440,7 @@ async def test_run_queue_syncs_and_returns_when_not_complete(monkeypatch):
 
     patch_store(
         monkeypatch,
-        set_job_status=_async_value(None),
+        set_job_status=_async_value(make_job()),
         get_job=_async_value(make_job(discovery_completed=True)),
         get_slots=_async_value(
             {"awaiting": None, "buffered": None, "processing": None}
@@ -1295,6 +1493,7 @@ async def test_pause_for_rate_limit_sets_status_and_publishes(monkeypatch):
 
     async def fake_set_job_status(db, *, job_id, user_id, status, error_message=None, **kwargs):
         statuses.append((status, error_message))
+        return {"id": job_id}
 
     patch_store(monkeypatch, set_job_status=fake_set_job_status)
     service = make_service()
@@ -2219,6 +2418,7 @@ async def test_cancel_job(monkeypatch):
 
     async def fake_set_job_status(db, *, job_id, user_id, status, completed=None, **kwargs):
         calls.append(("set_status", status, completed))
+        return make_job(id=job_id, status=status.value)
 
     async def fake_cleanup_assets(job_id):
         calls.append(("cleanup",))
@@ -2240,7 +2440,7 @@ async def test_cancel_job(monkeypatch):
         SocialImportPipelineService, "cancel_scheduled_job", classmethod(fake_cancel_scheduled)
     )
 
-    await service.cancel_job("job-1")
+    assert await service.cancel_job("job-1") is True
 
     assert calls[0] == ("set_status", SocialImportJobStatus.CANCELLED, True)
     assert ("cleanup",) in calls
@@ -2248,6 +2448,211 @@ async def test_cancel_job(monkeypatch):
     assert ("cancel_scheduled",) in calls
     cancelled_events = [e for e in events if e["event_type"] == "job_cancelled"]
     assert cancelled_events
+
+
+def _guarded_job_status(monkeypatch, current_status):
+    """Fake set_job_status that applies the DB terminal filter.
+
+    Mirrors ``.not_.in_("status", exclude_statuses)``: when the stored status
+    is excluded, the write matches no row and the fake returns None.
+    """
+    state = {"status": current_status, "exclude_seen": None, "writes": 0}
+
+    async def fake_set_job_status(
+        db, *, job_id, user_id, status, completed=None, exclude_statuses=None, **kwargs
+    ):
+        state["exclude_seen"] = exclude_statuses
+        if exclude_statuses and state["status"] in {s.value for s in exclude_statuses}:
+            return None
+        state["writes"] += 1
+        state["status"] = status.value
+        return make_job(id=job_id, status=status.value)
+
+    return state, fake_set_job_status
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal", ["completed", "failed", "cancelled"])
+async def test_cancel_job_on_terminal_status_is_noop(monkeypatch, terminal):
+    """A cancel on a finished job must not overwrite status, clean up
+    artifacts, or publish job_cancelled."""
+    events = patch_event(monkeypatch)
+    cleanup_calls = []
+    artifact_calls = []
+    cancel_scheduled_calls = []
+    state, fake_set_job_status = _guarded_job_status(monkeypatch, terminal)
+
+    async def fake_cleanup_assets(job_id):
+        cleanup_calls.append(job_id)
+
+    async def fake_delete_artifacts(db, *, job_id, user_id):
+        artifact_calls.append(job_id)
+
+    async def fake_cancel_scheduled(cls, job_id):
+        cancel_scheduled_calls.append(job_id)
+
+    patch_store(
+        monkeypatch,
+        set_job_status=fake_set_job_status,
+        delete_job_artifacts=fake_delete_artifacts,
+        get_job=_async_value(make_job(status=terminal)),
+    )
+    service = make_service()
+    monkeypatch.setattr(service, "_cleanup_unsaved_temp_assets", fake_cleanup_assets)
+    monkeypatch.setattr(
+        SocialImportPipelineService, "cancel_scheduled_job", classmethod(fake_cancel_scheduled)
+    )
+
+    result = await service.cancel_job("job-1")
+
+    assert result is False
+    assert state["status"] == terminal
+    assert state["writes"] == 0
+    assert {s.value for s in state["exclude_seen"]} == {"completed", "cancelled", "failed"}
+    assert cleanup_calls == []
+    assert artifact_calls == []
+    assert cancel_scheduled_calls == []
+    assert [e for e in events if e["event_type"] == "job_cancelled"] == []
+
+
+@pytest.mark.asyncio
+async def test_cancel_job_on_processing_still_cancels_and_cleans(monkeypatch):
+    events = patch_event(monkeypatch)
+    cleanup_calls = []
+    artifact_calls = []
+    state, fake_set_job_status = _guarded_job_status(
+        monkeypatch, SocialImportJobStatus.PROCESSING.value
+    )
+
+    async def fake_cleanup_assets(job_id):
+        cleanup_calls.append(job_id)
+
+    async def fake_delete_artifacts(db, *, job_id, user_id):
+        artifact_calls.append(job_id)
+
+    async def fake_cancel_scheduled(cls, job_id):
+        return None
+
+    patch_store(
+        monkeypatch,
+        set_job_status=fake_set_job_status,
+        delete_job_artifacts=fake_delete_artifacts,
+    )
+    service = make_service()
+    monkeypatch.setattr(service, "_cleanup_unsaved_temp_assets", fake_cleanup_assets)
+    monkeypatch.setattr(
+        SocialImportPipelineService, "cancel_scheduled_job", classmethod(fake_cancel_scheduled)
+    )
+
+    await service.cancel_job("job-1")
+
+    assert state["status"] == SocialImportJobStatus.CANCELLED.value
+    assert cleanup_calls == ["job-1"]
+    assert artifact_calls == ["job-1"]
+    assert [e["event_type"] for e in events] == ["job_cancelled"]
+
+
+@pytest.mark.asyncio
+async def test_cancel_job_missing_raises_not_found(monkeypatch):
+    patch_event(monkeypatch)
+
+    async def fake_set_job_status(db, **kwargs):
+        return None
+
+    patch_store(
+        monkeypatch,
+        set_job_status=fake_set_job_status,
+        get_job=_async_value(None),
+    )
+    service = make_service()
+    with pytest.raises(SocialImportJobNotFoundError):
+        await service.cancel_job("job-1")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("late_write", ["complete", "pause_rate_limited"])
+async def test_late_pipeline_write_does_not_overwrite_cancelled(monkeypatch, late_write):
+    """A pipeline status write that lands after a cancel must not overwrite
+    CANCELLED. The guarded write matches no row and returns None, so the path
+    stops: no event is published, and no artifacts are cleaned or deleted."""
+    events = patch_event(monkeypatch)
+    state, fake_set_job_status = _guarded_job_status(
+        monkeypatch, SocialImportJobStatus.CANCELLED.value
+    )
+    cleanup_calls = []
+    artifact_calls = []
+
+    async def fake_cleanup_assets(job_id):
+        cleanup_calls.append(job_id)
+
+    async def fake_delete_artifacts(db, *, job_id, user_id):
+        artifact_calls.append(job_id)
+
+    patch_store(
+        monkeypatch,
+        set_job_status=fake_set_job_status,
+        delete_job_artifacts=fake_delete_artifacts,
+    )
+    service = make_service()
+    monkeypatch.setattr(service, "_sync_job_counters", _noop_async)
+    monkeypatch.setattr(service, "_clear_capacity_retry_state", _noop_async)
+    monkeypatch.setattr(service, "_cleanup_unsaved_temp_assets", fake_cleanup_assets)
+
+    if late_write == "complete":
+        await service._complete_job("job-1")
+    else:
+        await service._pause_for_rate_limit("job-1", "extraction")
+
+    assert state["status"] == SocialImportJobStatus.CANCELLED.value
+    assert state["writes"] == 0
+    assert {s.value for s in state["exclude_seen"]} == {"completed", "cancelled", "failed"}
+    assert events == []
+    assert cleanup_calls == []
+    assert artifact_calls == []
+
+
+@pytest.mark.asyncio
+async def test_run_queue_stops_when_guarded_status_write_refused(monkeypatch):
+    """A cancel that wins the status CAS before _run_queue starts must stop
+    the pipeline: no slot is read, no photo is claimed or processed, and no
+    event is published."""
+    events = patch_event(monkeypatch)
+    state, fake_set_job_status = _guarded_job_status(
+        monkeypatch, SocialImportJobStatus.CANCELLED.value
+    )
+    slot_calls = []
+    claim_calls = []
+    processed = []
+
+    async def fake_get_slots(db, *, job_id, user_id):
+        slot_calls.append(job_id)
+        return {"awaiting": None, "buffered": None, "processing": make_photo()}
+
+    async def fake_claim(db, *, job_id, user_id):
+        claim_calls.append(job_id)
+        return make_photo()
+
+    async def fake_process(job_id, photo):
+        processed.append(photo["id"])
+
+    patch_store(
+        monkeypatch,
+        set_job_status=fake_set_job_status,
+        get_slots=fake_get_slots,
+        claim_next_queued_photo=fake_claim,
+        get_job=_async_value(make_job(status=SocialImportJobStatus.CANCELLED.value)),
+    )
+    service = make_service()
+    monkeypatch.setattr(service, "_process_single_photo", fake_process)
+    monkeypatch.setattr(service, "_sync_job_counters", _noop_async)
+
+    await service._run_queue("job-1")
+
+    assert state["writes"] == 0
+    assert slot_calls == []
+    assert claim_calls == []
+    assert processed == []
+    assert events == []
 
 
 # ---------------------------------------------------------------------------
@@ -2273,7 +2678,7 @@ async def test_accept_scraper_auth_merges_existing_session(monkeypatch):
     async def fake_store_scraper_session(db, **kwargs):
         stored.append(kwargs)
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         return {"id": job_id, **updates}
 
     async def fake_schedule(cls, service, job_id):
@@ -2311,7 +2716,7 @@ async def test_accept_auth_update_missing_raises(monkeypatch):
     async def fake_get_job(db, *, job_id, user_id):
         return make_job(status=SocialImportJobStatus.AWAITING_AUTH.value)
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         return None
 
     async def fake_get_active_session(db, *, job_id, user_id):
@@ -2423,6 +2828,12 @@ async def test_recover_stale_job_requeues_stuck_photos_and_reschedules(monkeypat
         updated_photos.append((photo_id, dict(updates)))
         return {"id": photo_id, **updates}
 
+    job_updates = []
+
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
+        job_updates.append(dict(updates))
+        return {"id": job_id}
+
     async def fake_schedule(cls, service, job_id):
         scheduled.append(job_id)
 
@@ -2430,6 +2841,7 @@ async def test_recover_stale_job_requeues_stuck_photos_and_reschedules(monkeypat
         monkeypatch,
         list_photos=fake_list_photos,
         update_photo=fake_update_photo,
+        update_job=fake_update_job,
     )
     monkeypatch.setattr(
         SocialImportPipelineService, "schedule_job", classmethod(fake_schedule)
@@ -2448,7 +2860,8 @@ async def test_recover_stale_job_requeues_stuck_photos_and_reschedules(monkeypat
             },
         )
     ]
-    # Discovery completed -> job stays `processing` (no job-row update).
+    # Discovery completed -> the claim keeps the job `processing`.
+    assert job_updates == [{"status": SocialImportJobStatus.PROCESSING.value}]
     assert scheduled == ["job-1"]
     job_events = [e for e in events if e["event_type"] == "job_updated"]
     assert job_events
@@ -2463,7 +2876,7 @@ async def test_recover_stale_job_resets_to_created_when_discovery_incomplete(mon
     async def fake_list_photos(db, *, job_id, user_id, statuses=None, limit=None):
         return []
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         job_updates.append(dict(updates))
         return {"id": job_id}
 
@@ -2513,6 +2926,59 @@ async def test_recover_stale_job_skips_fresh_and_terminal_jobs(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("discovery_completed", [True, False])
+async def test_recover_terminal_job_requeues_no_photos(monkeypatch, discovery_completed):
+    """Finding 3: the guarded claim runs before the photo requeue. A job that is
+    terminal in the store gets no photo requeue, no reschedule, and no event."""
+    events = patch_event(monkeypatch)
+    state = {"status": SocialImportJobStatus.CANCELLED.value}
+    updated_photos = []
+    job_updates = []
+    scheduled = []
+
+    async def fake_list_photos(db, *, job_id, user_id, statuses=None, limit=None):
+        return [{"id": "photo-stuck", "status": SocialImportPhotoStatus.PROCESSING.value}]
+
+    async def fake_update_photo(db, *, job_id, user_id, photo_id, updates):
+        updated_photos.append((photo_id, dict(updates)))
+        return {"id": photo_id, **updates}
+
+    async def fake_update_job(db, *, job_id, user_id, updates, exclude_statuses=None):
+        job_updates.append(dict(updates))
+        if exclude_statuses and state["status"] in _TERMINAL_VALUES:
+            return None
+        return {"id": job_id}
+
+    async def fake_schedule(cls, service, job_id):
+        scheduled.append(job_id)
+
+    patch_store(
+        monkeypatch,
+        list_photos=fake_list_photos,
+        update_photo=fake_update_photo,
+        update_job=fake_update_job,
+    )
+    monkeypatch.setattr(
+        SocialImportPipelineService, "schedule_job", classmethod(fake_schedule)
+    )
+    service = make_service()
+    recovered = await service._recover_stale_job_if_needed(
+        _stale_job(discovery_completed=discovery_completed)
+    )
+
+    expected_status = (
+        SocialImportJobStatus.PROCESSING.value
+        if discovery_completed
+        else SocialImportJobStatus.CREATED.value
+    )
+    assert recovered is False
+    assert job_updates == [{"status": expected_status}]
+    assert updated_photos == []
+    assert scheduled == []
+    assert [e for e in events if e["event_type"] == "job_updated"] == []
+
+
+@pytest.mark.asyncio
 async def test_get_status_triggers_recovery_for_stale_job(monkeypatch):
     """Every get_status call sweeps for stale jobs; a recovered job is
     re-read so the returned payload reflects its reset state."""
@@ -2537,6 +3003,7 @@ async def test_get_status_triggers_recovery_for_stale_job(monkeypatch):
         get_photo_with_items=_identity_photo,
         count_by_status=_async_value({}),
         list_photos=_async_value([]),
+        update_job=_async_value({"id": "job-1"}),
     )
     monkeypatch.setattr(
         SocialImportPipelineService, "schedule_job", classmethod(fake_schedule)
@@ -2612,7 +3079,7 @@ async def test_sync_job_counters_aggregates(monkeypatch):
             SocialImportPhotoStatus.QUEUED.value: 5,
         }
 
-    async def fake_update_job(db, *, job_id, user_id, updates):
+    async def fake_update_job(db, *, job_id, user_id, updates, **kwargs):
         updated.append(dict(updates))
         return {"id": job_id}
 
@@ -2674,6 +3141,7 @@ async def test_complete_job(monkeypatch):
 
     async def fake_set_job_status(db, *, job_id, user_id, status, completed=None, **kwargs):
         calls.append(("set_status", status, completed))
+        return make_job(id=job_id, status=status.value)
 
     async def fake_cleanup_assets(job_id):
         calls.append(("cleanup",))

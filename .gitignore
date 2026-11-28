@@ -55,3 +55,12 @@ store/asc/.translation-cache.json
 # keywords.json are the record; these are resumable state, regenerated on demand.
 flutter/lib/l10n/.translations.json
 frontend/src/i18n/.translations.json
+
+# Untangle pass: local wiring diagrams, baseline logs, and screenshots. Never commit.
+output/untangle/
+.claude/settings.local.json*
+trajector-doctor-*.tar.gz
+trajector-doctor-*/
+
+# Whole-project audit: screenshots, contact sheets, logs, and local tools. Never commit.
+output/audit/

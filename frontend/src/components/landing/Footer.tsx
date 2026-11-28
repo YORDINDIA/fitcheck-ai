@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Mail, Phone } from 'lucide-react'
-import { Logo } from '@/components/brand/Logo'
 
+import { BrandMark } from '@/components/brand/Logo'
 import { trackLandingCta } from '@/lib/analytics'
 import { PLATFORM_AVAILABILITY } from '@/lib/plan-limits'
 import { scrollToSectionId } from '@/lib/scroll'
@@ -43,19 +43,11 @@ const footerLinks = {
   ],
 }
 
-/**
- * Page close: the deep moss floor, torn along the top like every sheet above
- * it. Brand and contact on the left, link groups on the content grid, and an
- * oversized FitCheck wordmark anchored flush to the bottom edge. Every href,
- * the router-aware hash navigation and the trackLandingCta calls are kept.
- */
 export default function Footer() {
   const location = useLocation()
   const navigate = useNavigate()
 
   const handleHashClick = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
-    // Router-safe section links: same-page scroll + focus on home, client-side
-    // navigation (no full reload) from anywhere else.
     event.preventDefault()
     const id = href.replace('/#', '')
     trackLandingCta(id === 'demo' ? 'footer-demo' : 'footer-pricing')
@@ -67,64 +59,52 @@ export default function Footer() {
     }
   }
 
-  const linkClass =
-    'inline-flex min-h-[36px] items-center py-1 text-paper-text-2 transition-colors hover:text-paper-text'
-
   return (
-    // No overflow-hidden: it would clip the torn top edge, which sits above
-    // the padding box (see `.paper-tear`).
-    <footer className="paper-landing paper-floor paper-section paper-tear pt-16">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-2 gap-x-8 gap-y-10 lg:grid-cols-12">
-          <div className="col-span-2 lg:col-span-4">
-            <Link to="/" className="mb-4 inline-flex items-center gap-2.5 rounded-lg">
-              <Logo markSize={36} wordmarkClassName="text-lg text-paper-text [&_span]:text-paper-text-2" />
+    <footer className="cp-foot">
+      <div className="cp-bg" aria-hidden="true" />
+      <div className="cp-wrap">
+        <div className="cp-fg">
+          <div className="cp-fbrand">
+            <Link to="/" className="cp-logo cp-hand">
+              <span className="cp-logo-mark">
+                <BrandMark size={30} />
+              </span>
+              <span>FitCheck AI</span>
             </Link>
-            <p className="max-w-xs text-[15px] leading-relaxed text-paper-text-2">
-              Photograph your clothes. Get outfits that fit the day.
+            <p className="cp-foot-copy mt-3 max-w-xs">
+              Photograph your clothes. Get outfits that fit the day — on web, iOS, and Android.
             </p>
-            <div className="mt-5 space-y-1 text-sm text-paper-text-2">
-              <a
-                href="mailto:info@fitcheckaiapp.com"
-                className="flex min-h-[36px] items-center gap-2 py-1 transition-colors hover:text-paper-text"
-              >
-                <Mail className="h-4 w-4" aria-hidden="true" />
+            <div className="mt-4 flex flex-col gap-1">
+              <a href="mailto:info@fitcheckaiapp.com">
+                <Mail className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span>info@fitcheckaiapp.com</span>
               </a>
               <a
                 href="https://wa.me/919310833204"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex min-h-[36px] items-center gap-2 py-1 transition-colors hover:text-paper-text"
               >
-                <Phone className="h-4 w-4" aria-hidden="true" />
+                <Phone className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span>+91 9310833204</span>
               </a>
             </div>
           </div>
 
           {Object.entries(footerLinks).map(([category, links]) => (
-            <div key={category} className="min-w-0 lg:col-span-2">
-              <h3 className="paper-head mb-3 text-xl text-paper-text">{category}</h3>
-              <ul className="space-y-0.5 text-sm">
+            <div key={category} className="min-w-0">
+              <h2>{category}</h2>
+              <ul>
                 {links.map((link) => (
                   <li key={link.name}>
                     {link.href.startsWith('/#') ? (
-                      <a
-                        href={link.href}
-                        onClick={(event) => handleHashClick(event, link.href)}
-                        className={linkClass}
-                      >
+                      <a href={link.href} onClick={(event) => handleHashClick(event, link.href)}>
                         {link.name}
                       </a>
                     ) : link.href.startsWith('/') ? (
-                      <Link to={link.href} className={linkClass}>
-                        {link.name}
-                      </Link>
+                      <Link to={link.href}>{link.name}</Link>
                     ) : (
                       <a
                         href={link.href}
-                        className={linkClass}
                         {...(link.href.startsWith('http')
                           ? { target: '_blank', rel: 'noopener noreferrer' }
                           : {})}
@@ -139,16 +119,30 @@ export default function Footer() {
           ))}
         </div>
 
-        <p className="mt-12 text-xs text-paper-text-2">
-          &copy; {new Date().getFullYear()} FitCheck AI. All rights reserved.
-        </p>
+        <div className="cp-fine flex flex-wrap items-center justify-between gap-3">
+          <p>&copy; {new Date().getFullYear()} FitCheck AI. All rights reserved.</p>
+          <p>
+            Available on{' '}
+            <a
+              href={PLATFORM_AVAILABILITY.iosStoreUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold underline underline-offset-2"
+            >
+              App Store
+            </a>
+            {' · '}
+            <a
+              href={PLATFORM_AVAILABILITY.androidStoreUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold underline underline-offset-2"
+            >
+              Google Play
+            </a>
+          </p>
+        </div>
       </div>
-      {/* The signature wordmark: whole on top and both sides, set on the
-          baseline at the floor's bottom edge. Decorative; the Logo above is
-          the accessible brand mark. */}
-      <p aria-hidden="true" className="footer-wordmark paper-display select-none">
-        FitCheck
-      </p>
     </footer>
   )
 }

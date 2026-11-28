@@ -145,6 +145,7 @@ void main() {
   Future<void> startJob({int numImages = 2}) async {
     notifier()
       ..addPhotos([photo])
+      ..goToConfigure()
       ..setNumImages(numImages);
     expect(await notifier().generate(), PhotoshootStart.started);
   }
@@ -179,6 +180,22 @@ void main() {
     expect(state().step, PhotoshootStep.results);
     expect(state().images, hasLength(2));
     expect(state().sessionId, 'ps_1');
+  });
+
+  test('a job that reports completed reaches results through the poll fallback', () async {
+    await startJob();
+    repo.statusToReturn = const PhotoshootJobStatusResponse(
+      jobId: 'job-1',
+      status: 'completed',
+      generatedCount: 2,
+      totalCount: 2,
+      images: _twoImages,
+    );
+    repo.events.add(const ServerSentEvent(type: 'error'));
+    await _settle(150);
+
+    expect(state().step, PhotoshootStep.results);
+    expect(state().images, hasLength(2));
   });
 
   test('a second completion signal after job_complete is ignored', () async {
@@ -334,7 +351,9 @@ void main() {
 
   test('a 429 plan limit asks for the referral dialog', () async {
     repo.startError = RateLimitException.defaultError();
-    notifier().addPhotos([photo]);
+    notifier()
+      ..addPhotos([photo])
+      ..goToConfigure();
 
     expect(await notifier().generate(), PhotoshootStart.limitReached);
     expect(state().step, PhotoshootStep.configure);
@@ -346,10 +365,12 @@ void main() {
       message: 'Busy',
       errorCode: 'SERVER_BUSY',
     );
-    notifier().addPhotos([photo]);
+    notifier()
+      ..addPhotos([photo])
+      ..goToConfigure();
 
     expect(await notifier().generate(), PhotoshootStart.notStarted);
-    expect(state().step, PhotoshootStep.configure);
+    expect(state().step, PhotoshootStep.generating);
     expect(state().error, isA<RateLimitException>());
   });
 
@@ -360,5 +381,62 @@ void main() {
     expect(state().usage, isNull);
     expect(state().usageError, isNotNull);
     expect(state().remainingToday, PhotoshootNotifier.maxImages);
+  });
+
+  test(
+    'a failed start stays on generating with the error, not running',
+    () async {
+      repo.startError = const NetworkException(message: 'offline');
+      notifier()
+        ..addPhotos([photo])
+        ..goToConfigure();
+
+      expect(await notifier().generate(), PhotoshootStart.notStarted);
+      expect(state().step, PhotoshootStep.generating);
+      expect(state().isGenerating, isFalse);
+      expect(state().error, isA<NetworkException>());
+    },
+  );
+
+  test('a failed job stays on generating with the error', () async {
+    await startJob();
+    repo.events.add(
+      ServerSentEvent(type: 'job_failed', data: {'error': 'Provider down'}),
+    );
+    await _settle();
+
+    expect(state().step, PhotoshootStep.generating);
+    expect(state().isGenerating, isFalse);
+    expect(state().error, isNotNull);
+  });
+
+  test('a second start is rejected while a run is in flight', () async {
+    await startJob();
+
+    expect(await notifier().generate(), PhotoshootStart.notStarted);
+    expect(state().step, PhotoshootStep.generating);
+    expect(state().isGenerating, isTrue);
+  });
+
+  test('back to options is rejected while a run is in flight', () async {
+    await startJob();
+
+    notifier().backToOptions();
+
+    expect(state().step, PhotoshootStep.generating);
+    expect(state().isGenerating, isTrue);
+  });
+
+  test('back to options after a failed run returns to configure', () async {
+    repo.startError = const NetworkException(message: 'offline');
+    notifier()
+      ..addPhotos([photo])
+      ..goToConfigure();
+    await notifier().generate();
+
+    notifier().backToOptions();
+
+    expect(state().step, PhotoshootStep.configure);
+    expect(state().error, isNull);
   });
 }

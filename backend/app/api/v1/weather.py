@@ -9,7 +9,6 @@ Weather data is fetched from OpenWeatherMap when configured; otherwise a safe
 mock is returned for local development.
 """
 
-import asyncio
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, Query
@@ -20,7 +19,7 @@ from app.core.exceptions import WeatherServiceError
 from app.core.logging_config import get_context_logger
 from app.api.v1.deps import get_active_user_id
 from app.db.connection import get_db
-from app.services.weather_service import get_weather_service
+from app.services.weather_service import fetch_user_default_location_row, get_weather_service
 
 logger = get_context_logger(__name__)
 
@@ -93,13 +92,7 @@ async def _resolve_location(
         return location
 
     try:
-        settings_row = await asyncio.to_thread(
-            db.table("user_settings")
-            .select("default_location")
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
-        )
+        settings_row = await fetch_user_default_location_row(db, user_id)
         if settings_row and settings_row.data and settings_row.data.get("default_location"):
             return str(settings_row.data["default_location"])
     except Exception:

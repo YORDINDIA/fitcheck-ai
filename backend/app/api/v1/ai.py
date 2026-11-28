@@ -40,7 +40,14 @@ from app.agents.image_generation_agent import (
     get_image_generation_agent,
     save_generated_image,
 )
-from app.services.ai_service import EmbeddingService
+from app.services.ai_service import (
+    EmbeddingService,
+    fetch_extraction_avatar_row,
+    fetch_outfit_body_profile,
+    fetch_outfit_user_avatar_and_body_profile,
+    fetch_outfit_user_body_profile_id,
+    fetch_try_on_avatar_row,
+)
 from app.services.item_reference_service import (
     resolve_outfit_item_references,
     resolve_outfit_source_reference,
@@ -76,7 +83,7 @@ async def _materialize_image_source(
 async def _fetch_user_avatar_base64(user_id: str, db: Client) -> Optional[str]:
     """Best-effort avatar fetch for profile-aware extraction and generation."""
     try:
-        user_result = await asyncio.to_thread(db.table("users").select("avatar_url").eq("id", user_id).maybe_single().execute)
+        user_result = await fetch_extraction_avatar_row(db, user_id)
         if not user_result or not user_result.data:
             return None
 
@@ -239,13 +246,7 @@ async def generate_outfit(
 
             if request.include_user_face:
                 # Fetch user avatar_url and body_profile_id
-                user_result = await asyncio.to_thread(
-                    db.table("users")
-                    .select("avatar_url, body_profile_id")
-                    .eq("id", user_id)
-                    .maybe_single()
-                    .execute
-                )
+                user_result = await fetch_outfit_user_avatar_and_body_profile(db, user_id)
 
                 if user_result and user_result.data and user_result.data.get("avatar_url"):
                     avatar_url = user_result.data["avatar_url"]
@@ -272,13 +273,7 @@ async def generate_outfit(
             # use_body_profile=True for callers sending include_user_face=False.
             if request.use_body_profile:
                 if user_result is None:
-                    user_result = await asyncio.to_thread(
-                        db.table("users")
-                        .select("avatar_url, body_profile_id")
-                        .eq("id", user_id)
-                        .maybe_single()
-                        .execute
-                    )
+                    user_result = await fetch_outfit_user_body_profile_id(db, user_id)
                 body_profile_id = (
                     user_result.data.get("body_profile_id") if user_result and user_result.data else None
                 )
@@ -286,14 +281,7 @@ async def generate_outfit(
                     # A3-02: scope by the caller's user_id — the service-role
                     # client bypasses RLS, so an id-only lookup could ship
                     # another user's body measurements into the prompt.
-                    bp_result = await asyncio.to_thread(
-                        db.table("body_profiles")
-                        .select("height_cm, weight_kg, body_shape, skin_tone")
-                        .eq("id", body_profile_id)
-                        .eq("user_id", user_id)
-                        .maybe_single()
-                        .execute
-                    )
+                    bp_result = await fetch_outfit_body_profile(db, user_id, body_profile_id)
                     if bp_result and bp_result.data:
                         body_profile = bp_result.data
 
@@ -514,7 +502,7 @@ async def generate_try_on(
     """
     try:
         # 1. Fetch user's avatar_url from database
-        user_result = await asyncio.to_thread(db.table("users").select("avatar_url").eq("id", user_id).maybe_single().execute)
+        user_result = await fetch_try_on_avatar_row(db, user_id)
         if not user_result or not user_result.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

@@ -32,7 +32,10 @@ from app.services.ai_service import AIService
 from app.services.ai_settings_service import AISettingsService
 from app.services.social_auth_service import SocialAuthService
 from app.services.social_import_event_service import SocialImportEventService
-from app.services.social_import_job_store import SocialImportJobStore
+from app.services.social_import_job_store import (
+    TERMINAL_JOB_STATUSES,
+    SocialImportJobStore,
+)
 from app.services.social_scraper_service import SocialScraperService
 from app.services.storage_service import StorageService
 from app.services.vector_service import get_vector_service
@@ -150,13 +153,17 @@ class SocialImportPipelineService:
                 "AI service capacity exhausted after repeated retries; the "
                 "import is paused. Please retry the import later."
             )
-            await SocialImportJobStore.set_job_status(
+            failed = await SocialImportJobStore.set_job_status(
                 self.db,
                 job_id=job_id,
                 user_id=self.user_id,
                 status=SocialImportJobStatus.FAILED,
                 error_message=message,
+                exclude_statuses=TERMINAL_JOB_STATUSES,
             )
+            if failed is None:
+                # Terminal guard refused the write: the job is already final.
+                return
             await self._sync_job_counters(job_id)
             await self._publish_event(
                 job_id,
@@ -335,13 +342,17 @@ class SocialImportPipelineService:
                     job_id=job_id,
                     error=str(e),
                 )
-                await SocialImportJobStore.set_job_status(
+                failed = await SocialImportJobStore.set_job_status(
                     self.db,
                     job_id=job_id,
                     user_id=self.user_id,
                     status=SocialImportJobStatus.FAILED,
                     error_message=str(e),
+                    exclude_statuses=TERMINAL_JOB_STATUSES,
                 )
+                if failed is None:
+                    # Terminal guard refused the write: no job_failed event.
+                    return
                 await self._publish_event(
                     job_id,
                     "job_failed",
@@ -365,13 +376,17 @@ class SocialImportPipelineService:
 
         job_metadata = dict(job.get("metadata") or {})
 
-        await SocialImportJobStore.set_job_status(
+        discovering = await SocialImportJobStore.set_job_status(
             self.db,
             job_id=job_id,
             user_id=self.user_id,
             status=SocialImportJobStatus.DISCOVERING,
             error_message=None,
+            exclude_statuses=TERMINAL_JOB_STATUSES,
         )
+        if discovering is None:
+            # Terminal guard refused the write: skip discovery entirely.
+            return
         await self._publish_event(
             job_id,
             "job_updated",
@@ -447,6 +462,19 @@ class SocialImportPipelineService:
                     f"Photo discovery failed after retries: {discovery_error}"
                 )
 
+            # Guarded write before any session, photo, or cursor write. A refused
+            # write means the job went terminal during the fetch: write nothing.
+            live_write = await SocialImportJobStore.update_job(
+                self.db,
+                job_id=job_id,
+                user_id=self.user_id,
+                updates={"status": SocialImportJobStatus.DISCOVERING.value},
+                exclude_statuses=TERMINAL_JOB_STATUSES,
+            )
+            if live_write is None:
+                # Terminal guard refused the write: persist nothing for this job.
+                return
+
             await self._persist_scraper_session_from_payload(
                 job_id=job_id,
                 auth_session=auth_session,
@@ -508,7 +536,7 @@ class SocialImportPipelineService:
                 else:
                     existing_metadata.pop("checkpoint_url", None)
 
-                await SocialImportJobStore.update_job(
+                awaiting_update = await SocialImportJobStore.update_job(
                     self.db,
                     job_id=job_id,
                     user_id=self.user_id,
@@ -518,7 +546,11 @@ class SocialImportPipelineService:
                         "error_message": error_message,
                         "metadata": existing_metadata,
                     },
+                    exclude_statuses=TERMINAL_JOB_STATUSES,
                 )
+                if awaiting_update is None:
+                    # Terminal guard refused the write: no auth_required event.
+                    return
 
                 event_payload = {
                     "job_id": job_id,
@@ -552,7 +584,7 @@ class SocialImportPipelineService:
                     "discovery_error": failure_message,
                     "discovery_iteration": iteration_count,
                 })
-                await SocialImportJobStore.update_job(
+                failed_update = await SocialImportJobStore.update_job(
                     self.db,
                     job_id=job_id,
                     user_id=self.user_id,
@@ -561,7 +593,11 @@ class SocialImportPipelineService:
                         "error_message": failure_message,
                         "metadata": failure_metadata,
                     },
+                    exclude_statuses=TERMINAL_JOB_STATUSES,
                 )
+                if failed_update is None:
+                    # Terminal guard refused the write: no job_failed event.
+                    return
                 await self._publish_event(
                     job_id,
                     "job_failed",
@@ -609,17 +645,21 @@ class SocialImportPipelineService:
 
             job_metadata["discovery_cursor"] = cursor
             job_metadata["discovery_iteration"] = iteration_count
-            await SocialImportJobStore.update_job(
+            cursor_write = await SocialImportJobStore.update_job(
                 self.db,
                 job_id=job_id,
                 user_id=self.user_id,
                 updates={"metadata": job_metadata},
+                exclude_statuses=TERMINAL_JOB_STATUSES,
             )
+            if cursor_write is None:
+                # Terminal guard refused the write: do not persist the cursor.
+                return
 
         job_metadata.pop("discovery_cursor", None)
         job_metadata.pop("discovery_iteration", None)
 
-        await SocialImportJobStore.update_job(
+        completed_update = await SocialImportJobStore.update_job(
             self.db,
             job_id=job_id,
             user_id=self.user_id,
@@ -629,7 +669,11 @@ class SocialImportPipelineService:
                 "status": SocialImportJobStatus.PROCESSING.value,
                 "metadata": job_metadata,
             },
+            exclude_statuses=TERMINAL_JOB_STATUSES,
         )
+        if completed_update is None:
+            # Terminal guard refused the write: no job_updated event.
+            return
         await self._publish_event(
             job_id,
             "job_updated",
@@ -641,13 +685,18 @@ class SocialImportPipelineService:
         )
 
     async def _run_queue(self, job_id: str) -> None:
-        await SocialImportJobStore.set_job_status(
+        processing_write = await SocialImportJobStore.set_job_status(
             self.db,
             job_id=job_id,
             user_id=self.user_id,
             status=SocialImportJobStatus.PROCESSING,
             error_message=None,
+            exclude_statuses=TERMINAL_JOB_STATUSES,
         )
+        if processing_write is None:
+            # Job went terminal (cancelled, completed, or failed) before the
+            # queue started. Stop: no photo is claimed or processed.
+            return
 
         # Keep pumping until we are blocked on user review/auth or completed.
         while True:
@@ -1553,16 +1602,30 @@ class SocialImportPipelineService:
             updates=payload,
         )
 
-    async def cancel_job(self, job_id: str) -> None:
+    async def cancel_job(self, job_id: str) -> bool:
         lock = self._job_lock(job_id)
         async with lock:
-            await SocialImportJobStore.set_job_status(
+            # Terminal jobs are immutable. The write only matches a row whose
+            # status is not completed, cancelled, or failed. No row back means
+            # the job is terminal or missing. A missing job raises; a terminal
+            # job returns False and nothing is written, cleaned up, or published.
+            cancelled = await SocialImportJobStore.set_job_status(
                 self.db,
                 job_id=job_id,
                 user_id=self.user_id,
                 status=SocialImportJobStatus.CANCELLED,
                 completed=True,
+                exclude_statuses=TERMINAL_JOB_STATUSES,
             )
+            if cancelled is None:
+                job = await SocialImportJobStore.get_job(
+                    self.db,
+                    job_id=job_id,
+                    user_id=self.user_id,
+                )
+                if not job:
+                    raise SocialImportJobNotFoundError(job_id)
+                return False
             await self._cleanup_unsaved_temp_assets(job_id)
             await SocialImportJobStore.delete_job_artifacts(
                 self.db,
@@ -1575,6 +1638,7 @@ class SocialImportPipelineService:
                 {"job_id": job_id},
             )
         await self.cancel_scheduled_job(job_id)
+        return True
 
     async def accept_auth(
         self,
@@ -1665,6 +1729,7 @@ class SocialImportPipelineService:
                     "auth_required": False,
                     "metadata": cleared_metadata,
                 },
+                exclude_statuses=TERMINAL_JOB_STATUSES,
             )
             if not updated:
                 raise SocialImportJobNotFoundError(job_id)
@@ -1708,6 +1773,22 @@ class SocialImportPipelineService:
             return False
 
         job_id = job["id"]
+        # Claim the job first. A refused write means the job went terminal, so
+        # no photo is requeued and nothing is rescheduled.
+        claim_status = (
+            SocialImportJobStatus.PROCESSING.value
+            if job.get("discovery_completed")
+            else SocialImportJobStatus.CREATED.value
+        )
+        claimed = await SocialImportJobStore.update_job(
+            self.db,
+            job_id=job_id,
+            user_id=self.user_id,
+            updates={"status": claim_status},
+            exclude_statuses=TERMINAL_JOB_STATUSES,
+        )
+        if claimed is None:
+            return False
         # Requeue photos stuck in `processing` so the next run claims them
         # again instead of treating them as an in-flight slot forever.
         stuck_photos = await SocialImportJobStore.list_photos(
@@ -1736,13 +1817,6 @@ class SocialImportPipelineService:
                 count=len(stuck_photos),
             )
 
-        if not job.get("discovery_completed"):
-            await SocialImportJobStore.update_job(
-                self.db,
-                job_id=job_id,
-                user_id=self.user_id,
-                updates={"status": SocialImportJobStatus.CREATED.value},
-            )
         await self._publish_event(
             job_id,
             "job_updated",
@@ -1958,13 +2032,17 @@ class SocialImportPipelineService:
 
     async def _pause_for_rate_limit(self, job_id: str, operation_type: str) -> None:
         message = self._build_rate_limit_pause_message(operation_type)
-        await SocialImportJobStore.set_job_status(
+        paused = await SocialImportJobStore.set_job_status(
             self.db,
             job_id=job_id,
             user_id=self.user_id,
             status=SocialImportJobStatus.PAUSED_RATE_LIMITED,
             error_message=message,
+            exclude_statuses=TERMINAL_JOB_STATUSES,
         )
+        if paused is None:
+            # Terminal guard refused the write: no rate_limit_paused event.
+            return
         await self._publish_event(
             job_id,
             "rate_limit_paused",
@@ -2001,6 +2079,7 @@ class SocialImportPipelineService:
                 "status": SocialImportJobStatus.PROCESSING.value,
                 "error_message": None,
             },
+            exclude_statuses=TERMINAL_JOB_STATUSES,
         )
         if not updated:
             return False
@@ -2048,13 +2127,17 @@ class SocialImportPipelineService:
     async def _complete_job(self, job_id: str) -> None:
         await self._sync_job_counters(job_id)
         await self._clear_capacity_retry_state(job_id)
-        await SocialImportJobStore.set_job_status(
+        marked = await SocialImportJobStore.set_job_status(
             self.db,
             job_id=job_id,
             user_id=self.user_id,
             status=SocialImportJobStatus.COMPLETED,
             completed=True,
+            exclude_statuses=TERMINAL_JOB_STATUSES,
         )
+        if marked is None:
+            # Terminal guard refused the write: keep artifacts, publish nothing.
+            return
         await self._cleanup_unsaved_temp_assets(job_id)
         await SocialImportJobStore.delete_job_artifacts(
             self.db,

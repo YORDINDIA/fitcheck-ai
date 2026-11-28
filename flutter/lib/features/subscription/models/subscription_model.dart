@@ -128,6 +128,7 @@ abstract class PlanDetailsModel with _$PlanDetailsModel {
     @JsonKey(name: 'price_yearly') @Default(0.0) double priceYearly,
     @JsonKey(name: 'monthly_extractions') @Default(50) int monthlyExtractions,
     @JsonKey(name: 'monthly_generations') @Default(50) int monthlyGenerations,
+    @JsonKey(name: 'daily_photoshoot_images') int? dailyPhotoshootImages,
     @Default([]) List<String> features,
   }) = _PlanDetailsModel;
 

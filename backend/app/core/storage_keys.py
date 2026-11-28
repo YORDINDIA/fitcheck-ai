@@ -12,11 +12,11 @@ namespace roots decide ownership, so the serving rules are pure:
   ``PUBLIC_GROUPS``.
 
 The ``users/`` layout migration is complete: the bucket holds only
-``users/``/``public/`` keys now. ``key_from_path`` still reduces legacy URLs
-and keys (``{user_id}/{category}/...``, top-level/per-user ``tmp|generated``
-previews, ``{user}/export/data.json``) that survive in DB columns by mapping
-them through ``migrate_key_to_users_layout`` to their ``users/`` home, so
-stale rows self-heal on read.
+``users/``/``public/`` keys now. ``key_from_path`` reduces URLs to the key
+they embed but does not remap legacy keys (``{user_id}/{category}/...``,
+top-level/per-user ``tmp|generated`` previews, ``{user}/export/data.json``).
+A legacy key held in a DB row therefore fails its lookup. That failure is
+accepted (see docs/exec-plans/active/2026-08-31-closet-404-legacy-keys-rca.md).
 
 Layouts (all regexes are built from the constants below so they cannot drift):
 
@@ -25,7 +25,6 @@ Layouts (all regexes are built from the constants below so they cannot drift):
 - preview:         ``users/{user}/tmp|generated/{sub}/{hex}.{ext}``
 - export:          ``users/{user}/export/data.json``
 - public:          ``public/banners|landing|blog|static/{slug}/{hex}.{ext}``
-                   ``{user}/{tmp|generated}/{sub}/...``, ``{user}/export/data.json``
 
 ``infra/images-worker/worker.js`` enforces an equivalent allowlist at the
 edge; the two must stay in step (worker.test.mjs pins it).
@@ -83,8 +82,7 @@ _FOLDER_ALT = "|".join(sorted(PREVIEW_FOLDERS))
 _PUBLIC_GROUP_ALT = "|".join(sorted(PUBLIC_GROUPS))
 _NAME = r"[0-9a-f]{32}"
 # Legacy avatars may carry a non-hex filename (e.g. an OAuth-imported
-# ``old-name.jpg`` rewritten into ``users/{uid}/avatars/old-name.jpg`` by
-# ``key_from_path`` -> ``migrate_key_to_users_layout``). ``_NAME`` is still the
+# ``old-name.jpg`` stored under ``users/{uid}/avatars/``). ``_NAME`` is still the
 # convention every NEW key is minted with (``mint_key``); only ``parse_key``
 # needs to tolerate the historical names so ``materialize_avatar_url`` can keep
 # serving them. The charset is bounded and excludes ``/`` so it cannot escape
@@ -122,9 +120,9 @@ _PUBLIC_THUMB_KEY_RE = re.compile(
 # Legacy-avatar tolerant variants of the canonical/thumb users regexes. The
 # ``avatars`` category is the ONLY one that may carry a pre-32-hex-convention
 # filename (OAuth imports, renamed uploads). New keys are always 32-hex
-# (``mint_key``); these exist purely so ``parse_key`` does not reject a legacy
-# avatar that ``key_from_path`` already rewrote into its ``users/`` home —
-# otherwise ``materialize_avatar_url`` returns None and the avatar stops
+# (``mint_key``); these exist purely so ``parse_key`` accepts an avatar that
+# the 2026-08-05 layout migration moved into ``users/`` with its old filename.
+# Otherwise ``materialize_avatar_url`` returns None and the avatar stops
 # rendering. Checked BEFORE the strict regexes so a legacy name wins.
 _USERS_AVATAR_KEY_RE = re.compile(
     rf"^{USERS_FOLDER}/(?P<user>[^/\\]+)/avatars/"
@@ -304,54 +302,6 @@ def parse_key(key: Optional[str]) -> Optional[KeyRef]:
     return None
 
 
-def migrate_key_to_users_layout(key: Optional[str]) -> Optional[str]:
-    """Map any legacy key shape to its ``users/`` home, or None.
-
-    Mapping is POSITION-BASED on the recognized legacy structures (the name
-    segment is not re-validated — a legacy key held in a DB row must resolve
-    to the object even when its name predates the 32-hex convention):
-    - ``{user}/{category}/...``        -> ``users/{user}/{category}/...``
-    - ``{user}/{tmp|generated}/{sub}/...`` -> ``users/{user}/{folder}/{sub}/...``
-    - ``{tmp|generated}/{user}/{sub}/...`` -> ``users/{user}/{folder}/{sub}/...``
-    - ``{user}/export/data.json``      -> ``users/{user}/export/data.json``
-
-    Already-current keys are returned unchanged:
-    - ``users/...`` and ``public/...`` pass through.
-    Anything unrecognized (external junk, two-segment keys) returns None —
-    callers treat that as "not ours".
-
-    This NEVER promotes a preview to a durable category — the re-key script's
-    promotion step (staging-only invariant) is separate.
-    """
-    if not key:
-        return None
-    candidate = key.strip()
-    if not candidate:
-        return None
-    parts = candidate.split("/")
-    # Already-current layouts pass through.
-    if parts[0] in (USERS_FOLDER, PUBLIC_FOLDER):
-        return candidate
-    # {user}/export/data.json (exactly 3 segments).
-    if len(parts) == 3 and parts[2] == "data.json" and parts[1] == EXPORT_CATEGORY:
-        return f"{USERS_FOLDER}/{parts[0]}/{parts[1]}/{parts[2]}"
-    # {user}/{category}/... (durable) — category is one of ours.
-    if len(parts) >= 3 and parts[1] in CANONICAL_CATEGORIES:
-        return f"{USERS_FOLDER}/{parts[0]}/{parts[1]}/{'/'.join(parts[2:])}"
-    # {user}/{tmp|generated}/{sub}/... or {tmp|generated}/{user}/{sub}/...
-    # Both are structurally unambiguous as BARE keys (callers reduce URLs via
-    # key_from_path first, which is where the UUID/bucket heuristics live), so
-    # the user segment is not re-validated — DB rows may hold legacy user ids
-    # that are not UUID-shaped.
-    if len(parts) >= 4 and parts[0] in PREVIEW_FOLDERS:
-        # top-level preview: tmp/{user}/sub/...
-        return f"{USERS_FOLDER}/{parts[1]}/{parts[0]}/{parts[2]}/{'/'.join(parts[3:])}"
-    if len(parts) >= 4 and parts[1] in PREVIEW_FOLDERS:
-        # per-user preview: {user}/tmp/sub/...
-        return f"{USERS_FOLDER}/{parts[0]}/{parts[1]}/{parts[2]}/{'/'.join(parts[3:])}"
-    return None
-
-
 def key_from_path(value: Optional[str]) -> Optional[str]:
     """Extract the bucket object key from a storage key or a served URL.
 
@@ -375,10 +325,9 @@ def key_from_path(value: Optional[str]) -> Optional[str]:
     a known namespace (``users``/``public``/``tmp``/``generated``) nor a user
     UUID is a path-style bucket name and is dropped whatever it is called.
 
-    The ``users/`` layout migration is complete, so the result is ALWAYS
-    mapped through ``migrate_key_to_users_layout``: a legacy URL or key still
-    held in a DB column resolves to the object's ``users/`` home. Current
-    ``users/``/``public/`` keys and unrecognized values pass through.
+    Legacy keys are not remapped. A legacy URL or key held in a DB column
+    returns the legacy key, which may no longer match a bucket object.
+    Current ``users/``/``public/`` keys pass through unchanged.
     """
     if not value:
         return None
@@ -444,10 +393,7 @@ def key_from_path(value: Optional[str]) -> Optional[str]:
                 return None
         else:
             return None
-    # Post-migration: map legacy keys to their ``users/`` home so stale
-    # storage URLs/paths in DB columns keep resolving. Current-layout keys and
-    # unrecognized values pass through unchanged.
-    return migrate_key_to_users_layout(result) or result
+    return result
 
 
 def build_object_url(key: str) -> str:

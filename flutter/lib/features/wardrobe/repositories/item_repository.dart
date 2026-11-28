@@ -82,7 +82,7 @@ class ItemRepository {
     String? sortOrder,
     bool? isFavorite,
   }) async {
-    try {
+    return runDioRequest(() async {
       final queryParams = <String, dynamic>{
         'page': page,
         'limit': limit,
@@ -114,19 +114,15 @@ class ItemRepository {
       );
 
       return _parseItemsList(response.data, page: page, limit: limit);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get single item
   Future<ItemModel> getItem(String itemId) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get('${ApiConstants.items}/$itemId');
       return _parseItem(response.data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Create new item
@@ -141,16 +137,14 @@ class ItemRepository {
     CreateItemRequest request, {
     String? clientRequestId,
   }) async {
-    try {
+    return runDioRequest(() async {
       final payload = createItemPayload(
         request,
         clientRequestId: clientRequestId,
       );
       final response = await _apiClient.post(ApiConstants.items, data: payload);
       return _parseItem(response.data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// The POST /items body, including the idempotency key (TD-109).
@@ -335,7 +329,7 @@ class ItemRepository {
   /// Uploads source photos for server-side staging (POST /items/upload).
   /// Returns one entry per stored photo, keyed by the local file path.
   Future<List<StagedImage>> stageSourceImages(List<File> files) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.uploadMultiple(
         '${ApiConstants.items}/upload',
         files,
@@ -344,9 +338,7 @@ class ItemRepository {
       final images = data['images'];
       if (images is! List) return const [];
       return pairStagedImages(files, images);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Pairs the upload response with the files that were sent.
@@ -396,7 +388,7 @@ class ItemRepository {
     required CreateItemRequest request,
     String? clientRequestId,
   }) async {
-    try {
+    return runDioRequest(() async {
       final created = await createItem(
         request,
         clientRequestId: clientRequestId ?? newRequestId('item'),
@@ -410,111 +402,57 @@ class ItemRepository {
       }
       await uploadImages(created.id, [image]);
       return await getItem(created.id);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Update item
   Future<ItemModel> updateItem(String itemId, UpdateItemRequest request) async {
-    try {
+    return runDioRequest(() async {
       final payload = _normalizeUpdateItemPayload(request.toJson());
       final response = await _apiClient.put(
         '${ApiConstants.items}/$itemId',
         data: payload,
       );
       return _parseItem(response.data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Delete item
   Future<void> deleteItem(String itemId) async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.delete('${ApiConstants.items}/$itemId');
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Batch delete items
   Future<void> batchDeleteItems(List<String> itemIds) async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.post(
         '${ApiConstants.items}/batch-delete',
         data: {'item_ids': itemIds},
       );
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
-  }
-
-  /// Batch create items with optional images
-  /// Creates multiple items in parallel for efficiency
-  Future<List<ItemModel>> batchCreateItems(
-    List<CreateItemRequest> requests, {
-    Map<String, String>? itemImageBase64s,
-  }) async {
-    try {
-      final results = await Future.wait(
-        requests.asMap().entries.map((entry) async {
-          final index = entry.key;
-          final request = entry.value;
-
-          // Create the item first
-          final item = await createItem(request);
-
-          // If there's a corresponding base64 image, upload it
-          if (itemImageBase64s != null &&
-              itemImageBase64s.containsKey('$index')) {
-            try {
-              await _apiClient.post(
-                '${ApiConstants.items}/${item.id}/images',
-                data: {'image': itemImageBase64s['$index']},
-              );
-              // Return refreshed item with image
-              return await getItem(item.id);
-            } catch (e) {
-              // Return item even if image upload failed
-              return item;
-            }
-          }
-
-          return item;
-        }),
-        eagerError: false,
-      );
-
-      return results.whereType<ItemModel>().toList();
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Toggle item favorite
   Future<ItemModel> toggleFavorite(String itemId) async {
-    try {
+    return runDioRequest(() async {
       await _apiClient.post('${ApiConstants.items}/$itemId/favorite');
       return await getItem(itemId);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Mark item as worn
   Future<ItemModel> markAsWorn(String itemId) async {
-    try {
+    return runDioRequest(() async {
       await _apiClient.post('${ApiConstants.items}/$itemId/wear');
       return await getItem(itemId);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Upload item images
   Future<List<ItemImage>> uploadImages(String itemId, List<File> images) async {
-    try {
+    return runDioRequest(() async {
       final uploaded = <ItemImage>[];
       for (final image in images) {
         final formData = FormData.fromMap({
@@ -531,9 +469,7 @@ class ItemRepository {
         }
       }
       return uploaded;
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Upload an image from base64 string (for AI-generated product images)
@@ -683,16 +619,14 @@ class ItemRepository {
 
   /// Delete item image
   Future<void> deleteItemImage(String itemId, String imageId) async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.delete('${ApiConstants.items}/$itemId/images/$imageId');
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Check for duplicates
   Future<List<ItemModel>> checkDuplicates(CreateItemRequest request) async {
-    try {
+    return runDioRequest(() async {
       final payload = _normalizeCreateItemPayload(request.toJson());
       final response = await _apiClient.post(
         '${ApiConstants.items}/check-duplicates',
@@ -713,14 +647,12 @@ class ItemRepository {
         results.add(await getItem(id));
       }
       return results;
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Find similar items
   Future<List<ItemModel>> findSimilarItems(String itemId) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get(
         '${ApiConstants.items}/$itemId/similar',
       );
@@ -734,19 +666,15 @@ class ItemRepository {
           .map(_normalizeItemJson)
           .map(ItemModel.fromJson)
           .toList();
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get item statistics
   Future<Map<String, dynamic>> getStatistics() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get('${ApiConstants.items}/stats');
       return _extractDataMap(response.data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Extract items from image using AI (SYNCHRONOUS)
@@ -776,7 +704,7 @@ class ItemRepository {
   /// Start async extraction for a single image (with SSE progress updates)
   /// Returns job info to connect to SSE stream for real-time updates
   Future<SingleExtractionJob> extractItemsFromImageAsync(File image) async {
-    try {
+    return runDioRequest(() async {
       final bytes = await image.readAsBytes();
       final imageBase64 = base64Encode(bytes);
 
@@ -787,9 +715,7 @@ class ItemRepository {
 
       final data = _extractDataMap(response.data);
       return SingleExtractionJob.fromJson(data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Subscribe to SSE events for single-item extraction
@@ -803,11 +729,9 @@ class ItemRepository {
 
   /// Cancel single extraction job
   Future<void> cancelSingleExtraction(String jobId) async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.post(ApiConstants.aiBatchExtractCancel(jobId));
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get the raw status of a single-extract job. Single jobs reuse the batch
@@ -816,14 +740,12 @@ class ItemRepository {
   /// DetectedItemDataWithImage.fromJson used for job_complete. Used as a
   /// polling fallback when the SSE stream dies (proxy drop, OOM, redeploy).
   Future<Map<String, dynamic>> getSingleJobStatus(String jobId) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get(
         ApiConstants.aiBatchExtractStatus(jobId),
       );
       return (response.data as Map).cast<String, dynamic>();
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Generate a product image for a detected clothing item
@@ -941,31 +863,6 @@ class ItemRepository {
     }
 
     return results;
-  }
-
-  /// Get batch extraction job status
-  /// ONLY use this for batch extraction jobs started via /api/v1/ai/batch-extract
-  /// Single item extraction is synchronous and does not need polling
-  Future<ExtractionResponse> getGenerationStatus(String generationId) async {
-    try {
-      // Try the batch extraction status endpoint first
-      final response = await _apiClient.get(
-        ApiConstants.aiBatchExtractStatus(generationId),
-      );
-      final data = _extractDataMap(response.data);
-      return _parseExtractionResponse(data);
-    } on DioException catch (e) {
-      // If batch endpoint fails, try the extraction items endpoint
-      try {
-        final response = await _apiClient.get(
-          '${ApiConstants.ai}/extract-items/$generationId', // interpolation needed here
-        );
-        final data = _extractDataMap(response.data);
-        return _parseExtractionResponse(data);
-      } catch (_) {
-        throw handleDioException(e);
-      }
-    }
   }
 
   Map<String, dynamic> _extractDataMap(dynamic payload) {
@@ -1150,63 +1047,12 @@ class ItemRepository {
     payload[to] = payload.remove(from);
   }
 
-  ExtractionResponse _parseExtractionResponse(Map<String, dynamic> data) {
-    final itemsPayload = data['items'];
-    final items = itemsPayload is List
-        ? itemsPayload
-              .whereType<Map<String, dynamic>>()
-              .map(_mapExtractedItem)
-              .toList()
-        : <ExtractedItem>[];
-    final status = data['status']?.toString() ?? 'completed';
-    final id =
-        data['id']?.toString() ??
-        data['extraction_id']?.toString() ??
-        'extraction-${DateTime.now().millisecondsSinceEpoch}';
-    return ExtractionResponse(
-      id: id,
-      status: status,
-      items: items,
-      imageUrl: data['image_url']?.toString(),
-      error: data['error']?.toString(),
-      createdAt: _parseDateTime(data['created_at']),
-    );
-  }
-
-  ExtractedItem _mapExtractedItem(Map<String, dynamic> json) {
-    final categoryValue = json['category']?.toString().toLowerCase() ?? 'other';
-    final name =
-        json['name']?.toString() ??
-        json['sub_category']?.toString() ??
-        categoryValue;
-    return ExtractedItem(
-      name: name,
-      category: Category.fromString(categoryValue),
-      colors: _coerceStringList(json['colors']),
-      material: json['material']?.toString(),
-      pattern: json['pattern']?.toString(),
-      description:
-          json['detailed_description']?.toString() ??
-          json['description']?.toString(),
-      boundingBox: json['bounding_box'] is Map<String, dynamic>
-          ? json['bounding_box'] as Map<String, dynamic>
-          : null,
-    );
-  }
-
   List<String>? _coerceStringList(dynamic value) {
     if (value is List) {
       return value.map((item) => item.toString()).toList();
     }
     if (value is String && value.isNotEmpty) {
       return [value];
-    }
-    return null;
-  }
-
-  DateTime? _parseDateTime(dynamic value) {
-    if (value is String) {
-      return DateTime.tryParse(value);
     }
     return null;
   }

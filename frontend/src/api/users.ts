@@ -2,7 +2,8 @@
  * Users API endpoints
  */
 
-import { apiClient, getApiError } from './client';
+import { apiClient } from './client';
+import { getApiError } from '@/lib/errors';
 import { ENDPOINTS } from '@/lib/endpoints';
 import type {
   ApiEnvelope,

@@ -31,7 +31,7 @@ robust, and free of the obvious over-engineering and slop.
 
 ## Context / links
 
-- Source reference docs: `SIMPLIFY.md`, `UI_UX_IMPROVEMENTS.md`, `docs/DESIGN.md`,
+- Source reference docs: `docs/DESIGN.md`,
   `docs/FRONTEND.md`, `docs/BACKEND.md`, `docs/FLUTTER.md`, `docs/RELIABILITY.md`.
 - Anti-slop law lives in the user-global `~/.claude/CLAUDE.md` and must be applied.
 - Tests: `frontend` (vitest), `backend` (pytest), `flutter` (`flutter test`).

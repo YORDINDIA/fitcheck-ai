@@ -14,7 +14,7 @@ import { PageLoader } from '@/shared/ui/PageLoader'
  */
 
 export interface RouteMeta {
-  /** i18n key for the page title (namespace included, e.g. `placeholder:users.title`) */
+  /** i18n key for the page title (namespace included, e.g. `users:title`) */
   titleKey: string
   /** Permission required to view the route — undefined = any signed-in admin */
   permission?: string
@@ -23,22 +23,22 @@ export interface RouteMeta {
 export const routeManifest = {
   login: { titleKey: 'auth:login.title' },
   oauthCallback: { titleKey: 'auth:callback.title' },
-  dashboard: { titleKey: 'placeholder:dashboard.title', permission: 'dashboards.read' },
-  trends: { titleKey: 'placeholder:trends.title', permission: 'dashboards.read' },
-  users: { titleKey: 'placeholder:users.title', permission: 'users.read' },
-  userDetail: { titleKey: 'placeholder:userDetail.title', permission: 'users.read' },
-  userGeneration: { titleKey: 'placeholder:userGeneration.title', permission: 'users.read' },
-  subscriptions: { titleKey: 'placeholder:subscriptions.title', permission: 'subscriptions.read' },
-  iap: { titleKey: 'placeholder:iap.title', permission: 'iap.read' },
-  quotas: { titleKey: 'placeholder:quotas.title', permission: 'quotas.read' },
-  promo: { titleKey: 'placeholder:promo.title', permission: 'promo.read' },
-  gifts: { titleKey: 'placeholder:gifts.title', permission: 'gifts.read' },
-  feedback: { titleKey: 'placeholder:feedback.title', permission: 'feedback.read' },
-  audit: { titleKey: 'placeholder:audit.title', permission: 'audit.read' },
-  storage: { titleKey: 'placeholder:storage.title', permission: 'ops.read' },
-  settings: { titleKey: 'placeholder:settings.title' },
-  posts: { titleKey: 'placeholder:posts.title', permission: 'content.read' },
-  categories: { titleKey: 'placeholder:categories.title', permission: 'content.read' },
+  dashboard: { titleKey: 'dashboard:title', permission: 'dashboards.read' },
+  trends: { titleKey: 'dashboard:routeTitles.trends', permission: 'dashboards.read' },
+  users: { titleKey: 'users:title', permission: 'users.read' },
+  userDetail: { titleKey: 'users:routeTitles.userDetail', permission: 'users.read' },
+  userGeneration: { titleKey: 'users:routeTitles.userGeneration', permission: 'users.read' },
+  subscriptions: { titleKey: 'subscriptions:title', permission: 'subscriptions.read' },
+  iap: { titleKey: 'iap:title', permission: 'iap.read' },
+  quotas: { titleKey: 'quotas:title', permission: 'quotas.read' },
+  promo: { titleKey: 'promo:title', permission: 'promo.read' },
+  gifts: { titleKey: 'gifts:title', permission: 'gifts.read' },
+  feedback: { titleKey: 'feedback:title', permission: 'feedback.read' },
+  audit: { titleKey: 'audit:title', permission: 'audit.read' },
+  storage: { titleKey: 'ops:title', permission: 'ops.read' },
+  settings: { titleKey: 'settings:title' },
+  posts: { titleKey: 'content:title', permission: 'content.read' },
+  categories: { titleKey: 'content:categories.title', permission: 'content.read' },
   postNew: { titleKey: 'content:editor.newTitle', permission: 'content.read' },
   postEdit: { titleKey: 'content:editor.editTitle', permission: 'content.read' },
 } as const satisfies Record<string, RouteMeta>

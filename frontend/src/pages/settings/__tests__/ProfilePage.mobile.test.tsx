@@ -408,12 +408,18 @@ describe('ProfilePage mobile drill-down (<md, no matchMedia)', () => {
     expect(screen.queryByRole('button', { name: 'Back to profile settings' })).toBeNull()
   })
 
-  it('normalizes a legacy deep link to its section', async () => {
-    renderPageWithProbe('/profile?tab=subscription')
+  it('opens the Plan section for ?tab=plan', async () => {
+    renderPageWithProbe('/profile?tab=plan')
 
     expect(screen.getByRole('button', { name: 'Back to profile settings' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Plan' })).toBeInTheDocument()
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/profile?tab=plan'))
+  })
+
+  it('opens Account for a retired ?tab= name', async () => {
+    renderPageWithProbe('/profile?tab=subscription')
+
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/profile?tab=account'))
   })
 
   it('does not scroll on mount, and scrolls to top on open and close', async () => {

@@ -6,7 +6,7 @@ import '../../l10n/generated/app_localizations.dart';
 /// Centralized date formatting utilities.
 ///
 /// All date display in the app should use these helpers so formatting is
-/// consistent across views. See FL1 in SIMPLIFY.md.
+/// consistent across views.
 ///
 /// Everything here delegates to `intl`, which resolves the pattern from the
 /// locale's CLDR data. The locale comes from [locale], which `FitCheckApp` sets

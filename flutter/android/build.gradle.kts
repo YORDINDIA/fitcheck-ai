@@ -3,6 +3,13 @@ allprojects {
         google()
         mavenCentral()
     }
+    // posthog_flutter 5.11.1 declares posthog-android as [3.25.0,4.0.0]. Newer
+    // 3.x releases no longer compile against it (CI failed on 3.77.1). 3.72.10
+    // is the last version that built on main. Keep this pin until the plugin
+    // is upgraded and its build verified.
+    configurations.all {
+        resolutionStrategy.force("com.posthog:posthog-android:3.72.10")
+    }
 }
 
 val newBuildDir: Directory =

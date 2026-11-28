@@ -15,6 +15,14 @@ import '../models/batch_extraction_models.dart';
 import 'batch_extraction_provider.dart' show batchExtractionRepositoryProvider;
 import 'wardrobe_providers.dart' show itemRepositoryProvider;
 import '../../../core/utils/error_handler.dart';
+import 'extraction_jobs_transitions.dart';
+
+export 'extraction_jobs_transitions.dart'
+    show
+        TrackedJobStatus,
+        canTransition,
+        trackedJobStatusFromName,
+        trackedJobTransitions;
 
 /// Persistence of the tracked extraction jobs (same pattern as the social
 /// import job: a JSON blob under one key).
@@ -30,10 +38,6 @@ final extractionJobsDocsDirProvider = Provider<Future<Directory> Function()>(
 
 /// Single-photo scan vs multi-photo batch.
 enum TrackedJobKind { single, batch }
-
-/// Lifecycle of a tracked job. `running` covers uploading, extracting and
-/// generating — the banner and jobs list show counts, not phases.
-enum TrackedJobStatus { running, complete, failed, cancelled }
 
 /// One extraction job owned by the registry instead of a page. Survives
 /// navigation (pages attach/detach) and app kills (persisted + restored).
@@ -159,19 +163,35 @@ class TrackedJob {
     createdAt:
         DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
         DateTime.fromMillisecondsSinceEpoch(0),
-    status: switch (json['status']?.toString()) {
-      'complete' => TrackedJobStatus.complete,
-      'failed' => TrackedJobStatus.failed,
-      'cancelled' => TrackedJobStatus.cancelled,
-      _ => TrackedJobStatus.running,
-    },
+    status: _restoredStatus(json),
     extracted: (json['extracted'] as num?)?.toInt() ?? 0,
     generated: (json['generated'] as num?)?.toInt() ?? 0,
     total: (json['total'] as num?)?.toInt() ?? 0,
-    error: json['error']?.toString() ?? '',
+    error: _restoredError(json),
     notified: json['notified'] == true,
   );
 }
+
+/// Shown for a saved job whose status is unknown or missing.
+const _unreadableStatusError =
+    'Could not restore this scan. Remove it from your list.';
+
+/// An unknown or missing saved status restores as failed, never running.
+/// A running job with no live stream and no server guarantee would stay
+/// active forever. Failed keeps the job visible so the user can dismiss it.
+TrackedJobStatus _restoredStatus(Map<String, dynamic> json) {
+  final known = trackedJobStatusFromName(json['status']?.toString());
+  if (known != null) return known;
+  final id = json['jobId'];
+  final saved = json['status'];
+  debugPrint('extraction job $id: unknown saved status "$saved", failing it');
+  return TrackedJobStatus.failed;
+}
+
+String _restoredError(Map<String, dynamic> json) =>
+    trackedJobStatusFromName(json['status']?.toString()) == null
+    ? _unreadableStatusError
+    : json['error']?.toString() ?? '';
 
 /// Registry state: every tracked job by id, insertion-ordered.
 @immutable
@@ -380,10 +400,14 @@ class ExtractionJobsNotifier extends Notifier<ExtractionJobsState> {
   /// the broadcast close and must NOT reconcile (see [isActive]).
   Future<void> cancel(String jobId) async {
     final job = state.job(jobId);
+    // Only a running job can be cancelled. Cancel after complete is a no-op
+    // and must not reach the server.
+    if (job == null || !canTransition(job.status, TrackedJobStatus.cancelled)) {
+      return;
+    }
     _subscriptions.remove(jobId)?.cancel();
     _resubscribes.remove(jobId);
     await _closeController(jobId);
-    if (job == null) return;
     try {
       if (job.kind == TrackedJobKind.batch) {
         await ref.read(batchExtractionRepositoryProvider).cancelJob(jobId);
@@ -395,8 +419,18 @@ class ExtractionJobsNotifier extends Notifier<ExtractionJobsState> {
       // unreachable job must still leave the active list. The error still
       // surfaces at the call site.
       if (_alive) {
-        _upsert(job.copyWith(status: TrackedJobStatus.cancelled));
-        await _persist();
+        // The job may have completed on the server during the cancel call.
+        // Its stream is already closed, so take the current status first.
+        await refreshStatus(jobId);
+        final fresh = _alive ? state.job(jobId) : null;
+        if (fresh != null &&
+            canTransition(fresh.status, TrackedJobStatus.cancelled)) {
+          // A batch refresh may have reopened a stream: close it again.
+          _subscriptions.remove(jobId)?.cancel();
+          await _closeController(jobId);
+          _upsert(fresh.copyWith(status: TrackedJobStatus.cancelled));
+          await _persist();
+        }
       }
     }
   }
@@ -456,7 +490,11 @@ class ExtractionJobsNotifier extends Notifier<ExtractionJobsState> {
   }
 
   /// Best-effort terminal classification for raw single-job status payloads.
-  bool _applySingleSnapshot(TrackedJob job, Map<String, dynamic> raw) {
+  bool _applySingleSnapshot(TrackedJob stale, Map<String, dynamic> raw) {
+    // Judge the job as it is now: it may have ended while the request ran.
+    final job = state.job(stale.jobId);
+    if (job == null) return false;
+    if (!job.isActive) return true;
     final status = raw['status']?.toString() ?? '';
     final items = raw['items'];
     final count = items is List ? items.length : job.total;
@@ -481,7 +519,12 @@ class ExtractionJobsNotifier extends Notifier<ExtractionJobsState> {
     }
   }
 
-  bool _applyBatchSnapshot(TrackedJob job, BatchJobStatusResponse status) {
+  bool _applyBatchSnapshot(TrackedJob stale, BatchJobStatusResponse status) {
+    // Judge the job as it is now: it may have ended while the request ran.
+    // A running snapshot must never revert a terminal job.
+    final job = state.job(stale.jobId);
+    if (job == null) return false;
+    if (!job.isActive) return true;
     final generated = status.generatedCount;
     final total = status.detectedItems?.length ?? job.total;
     switch (status.status) {
@@ -682,15 +725,19 @@ class ExtractionJobsNotifier extends Notifier<ExtractionJobsState> {
     int? generated,
     String? error,
   }) {
+    // Judge the job as it is now, never the caller's copy: a terminal job
+    // never changes, whatever the caller was holding.
+    final current = state.job(job.jobId);
+    if (current == null || !canTransition(current.status, status)) return;
     _subscriptions.remove(job.jobId)?.cancel();
     // The broadcast stays open so attached pages still receive the terminal
     // event itself; it closes on forget/cancel or the next track.
     _upsert(
-      job.copyWith(
+      current.copyWith(
         status: status,
-        total: total ?? job.total,
-        generated: generated ?? job.generated,
-        error: error ?? job.error,
+        total: total ?? current.total,
+        generated: generated ?? current.generated,
+        error: error ?? current.error,
       ),
     );
     unawaited(_persist());
@@ -735,6 +782,14 @@ class ExtractionJobsNotifier extends Notifier<ExtractionJobsState> {
   // ------------------------------------------------------------------
 
   void _upsert(TrackedJob job) {
+    // Single choke point: a status may change only along the transition
+    // table, so a stale writer cannot revert a terminal job.
+    final existing = state.jobs[job.jobId];
+    if (existing != null &&
+        existing.status != job.status &&
+        !canTransition(existing.status, job.status)) {
+      return;
+    }
     final jobs = Map<String, TrackedJob>.from(state.jobs);
     jobs[job.jobId] = job;
     // Cap + TTL prune on every write: the registry is small by construction.
@@ -803,7 +858,9 @@ class ExtractionJobsNotifier extends Notifier<ExtractionJobsState> {
       if (terminal) {
         // Finished while dead: the _markTerminal path already ran through
         // refreshStatus; surface the away-notification exactly once.
-        if (!fresh.notified) {
+        // A user-cancelled job gets no "scan stopped" notification.
+        if (!fresh.notified &&
+            fresh.status != TrackedJobStatus.cancelled) {
           _upsert(fresh.copyWith(notified: true));
           await _persist();
           await JobNotifications.instance.showFinishedWhileAway(

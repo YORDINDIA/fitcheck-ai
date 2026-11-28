@@ -5,11 +5,14 @@ Implements outfit CRUD and a lightweight generation-tracking flow.
 
 AI image generation is performed server-side via the AI provider service. The backend
 stores generated images in object storage (R2) and records metadata for retrieval.
+
+Persistence lives in ``app.services.outfit_service``. Routes only parse input,
+call the service, map errors, and shape responses.
 """
 
 import asyncio
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
@@ -31,7 +34,6 @@ from app.core.exceptions import (
 from app.api.v1.deps import get_active_user_id
 from app.core.uploads import read_upload_capped
 from app.core.config import settings
-from app.core.concurrency import KeyedLock
 from app.db.connection import get_db
 from app.models.common import DataResponse
 from app.models.outfit import (
@@ -44,15 +46,13 @@ from app.models.outfit import (
     OutfitCollectionCreate,
     OutfitCollectionUpdate,
 )
+from app.services import outfit_service
+from app.services.outfit_service import collection_counts as _collection_counts  # noqa: F401 (test seam)
 from app.services.outfit_service import delete_outfit as delete_outfit_service
+from app.services.outfit_service import normalize_item_images as _normalize_item_images  # noqa: F401 (test seam)
+from app.services.outfit_service import normalize_outfit_images as _normalize_outfit_images
 from app.services.storage_service import MAX_FILE_SIZE, StorageService
 from app.utils.datetime_util import utcnow, utcnow_iso, parse_utc_datetime
-from app.utils.db import (
-    execute_with_reconnect,
-    is_pgrst202_missing_rpc,
-    jsonb_contains,
-    safe_search_term,
-)
 from app.api.v1.images import materialize_image_urls, materialize_parent_images
 
 logger = get_context_logger(__name__)
@@ -84,260 +84,6 @@ class AddCollectionOutfitRequest(BaseModel):
     outfit_id: str = Field(..., min_length=1)
 
 
-def _now() -> str:
-    return utcnow_iso()
-
-
-# ============================================================================
-# Per-outfit write serialization (mark_worn)
-#
-# Migration 044 defines atomic RPCs for add/remove/toggle (add_outfit_item,
-# remove_outfit_item, toggle_outfit_favorite) but no outfit wear-count
-# variant. worn_count is a read-modify-write on the outfit row; two
-# concurrent /wear calls can both read N and write N+1, losing one wear.
-# Serialize per outfit with an in-process asyncio lock. KeyedLock (A3b-05)
-# bounds the registry: the old unbounded dict pinned one lock per outfit id
-# forever, including outfits since deleted.
-# ============================================================================
-
-_wear_locks = KeyedLock()
-
-
-def _wear_lock(outfit_id: str):
-    """Async context manager serializing wear writes per outfit (A3b-05)."""
-    return _wear_locks(outfit_id)
-
-
-def _normalize_item_images(item: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize Supabase nested relation naming to the API contract.
-
-    Emits BOTH keys on nested outfit items: ``item_images`` (the key the
-    Flutter ItemModel parses via @JsonKey(name: 'item_images')) and
-    ``images`` (consumed by materialize_parent_images, which walks
-    ``nested.get("images")`` to re-mint presigned URLs in place). Both keys
-    reference the SAME list object, so the in-place URL materialization is
-    visible under either name. Renaming alone (the old behavior) made GET
-    /outfits/{id} yield null itemImages in the app — detail tiles rendered
-    as placeholders while the list endpoint (which kept ``item_images``)
-    worked.
-    """
-    if not isinstance(item, dict):
-        return item
-    images = item.pop("item_images", None)
-    if images is None:
-        images = item.get("images")
-    item["images"] = images or []
-    item["item_images"] = item["images"]
-    return item
-
-
-def _normalize_outfit_images(outfit: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize Supabase nested relation naming to API contract."""
-    if not isinstance(outfit, dict):
-        return outfit
-    images = outfit.pop("outfit_images", None)
-    if images is None:
-        images = outfit.get("images")
-    outfit["images"] = images or []
-    return outfit
-
-
-def _collection_counts(db: Client, collection_ids: List[str]) -> Dict[str, int]:
-    if not collection_ids:
-        return {}
-    res = (
-        db.table("outfit_collection_items")
-        .select("collection_id")
-        .in_("collection_id", collection_ids)
-        .execute()
-    )
-    counts: Dict[str, int] = {}
-    for row in res.data or []:
-        cid = str(row.get("collection_id") or "")
-        if cid:
-            counts[cid] = counts.get(cid, 0) + 1
-    return counts
-
-
-async def _owned_collection_or_404(db: Client, collection_id: str, user_id: str) -> None:
-    """Verify a collection exists under the caller's ownership (RLS bypassed)."""
-    existing = await asyncio.to_thread(
-        db.table("outfit_collections")
-        .select("id")
-        .eq("id", collection_id)
-        .eq("user_id", user_id)
-        .maybe_single()
-        .execute
-    )
-    if not existing or not existing.data:
-        raise CollectionNotFoundError(collection_id=collection_id)
-
-
-async def _collection_member_ids(db: Client, collection_id: str) -> List[str]:
-    """Ordered outfit_ids currently in a collection (for response decoration)."""
-    member_res = await asyncio.to_thread(
-        db.table("outfit_collection_items")
-        .select("outfit_id")
-        .eq("collection_id", collection_id)
-        .execute
-    )
-    return [
-        str(member.get("outfit_id"))
-        for member in (member_res.data or [])
-        if member.get("outfit_id")
-    ]
-
-
-async def _collection_count(db: Client, collection_id: str) -> int:
-    """Member count for a single collection."""
-    counts = await asyncio.to_thread(_collection_counts, db, [collection_id])
-    return counts.get(collection_id, 0)
-
-
-async def _sync_collection_items(
-    db: Client,
-    *,
-    user_id: str,
-    collection_id: str,
-    outfit_ids: List[str],
-):
-    # Validate outfits belong to the user
-    if outfit_ids:
-        res = await asyncio.to_thread(
-            db.table("outfits")
-            .select("id")
-            .eq("user_id", user_id)
-            .in_("id", outfit_ids)
-            .execute
-        )
-        found = {str(row["id"]) for row in (res.data or [])}
-        missing = [oid for oid in outfit_ids if oid not in found]
-        if missing:
-            raise ValidationError(
-                "One or more outfits not found",
-                details={"missing_outfit_ids": missing}
-            )
-
-    # Replace items WITHOUT a delete-then-insert window: the old order emptied
-    # the collection first, so a failed insert left a valid collection
-    # permanently empty. Insert the new membership first, then delete the
-    # rows that are no longer wanted; a failed delete restores the collection
-    # to its previous membership (best-effort, see A3-11).
-    current_res = await asyncio.to_thread(
-        db.table("outfit_collection_items")
-        .select("outfit_id")
-        .eq("collection_id", collection_id)
-        .execute
-    )
-    current_ids = {
-        str(r["outfit_id"]) for r in (current_res.data or []) if r.get("outfit_id")
-    }
-    target_ids = set(outfit_ids)
-    to_add = [oid for oid in outfit_ids if oid not in current_ids]
-    to_remove = [oid for oid in current_ids if oid not in target_ids]
-
-    if to_add:
-        rows = [{"collection_id": collection_id, "outfit_id": oid} for oid in to_add]
-        # Upsert (not insert): a concurrent add/retry can pass the read above
-        # and collide on the junction PK.
-        try:
-            await asyncio.to_thread(
-                db.table("outfit_collection_items")
-                .upsert(rows, on_conflict="collection_id,outfit_id")
-                .execute
-            )
-        except Exception:
-            # Nothing was removed yet; a failed insert leaves the old
-            # membership intact, so there is nothing to restore.
-            raise
-    if to_remove:
-        try:
-            await asyncio.to_thread(
-                db.table("outfit_collection_items")
-                .delete()
-                .eq("collection_id", collection_id)
-                .in_("outfit_id", sorted(to_remove))
-                .execute
-            )
-        except Exception:
-            # The delete failed after the insert succeeded: restore the
-            # pre-sync membership so the collection is never left in a
-            # half-applied state.
-            if to_add:
-                logger.warning(
-                    "Restoring collection membership after failed sync delete",
-                    collection_id=collection_id,
-                    user_id=user_id,
-                )
-                try:
-                    await asyncio.to_thread(
-                        db.table("outfit_collection_items")
-                        .upsert(
-                            [{"collection_id": collection_id, "outfit_id": oid} for oid in to_add],
-                            on_conflict="collection_id,outfit_id",
-                        )
-                        .execute
-                    )
-                except Exception as restore_error:
-                    logger.error(
-                        "Failed to restore collection membership after sync failure",
-                        collection_id=collection_id,
-                        error=str(restore_error),
-                    )
-            raise
-
-
-async def _fetch_outfit(
-    db: Client,
-    user_id: str,
-    outfit_id: str,
-    *,
-    include_items: bool = False,
-) -> Optional[Dict[str, Any]]:
-    """Fetch an outfit with images, normalized for the API contract."""
-    result = await execute_with_reconnect(
-        lambda d: d.table("outfits")
-        .select("*, outfit_images(*)")
-        .eq("id", outfit_id)
-        .eq("user_id", user_id)
-        .maybe_single()
-        .execute(),
-        db,
-        extra={"operation": "fetch_outfit.lookup", "user_id": user_id},
-    )
-    if not result or not result.data:
-        return None
-
-    outfit = _normalize_outfit_images(result.data)
-    if include_items:
-        item_ids = outfit.get("item_ids") or []
-        if item_ids:
-            # A3b-03: scope the batch by user_id too — the outfit row is
-            # owned, but an id-only items fetch would return foreign rows
-            # (incl. storage paths, which materialize_image_urls would
-            # happily presign) for corrupted/legacy item_ids.
-            items_res = await execute_with_reconnect(
-                lambda d: d.table("items")
-                .select("*, item_images(*)")
-                .in_("id", item_ids)
-                .eq("user_id", user_id)
-                .execute(),
-                db,
-                extra={"operation": "fetch_outfit.items", "user_id": user_id},
-            )
-            for i in items_res.data or []:
-                # Flutter ItemImage requires non-null `url`: synthesize it
-                # here like the list path does. materialize_image_urls only
-                # syncs `url` when present, so without this the detail
-                # response crashes mobile parsing.
-                for img in i.get("item_images") or []:
-                    img["url"] = img.get("image_url") or img.get("thumbnail_url") or ""
-            outfit["items"] = [_normalize_item_images(i) for i in (items_res.data or [])]
-        else:
-            outfit["items"] = []
-    return outfit
-
-
 # ============================================================================
 # CRUD
 # ============================================================================
@@ -351,16 +97,14 @@ async def create_outfit(
 ):
     try:
         outfit_id = str(uuid.uuid4())
-        now = _now()
+        now = utcnow_iso()
 
         # Verify items exist and belong to user
         item_ids = [str(i) for i in request.item_ids]
-        items_res = await execute_with_reconnect(
-            lambda d: d.table("items").select("id").eq("user_id", user_id).in_("id", item_ids).execute(),
-            db,
-            extra={"operation": "create_outfit.verify_items", "user_id": user_id},
+        items_rows = await outfit_service.fetch_owned_item_ids_for_create(
+            db, user_id=user_id, item_ids=item_ids
         )
-        found_ids = {row["id"] for row in (items_res.data or [])}
+        found_ids = {row["id"] for row in items_rows}
         missing = [iid for iid in item_ids if iid not in found_ids]
         if missing:
             raise ValidationError(
@@ -387,12 +131,7 @@ async def create_outfit(
             "updated_at": now,
         }
 
-        res = await execute_with_reconnect(
-            lambda d: d.table("outfits").upsert(insert, on_conflict="id").execute(),
-            db,
-            extra={"operation": "create_outfit.insert", "user_id": user_id},
-        )
-        row = (res.data or [None])[0]
+        row = await outfit_service.insert_outfit_row(db, insert=insert, user_id=user_id)
         if not row:
             raise DatabaseError("Failed to create outfit", operation="insert")
 
@@ -436,97 +175,17 @@ async def list_outfits(
             effective_seasons = [season]
         tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
 
-        # Shared filter application for both the count and the page query.
-        # Rebuilding from the passed client `d` lets execute_with_reconnect
-        # replay the whole query through a fresh client when the pooled
-        # Supabase connection is dead (ConnectionTerminated 500s observed on
-        # /outfits 2026-08-03; one list took 121s before failing).
-        def _apply_outfit_filters(q: Any) -> Any:
-            if effective_favorite is not None:
-                q = q.eq("is_favorite", effective_favorite)
-            if effective_styles:
-                q = q.in_("style", effective_styles)
-            if effective_seasons:
-                q = q.in_("season", effective_seasons)
-            if drafts_value is not None:
-                q = q.eq("is_draft", drafts_value)
-            if tag_list:
-                # JSONB array contains: jsonb_contains emits a JSON array
-                # literal - plain contains(list) sends a Postgres array
-                # literal ({a,b}) and PostgREST answers 22P02 for the jsonb
-                # `tags` column (2026-08-07 /items occasion-filter incident,
-                # same latent pattern).
-                q = jsonb_contains(q, "tags", tag_list)
-            if search:
-                like = f"%{safe_search_term(search)}%"
-                q = q.or_(f"name.ilike.{like},description.ilike.{like}")
-            return q
-
-        def _build_list_query(d: Any, *, count_only: bool = False, page_range: bool = False) -> Any:
-            if count_only:
-                q = d.table("outfits").select("id", count="exact").eq("user_id", user_id)
-            else:
-                q = d.table("outfits").select("*, outfit_images(*)").eq("user_id", user_id)
-            q = _apply_outfit_filters(q)
-            if page_range:
-                q = q.order("created_at", desc=True).range(start, end)
-            return q
-
-        # The whole read (count + page + item batch) runs in ONE wrapped
-        # coroutine so a dead pooled Supabase connection triggers a single
-        # client rebuild and the retry replays every query through the fresh
-        # client - instead of each query self-healing separately (which would
-        # leave the later queries on the original dead client for one more
-        # failed round-trip). ConnectionTerminated 500s observed on /outfits
-        # 2026-08-03 (one list took 121s before failing).
-        start = (page - 1) * page_size
-        end = start + page_size - 1
-
-        async def _list_outfits_data(d: Any) -> Tuple[Any, int, Dict[str, Dict[str, Any]]]:
-            # Count + page are independent reads; run them concurrently so a
-            # list response waits on the slower of the two, not their sum.
-            count_res, res = await asyncio.gather(
-                asyncio.to_thread(_build_list_query(d, count_only=True).execute),
-                asyncio.to_thread(_build_list_query(d, page_range=True).execute),
-            )
-            total = getattr(count_res, "count", len(count_res.data or []))
-
-            outfits = [_normalize_outfit_images(o) for o in (res.data or [])]
-
-            # Fetch all items for all outfits in a single batch query
-            all_item_ids: List[str] = []
-            for outfit in outfits:
-                all_item_ids.extend(outfit.get("item_ids") or [])
-            all_item_ids = list(set(all_item_ids))  # dedupe
-
-            items_map: Dict[str, Dict[str, Any]] = {}
-            if all_item_ids:
-                # A3b-03: user-scope the batch fetch — see _fetch_outfit.
-                items_res = await asyncio.to_thread(
-                    d.table("items")
-                    .select("*, item_images(*)")
-                    .in_("id", all_item_ids)
-                    .eq("user_id", user_id)
-                    .execute
-                )
-                for item in (items_res.data or []):
-                    # Transform item_images to have 'url' field for Flutter compatibility
-                    item_images = item.get("item_images") or []
-                    for img in item_images:
-                        img["url"] = img.get("image_url") or img.get("thumbnail_url") or ""
-                    # Normalize AFTER the url pass: emits both `images` and
-                    # `item_images` (same list), so every outfit response
-                    # carries item_images on nested items and the
-                    # materialize_parent_images call below (which walks
-                    # `images`) re-mints the nested item images too.
-                    items_map[str(item["id"])] = _normalize_item_images(item)
-
-            return outfits, total, items_map
-
-        outfits, total, items_map = await execute_with_reconnect(
-            lambda d: _list_outfits_data(d),
+        outfits, total, items_map = await outfit_service.list_outfit_page(
             db,
-            extra={"operation": "list_outfits", "user_id": user_id},
+            user_id=user_id,
+            page=page,
+            page_size=page_size,
+            effective_favorite=effective_favorite,
+            effective_styles=effective_styles,
+            effective_seasons=effective_seasons,
+            drafts_value=drafts_value,
+            tag_list=tag_list,
+            search=search,
         )
 
         # Private buckets: materialize fresh short-lived presigned URLs from
@@ -582,11 +241,9 @@ async def available_items(
         # Invalid entries are ignored; an empty parsed set short-circuits to [].
         # Guard: when this endpoint is invoked directly (tests/other routes),
         # the FastAPI Query() default arrives as a ParamInfo/Query object, not
-        # None — only a real str enables the filter (same gotcha as the
-        # category guard in recommendations.match_items). Any real str —
-        # including an explicitly empty/blank "?ids=" — enables the filter: an
-        # explicitly requested empty subset must not silently widen to the
-        # whole closet.
+        # None -- only a real str enables the filter. Any real str, including
+        # an explicitly empty/blank "?ids=", enables the filter: an explicitly
+        # requested empty subset must not silently widen to the whole closet.
         id_list: Optional[List[str]] = None
         if isinstance(ids, str):
             valid: List[str] = []
@@ -602,39 +259,14 @@ async def available_items(
             if not id_list:
                 return {"data": [], "message": "OK"}
 
-        def _build_available_items_query(d: Any) -> Any:
-            """Build the picker query off the passed client (see below)."""
-            q = (
-                d.table("items")
-                .select("id,name,category,colors,item_images(storage_path,image_url,thumbnail_url,is_primary)")
-                .eq("user_id", user_id)
-                .eq("is_deleted", False)
-            )
-            if id_list is not None:
-                # Same recency order as the unfiltered branch so callers that
-                # surface items (picker grids, prompt builders) see a stable
-                # ordering either way.
-                q = q.in_("id", id_list).order("created_at", desc=True)
-            else:
-                q = q.order("created_at", desc=True).limit(500)
-            return q
-
-        # Rebuilding the query from the passed client lets execute_with_reconnect
-        # replay it through a fresh client when the pooled Supabase connection
-        # dies: this route used a raw asyncio.to_thread and answered
-        # ``RemoteProtocolError: <ConnectionTerminated ...>`` as an unhandled
-        # 500 (2026-09-17 production log, GET /outfits/available-items).
-        res = await execute_with_reconnect(
-            lambda d: _build_available_items_query(d).execute(),
-            db,
-            extra={"operation": "available_items.select", "user_id": user_id},
+        rows = await outfit_service.fetch_available_item_rows(
+            db, user_id=user_id, id_list=id_list
         )
         items = []
         # Independent per-row presign passes run concurrently; the list is
         # small (<=500, or the requested subset) and each pass is local S3
         # signing, so a gather here shortens picker latency to the slowest
         # row instead of the sum of rows.
-        rows = list(res.data or [])
         image_lists = [row.get("item_images") or [] for row in rows]
         await asyncio.gather(
             *(
@@ -667,7 +299,9 @@ async def get_outfit(
 ):
     try:
         outfit_id_str = str(outfit_id)
-        outfit = await _fetch_outfit(db=db, user_id=user_id, outfit_id=outfit_id_str, include_items=True)
+        outfit = await outfit_service.fetch_outfit(
+            db=db, user_id=user_id, outfit_id=outfit_id_str, include_items=True
+        )
         if not outfit:
             raise OutfitNotFoundError(outfit_id=outfit_id_str)
         # Private buckets: materialize fresh presigned URLs at read time.
@@ -695,56 +329,28 @@ async def get_public_outfit(
     """
     try:
         outfit_id_str = str(outfit_id)
-        share = await asyncio.to_thread(
-            db.table("shared_outfits")
-            .select("id, expires_at")
-            .eq("outfit_id", outfit_id_str)
-            .eq("visibility", "public")
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute
-        )
-        share_row = (share.data or [None])[0]
+        share_row = await outfit_service.fetch_latest_public_share(db, outfit_id=outfit_id_str)
         if not share_row:
             raise SharedOutfitNotFoundError(share_id=outfit_id_str)
         expires_at = parse_utc_datetime(share_row.get("expires_at"))
         if expires_at and expires_at < utcnow():
             raise SharedOutfitNotFoundError(share_id=outfit_id_str)
 
-        result = await asyncio.to_thread(
-            db.table("outfits")
-            .select("id,name,description,style,season,occasion,tags,created_at,updated_at,item_ids,outfit_images(*)")
-            .eq("id", outfit_id_str)
-            .eq("is_public", True)
-            .maybe_single()
-            .execute
-        )
-        if not result or not result.data:
+        outfit = await outfit_service.fetch_public_outfit_row(db, outfit_id=outfit_id_str)
+        if not outfit:
             raise SharedOutfitNotFoundError(share_id=outfit_id_str)
 
-        outfit = result.data
-
-        # Atomic view increment via the service-role RPC (migration 044): the
-        # previous read-modify-write lost concurrent increments (the route is
-        # anonymous, so two visitors at once would each write N+1).
-        await asyncio.to_thread(
-            db.rpc("increment_shared_outfit_views", {"share_uuid": share_row["id"]}).execute
-        )
+        # Atomic view increment via the service-role RPC (migration 044).
+        await outfit_service.increment_shared_outfit_views(db, share_id=share_row["id"])
 
         item_ids = outfit.get("item_ids") or []
         items_summary: List[Dict[str, Any]] = []
         if item_ids:
-            items_res = await asyncio.to_thread(
-                db.table("items")
-                .select("id,name,category,colors,brand,item_images(storage_path,image_url,thumbnail_url,is_primary)")
-                .in_("id", item_ids)
-                .execute
-            )
-            items_summary = items_res.data or []
+            items_summary = await outfit_service.fetch_item_summaries(db, item_ids=item_ids)
             # Anonymous share link: mint fresh presigned URLs for the item
             # thumbnails too (same treatment as the outfit images below), so
             # the mobile shared page's item gallery never serves expired
-            # stored URLs. No owner_user_id — this endpoint is public.
+            # stored URLs. No owner_user_id -- this endpoint is public.
             if items_summary:
                 await asyncio.gather(
                     *[
@@ -755,7 +361,7 @@ async def get_public_outfit(
 
         # Private buckets: materialize fresh short-lived presigned URLs at read
         # time so the share link never serves an expired stored URL. Forced
-        # presigned (even in worker mode): this endpoint is anonymous — a
+        # presigned (even in worker mode): this endpoint is anonymous -- a
         # share-link visitor or a social crawler cannot present the app's JWT
         # to the images Worker, so a stable Worker URL would 404 for them.
         await materialize_image_urls(outfit.get("outfit_images") or [], presigned=True)
@@ -791,15 +397,18 @@ async def update_outfit(
 ):
     try:
         outfit_id_str = str(outfit_id)
-        existing = await asyncio.to_thread(db.table("outfits").select("id").eq("id", outfit_id_str).eq("user_id", user_id).maybe_single().execute)
+        existing = await outfit_service.fetch_owned_outfit_row(
+            db, outfit_id=outfit_id_str, user_id=user_id, columns="id"
+        )
         if not existing or not existing.data:
             raise OutfitNotFoundError(outfit_id=outfit_id_str)
 
         update_dict = update.model_dump(exclude_unset=True)
         if "item_ids" in update_dict and update_dict["item_ids"] is not None:
             item_ids = [str(i) for i in update_dict["item_ids"]]
-            items_res = await asyncio.to_thread(db.table("items").select("id").eq("user_id", user_id).in_("id", item_ids).execute)
-            found_ids = {row["id"] for row in (items_res.data or [])}
+            found_ids = set(
+                await outfit_service.fetch_owned_item_ids(db, user_id=user_id, item_ids=item_ids)
+            )
             missing = [iid for iid in item_ids if iid not in found_ids]
             if missing:
                 raise ValidationError(
@@ -808,13 +417,14 @@ async def update_outfit(
                 )
             update_dict["item_ids"] = item_ids
 
-        update_dict["updated_at"] = _now()
-        result = await asyncio.to_thread(db.table("outfits").update(update_dict).eq("id", outfit_id_str).eq("user_id", user_id).execute)
-        row = (result.data or [None])[0]
+        update_dict["updated_at"] = utcnow_iso()
+        row = await outfit_service.update_outfit_row(
+            db, outfit_id=outfit_id_str, user_id=user_id, update_dict=update_dict
+        )
         if not row:
             raise DatabaseError("Failed to update outfit", operation="update")
 
-        outfit = await _fetch_outfit(db=db, user_id=user_id, outfit_id=outfit_id_str)
+        outfit = await outfit_service.fetch_outfit(db=db, user_id=user_id, outfit_id=outfit_id_str)
         if not outfit:
             raise DatabaseError("Failed to fetch updated outfit", operation="select")
         # Private buckets: materialize fresh presigned URLs at read time.
@@ -842,13 +452,8 @@ async def share_outfit(
     """
     try:
         outfit_id_str = str(outfit_id)
-        existing = await asyncio.to_thread(
-            db.table("outfits")
-            .select("id")
-            .eq("id", outfit_id_str)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
+        existing = await outfit_service.fetch_owned_outfit_row(
+            db, outfit_id=outfit_id_str, user_id=user_id, columns="id"
         )
         if not existing or not existing.data:
             raise OutfitNotFoundError(outfit_id=outfit_id_str)
@@ -862,7 +467,7 @@ async def share_outfit(
             )
 
         # A3-12: expires_at is a free-form ISO string that the RPC casts to
-        # TIMESTAMP — a malformed value would 500 with SQLSTATE 22P02 instead
+        # TIMESTAMP -- a malformed value would 500 with SQLSTATE 22P02 instead
         # of a clean 422. Validate (and normalize) it before the RPC.
         validated_expires_at: Optional[str] = None
         if request.expires_at:
@@ -877,25 +482,17 @@ async def share_outfit(
         share_url = f"{settings.FRONTEND_URL.rstrip('/')}/shared/outfits/{outfit_id_str}"
 
         # Atomic share via the service-role RPC (migration 045): outfits
-        # is_public and the shared_outfits row are written in ONE transaction,
-        # so a crash can no longer leave the outfit public with no share row.
-        # (The old two-statement flow also 500'd: shared_outfits has no
-        # updated_at column, which the old upsert payload included.)
-        rpc_res = await asyncio.to_thread(
-            db.rpc(
-                "upsert_shared_outfit",
-                {
-                    "outfit_uuid": outfit_id_str,
-                    "user_uuid": user_id,
-                    "p_visibility": request.visibility,
-                    "p_expires_at": validated_expires_at,
-                    "p_caption": request.custom_caption,
-                    "p_allow_feedback": request.allow_feedback,
-                    "p_share_url": share_url,
-                },
-            ).execute
+        # is_public and the shared_outfits row are written in ONE transaction.
+        share_row = await outfit_service.upsert_shared_outfit_rpc(
+            db,
+            outfit_id=outfit_id_str,
+            user_id=user_id,
+            visibility=request.visibility,
+            expires_at=validated_expires_at,
+            caption=request.custom_caption,
+            allow_feedback=request.allow_feedback,
+            share_url=share_url,
         )
-        share_row = (rpc_res.data or [None])[0]
         if not share_row:
             # Ownership and visibility were verified above; a zero-row return
             # means the outfit vanished between the check and the RPC.
@@ -949,7 +546,7 @@ async def create_collection(
 ):
     try:
         collection_id = str(uuid.uuid4())
-        now = _now()
+        now = utcnow_iso()
         insert = {
             "id": collection_id,
             "user_id": user_id,
@@ -959,14 +556,15 @@ async def create_collection(
             "created_at": now,
             "updated_at": now,
         }
-        res = await asyncio.to_thread(db.table("outfit_collections").insert(insert).execute)
-        row = (res.data or [None])[0]
+        row = await outfit_service.insert_collection_row(db, insert=insert)
         if not row:
             raise DatabaseError("Failed to create collection", operation="insert")
 
         outfit_ids = [str(i) for i in (request.outfit_ids or [])]
         if outfit_ids:
-            await _sync_collection_items(db, user_id=user_id, collection_id=collection_id, outfit_ids=outfit_ids)
+            await outfit_service.sync_collection_items(
+                db, user_id=user_id, collection_id=collection_id, outfit_ids=outfit_ids
+            )
 
         row["outfit_count"] = len(outfit_ids)
         row["outfit_ids"] = outfit_ids
@@ -984,27 +582,17 @@ async def list_collections(
     db: Client = Depends(get_db),
 ):
     try:
-        res = await asyncio.to_thread(
-            db.table("outfit_collections")
-            .select("*")
-            .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .execute
-        )
-        rows = res.data or []
+        rows = await outfit_service.list_collection_rows(db, user_id=user_id)
         collection_ids = [str(r.get("id")) for r in rows if r.get("id")]
         # Counts and member ids are derived from ONE member-row download; the
         # previous count query re-downloaded the same rows.
         counts: Dict[str, int] = {}
         members: Dict[str, List[str]] = {}
         if collection_ids:
-            member_res = await asyncio.to_thread(
-                db.table("outfit_collection_items")
-                .select("collection_id, outfit_id")
-                .in_("collection_id", collection_ids)
-                .execute
+            member_rows = await outfit_service.fetch_collection_member_rows(
+                db, collection_ids=collection_ids
             )
-            for member in member_res.data or []:
+            for member in member_rows:
                 cid = str(member.get("collection_id") or "")
                 if not cid:
                     continue
@@ -1031,39 +619,39 @@ async def update_collection(
 ):
     try:
         collection_id_str = str(collection_id)
-        await _owned_collection_or_404(db, collection_id_str, user_id)
+        await outfit_service.assert_owned_collection(
+            db, collection_id=collection_id_str, user_id=user_id
+        )
 
         update_dict = update.model_dump(exclude_unset=True)
         outfit_ids = update_dict.pop("outfit_ids", None)
         if update_dict:
-            update_dict["updated_at"] = _now()
-            await asyncio.to_thread(db.table("outfit_collections").update(update_dict).eq("id", collection_id_str).execute)
+            update_dict["updated_at"] = utcnow_iso()
+            await outfit_service.update_collection_row(
+                db, collection_id=collection_id_str, update_dict=update_dict
+            )
 
         if outfit_ids is not None:
-            await _sync_collection_items(
+            await outfit_service.sync_collection_items(
                 db,
                 user_id=user_id,
                 collection_id=collection_id_str,
                 outfit_ids=[str(i) for i in outfit_ids],
             )
 
-        row_res = await asyncio.to_thread(
-            db.table("outfit_collections")
-            .select("*")
-            .eq("id", collection_id_str)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
+        row = await outfit_service.fetch_collection_row(
+            db, collection_id=collection_id_str, user_id=user_id
         )
-        row = row_res.data if row_res else None
         if not row:
             raise CollectionNotFoundError(collection_id=collection_id_str)
 
-        row["outfit_count"] = await _collection_count(db, collection_id_str)
+        row["outfit_count"] = await outfit_service.collection_count(
+            db, collection_id=collection_id_str
+        )
         row["outfit_ids"] = (
             [str(i) for i in outfit_ids]
             if outfit_ids is not None
-            else await _collection_member_ids(db, collection_id_str)
+            else await outfit_service.collection_member_ids(db, collection_id=collection_id_str)
         )
         return {"data": row, "message": "Updated"}
     except (CollectionNotFoundError, ValidationError, DatabaseError):
@@ -1082,28 +670,28 @@ async def replace_collection_outfits(
 ):
     try:
         collection_id_str = str(collection_id)
-        await _owned_collection_or_404(db, collection_id_str, user_id)
+        await outfit_service.assert_owned_collection(
+            db, collection_id=collection_id_str, user_id=user_id
+        )
 
-        await _sync_collection_items(
+        await outfit_service.sync_collection_items(
             db,
             user_id=user_id,
             collection_id=collection_id_str,
             outfit_ids=[str(i) for i in (request.outfit_ids or [])],
         )
 
-        row_res = await asyncio.to_thread(
-            db.table("outfit_collections")
-            .select("*")
-            .eq("id", collection_id_str)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
+        row = await outfit_service.fetch_collection_row(
+            db, collection_id=collection_id_str, user_id=user_id
         )
-        row = row_res.data if row_res else None
         if not row:
             raise CollectionNotFoundError(collection_id=collection_id_str)
-        row["outfit_count"] = await _collection_count(db, collection_id_str)
-        row["outfit_ids"] = await _collection_member_ids(db, collection_id_str)
+        row["outfit_count"] = await outfit_service.collection_count(
+            db, collection_id=collection_id_str
+        )
+        row["outfit_ids"] = await outfit_service.collection_member_ids(
+            db, collection_id=collection_id_str
+        )
         return {"data": row, "message": "Updated"}
     except (CollectionNotFoundError, ValidationError):
         raise
@@ -1122,41 +710,27 @@ async def add_collection_outfit(
     """Add one owned outfit to a collection without replacing existing members."""
     collection_id_str = str(collection_id)
     try:
-        await _owned_collection_or_404(db, collection_id_str, user_id)
+        await outfit_service.assert_owned_collection(
+            db, collection_id=collection_id_str, user_id=user_id
+        )
 
-        outfit = await asyncio.to_thread(
-            db.table("outfits")
-            .select("id")
-            .eq("id", request.outfit_id)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
+        outfit = await outfit_service.fetch_owned_outfit_row(
+            db, outfit_id=request.outfit_id, user_id=user_id, columns="id"
         )
         if not outfit or not outfit.data:
             raise ValidationError("Outfit not found", details={"outfit_id": request.outfit_id})
 
-        membership = await asyncio.to_thread(
-            db.table("outfit_collection_items")
-            .select("outfit_id")
-            .eq("collection_id", collection_id_str)
-            .eq("outfit_id", request.outfit_id)
-            .maybe_single()
-            .execute
+        membership = await outfit_service.fetch_collection_membership(
+            db, collection_id=collection_id_str, outfit_id=request.outfit_id
         )
         if not membership or not membership.data:
             # Upsert (not insert): two concurrent add/retry requests can both
-            # pass the membership read above, and the junction PK conflict
-            # would otherwise 500 one of them. The upsert is idempotent.
-            await asyncio.to_thread(
-                db.table("outfit_collection_items")
-                .upsert(
-                    {"collection_id": collection_id_str, "outfit_id": request.outfit_id},
-                    on_conflict="collection_id,outfit_id",
-                )
-                .execute
+            # pass the membership read above; the upsert is idempotent.
+            await outfit_service.add_collection_membership(
+                db, collection_id=collection_id_str, outfit_id=request.outfit_id
             )
 
-        count = await _collection_count(db, collection_id_str)
+        count = await outfit_service.collection_count(db, collection_id=collection_id_str)
         return {
             "data": {
                 "collection_id": collection_id_str,
@@ -1183,14 +757,12 @@ async def remove_collection_outfit(
     collection_id_str = str(collection_id)
     outfit_id_str = str(outfit_id)
     try:
-        await _owned_collection_or_404(db, collection_id_str, user_id)
+        await outfit_service.assert_owned_collection(
+            db, collection_id=collection_id_str, user_id=user_id
+        )
 
-        await asyncio.to_thread(
-            db.table("outfit_collection_items")
-            .delete()
-            .eq("collection_id", collection_id_str)
-            .eq("outfit_id", outfit_id_str)
-            .execute
+        await outfit_service.delete_collection_membership(
+            db, collection_id=collection_id_str, outfit_id=outfit_id_str
         )
         return None
     except CollectionNotFoundError:
@@ -1208,9 +780,13 @@ async def delete_collection(
 ):
     try:
         collection_id_str = str(collection_id)
-        await _owned_collection_or_404(db, collection_id_str, user_id)
+        await outfit_service.assert_owned_collection(
+            db, collection_id=collection_id_str, user_id=user_id
+        )
 
-        await asyncio.to_thread(db.table("outfit_collections").delete().eq("id", collection_id_str).eq("user_id", user_id).execute)
+        await outfit_service.delete_collection_row(
+            db, collection_id=collection_id_str, user_id=user_id
+        )
         return None
     except CollectionNotFoundError:
         raise
@@ -1232,35 +808,21 @@ async def toggle_favorite(
 ):
     try:
         outfit_id_str = str(outfit_id)
-        existing = await asyncio.to_thread(
-            db.table("outfits")
-            .select("is_favorite")
-            .eq("id", outfit_id_str)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
+        existing = await outfit_service.fetch_owned_outfit_row(
+            db, outfit_id=outfit_id_str, user_id=user_id, columns="is_favorite"
         )
         if not existing or not existing.data:
             raise OutfitNotFoundError(outfit_id=outfit_id_str)
 
-        # Atomic toggle via the service-role RPC (migration 044): the previous
-        # read-modify-write raced two concurrent toggles into a lost flip.
-        await asyncio.to_thread(
-            db.rpc(
-                "toggle_outfit_favorite",
-                {"outfit_uuid": outfit_id_str, "user_uuid": user_id},
-            ).execute
+        # Atomic toggle via the service-role RPC (migration 044).
+        await outfit_service.toggle_outfit_favorite_rpc(
+            db, outfit_id=outfit_id_str, user_id=user_id
         )
 
         # The RPC owns the flip; re-read so the response reflects the new
         # value instead of guessing (two concurrent toggles = one flip).
-        refreshed = await asyncio.to_thread(
-            db.table("outfits")
-            .select("is_favorite")
-            .eq("id", outfit_id_str)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
+        refreshed = await outfit_service.fetch_owned_outfit_row(
+            db, outfit_id=outfit_id_str, user_id=user_id, columns="is_favorite"
         )
         new_value = bool((refreshed.data or {}).get("is_favorite", False)) if refreshed else False
         return {"data": {"id": outfit_id_str, "is_favorite": new_value}, "message": "OK"}
@@ -1279,52 +841,19 @@ async def mark_worn(
 ):
     try:
         outfit_id_str = str(outfit_id)
-        # Serialize per outfit: two concurrent /wear calls would otherwise both
-        # read N, write N+1, and silently drop one wear (see _wear_lock note).
-        async with _wear_lock(outfit_id_str):
-            existing = await asyncio.to_thread(
-                db.table("outfits")
-                .select("worn_count")
-                .eq("id", outfit_id_str)
-                .eq("user_id", user_id)
-                .maybe_single()
-                .execute
-            )
-            if not existing or not existing.data:
-                raise OutfitNotFoundError(outfit_id=outfit_id_str)
-
-            current = int(existing.data.get("worn_count") or 0)
-            now = _now()
-
-            # Update outfit (read-modify-write now serialized by the lock above).
-            # A3b-06: the write is user-scoped — the ownership read and this
-            # statement are separate, so a row deleted in between would
-            # otherwise let the response fabricate a wear count.
-            update_res = await asyncio.to_thread(
-                db.table("outfits")
-                .update({"worn_count": current + 1, "last_worn_at": now, "updated_at": now})
-                .eq("id", outfit_id_str)
-                .eq("user_id", user_id)
-                .execute
-            )
-            if not update_res.data:
-                raise OutfitNotFoundError(outfit_id=outfit_id_str)
-
-            # Insert wear history record
-            wear_record = {
-                "id": str(uuid.uuid4()),
-                "outfit_id": outfit_id_str,
-                "user_id": user_id,
-                "worn_at": now,
-                "created_at": now,
-            }
-            try:
-                await asyncio.to_thread(db.table("outfit_wear_history").insert(wear_record).execute)
-            except Exception as hist_err:
-                # Log but don't fail if wear history table doesn't exist yet
-                logger.warning("Could not insert wear history record", outfit_id=outfit_id_str, error=str(hist_err))
-
-        return {"data": {"id": outfit_id_str, "worn_count": current + 1, "last_worn_at": now}, "message": "OK"}
+        # The service serializes per outfit so concurrent /wear calls cannot
+        # both read N and write N+1 (see outfit_service._wear_lock).
+        result = await outfit_service.record_outfit_wear(
+            db, user_id=user_id, outfit_id=outfit_id_str
+        )
+        return {
+            "data": {
+                "id": outfit_id_str,
+                "worn_count": result["worn_count"],
+                "last_worn_at": result["last_worn_at"],
+            },
+            "message": "OK",
+        }
     except OutfitNotFoundError:
         raise
     except Exception as e:
@@ -1343,32 +872,13 @@ async def get_wear_history(
         outfit_id_str = str(outfit_id)
 
         # Verify outfit exists and belongs to user
-        outfit = await asyncio.to_thread(
-            db.table("outfits")
-            .select("id")
-            .eq("id", outfit_id_str)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
+        outfit = await outfit_service.fetch_owned_outfit_row(
+            db, outfit_id=outfit_id_str, user_id=user_id, columns="id"
         )
         if not outfit or not outfit.data:
             raise OutfitNotFoundError(outfit_id=outfit_id_str)
 
-        # Get wear history
-        try:
-            history = await asyncio.to_thread(
-                db.table("outfit_wear_history")
-                .select("*")
-                .eq("outfit_id", outfit_id_str)
-                .order("worn_at", desc=True)
-                .limit(100)
-                .execute
-            )
-            wear_history = history.data or []
-        except Exception as e:
-            # Table might not exist yet
-            logger.warning("Failed to fetch wear history", outfit_id=outfit_id_str, error=str(e))
-            wear_history = []
+        wear_history = await outfit_service.list_wear_history(db, outfit_id=outfit_id_str)
 
         return {
             "data": {
@@ -1391,39 +901,15 @@ async def duplicate_outfit(
 ):
     try:
         outfit_id_str = str(outfit_id)
-        existing = await asyncio.to_thread(
-            db.table("outfits")
-            .select("*")
-            .eq("id", outfit_id_str)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
+        existing = await outfit_service.fetch_owned_outfit_row(
+            db, outfit_id=outfit_id_str, user_id=user_id, columns="*"
         )
         if not existing or not existing.data:
             raise OutfitNotFoundError(outfit_id=outfit_id_str)
 
-        now = _now()
-        new_id = str(uuid.uuid4())
-        insert = {
-            "id": new_id,
-            "user_id": user_id,
-            "name": f"Copy of {existing.data.get('name') or 'Outfit'}",
-            "description": existing.data.get("description"),
-            "item_ids": existing.data.get("item_ids") or [],
-            "style": existing.data.get("style"),
-            "season": existing.data.get("season"),
-            "occasion": existing.data.get("occasion"),
-            "tags": existing.data.get("tags") or [],
-            "is_favorite": False,
-            "is_draft": True,
-            "is_public": False,
-            "worn_count": 0,
-            "last_worn_at": None,
-            "created_at": now,
-            "updated_at": now,
-        }
-        res = await asyncio.to_thread(db.table("outfits").insert(insert).execute)
-        row = (res.data or [None])[0]
+        row = await outfit_service.insert_outfit_copy(
+            db, source=existing.data, user_id=user_id
+        )
         if not row:
             raise DatabaseError("Failed to duplicate outfit", operation="insert")
         row["images"] = []
@@ -1444,40 +930,33 @@ async def add_item_to_outfit(
 ):
     try:
         outfit_id_str = str(outfit_id)
-        outfit = await asyncio.to_thread(
-            db.table("outfits")
-            .select("id,item_ids")
-            .eq("id", outfit_id_str)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
+        outfit = await outfit_service.fetch_owned_outfit_row(
+            db, outfit_id=outfit_id_str, user_id=user_id, columns="id,item_ids"
         )
         if not outfit or not outfit.data:
             raise OutfitNotFoundError(outfit_id=outfit_id_str)
 
         item_id = request.item_id
-        item = await asyncio.to_thread(db.table("items").select("id").eq("id", item_id).eq("user_id", user_id).maybe_single().execute)
+        item = await outfit_service.fetch_owned_item_row(db, item_id=item_id, user_id=user_id)
         if not item or not item.data:
             raise ItemNotFoundError(item_id=item_id)
 
         item_ids = list(outfit.data.get("item_ids") or [])
         if item_id in item_ids:
-            current = await _fetch_outfit(db=db, user_id=user_id, outfit_id=outfit_id_str)
+            current = await outfit_service.fetch_outfit(
+                db=db, user_id=user_id, outfit_id=outfit_id_str
+            )
             if current:
                 # Private buckets: materialize fresh presigned URLs at read time.
                 current = (await materialize_parent_images([current], owner_user_id=user_id))[0]
             return {"data": current or {"id": outfit_id_str, "item_ids": item_ids, "images": []}, "message": "OK"}
 
-        # Atomic append via the service-role RPC (migration 044): the previous
-        # read-modify-write raced two concurrent adds into a lost item.
-        await asyncio.to_thread(
-            db.rpc(
-                "add_outfit_item",
-                {"outfit_uuid": outfit_id_str, "item_uuid": item_id, "user_uuid": user_id},
-            ).execute
+        # Atomic append via the service-role RPC (migration 044).
+        await outfit_service.add_outfit_item_rpc(
+            db, outfit_id=outfit_id_str, item_id=item_id, user_id=user_id
         )
 
-        updated = await _fetch_outfit(db=db, user_id=user_id, outfit_id=outfit_id_str)
+        updated = await outfit_service.fetch_outfit(db=db, user_id=user_id, outfit_id=outfit_id_str)
         if not updated:
             raise DatabaseError("Failed to fetch updated outfit", operation="select")
         # Private buckets: materialize fresh presigned URLs at read time.
@@ -1500,20 +979,17 @@ async def remove_item_from_outfit(
     try:
         outfit_id_str = str(outfit_id)
         item_id_str = str(item_id)
-        outfit = await asyncio.to_thread(
-            db.table("outfits")
-            .select("id,item_ids")
-            .eq("id", outfit_id_str)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
+        outfit = await outfit_service.fetch_owned_outfit_row(
+            db, outfit_id=outfit_id_str, user_id=user_id, columns="id,item_ids"
         )
         if not outfit or not outfit.data:
             raise OutfitNotFoundError(outfit_id=outfit_id_str)
 
         item_ids = [str(i) for i in (outfit.data.get("item_ids") or [])]
         if item_id_str not in item_ids:
-            current = await _fetch_outfit(db=db, user_id=user_id, outfit_id=outfit_id_str)
+            current = await outfit_service.fetch_outfit(
+                db=db, user_id=user_id, outfit_id=outfit_id_str
+            )
             if current:
                 # Private buckets: materialize fresh presigned URLs at read time.
                 current = (await materialize_parent_images([current], owner_user_id=user_id))[0]
@@ -1526,35 +1002,20 @@ async def remove_item_from_outfit(
                 details={"outfit_id": outfit_id_str}
             )
 
-        # Atomic removal via the service-role RPC (migration 044): the previous
-        # read-modify-write raced two concurrent removes into a lost item. The
-        # RPC enforces the >=1-member rule UNDER the row lock and returns an
+        # Atomic removal via the service-role RPC (migration 044). The RPC
+        # enforces the >=1-member rule UNDER the row lock and returns an
         # integer status: 0 = missing/unowned, 1 = removed, 2 = would leave
-        # the outfit empty. The unlocked Python pre-check above is just a
-        # fast path; the RPC's locked check is authoritative (two concurrent
-        # removals of a 2-item outfit cannot both pass the pre-check and
-        # persist item_ids = []).
-        remove_result = await asyncio.to_thread(
-            db.rpc(
-                "remove_outfit_item",
-                {"outfit_uuid": outfit_id_str, "item_uuid": item_id_str, "user_uuid": user_id},
-            ).execute
+        # the outfit empty. The unlocked pre-check above is only a fast path.
+        remove_status = await outfit_service.remove_outfit_item_rpc(
+            db, outfit_id=outfit_id_str, item_id=item_id_str, user_id=user_id
         )
-        # remove_outfit_item RETURNS INTEGER (scalar). PostgREST delivers a
-        # scalar RPC's result as a bare value in `data` (e.g. data == 2), not a
-        # list — subscripting it (`data[0]`) raised TypeError and turned every
-        # removal into a 500. Read the integer status directly and tolerate the
-        # legacy list shape some test doubles still emit.
-        remove_status = getattr(remove_result, "data", None)
-        if isinstance(remove_status, (list, tuple)):
-            remove_status = remove_status[0] if remove_status else None
         if remove_status == 2:
             raise ValidationError(
                 "Outfit must contain at least one item",
                 details={"outfit_id": outfit_id_str}
             )
 
-        updated = await _fetch_outfit(db=db, user_id=user_id, outfit_id=outfit_id_str)
+        updated = await outfit_service.fetch_outfit(db=db, user_id=user_id, outfit_id=outfit_id_str)
         if not updated:
             raise DatabaseError("Failed to fetch updated outfit", operation="select")
         # Private buckets: materialize fresh presigned URLs at read time.
@@ -1587,12 +1048,14 @@ async def start_generation(
     """
     try:
         outfit_id_str = str(outfit_id)
-        outfit = await asyncio.to_thread(db.table("outfits").select("id").eq("id", outfit_id_str).eq("user_id", user_id).maybe_single().execute)
+        outfit = await outfit_service.fetch_owned_outfit_row(
+            db, outfit_id=outfit_id_str, user_id=user_id, columns="id"
+        )
         if not outfit or not outfit.data:
             raise OutfitNotFoundError(outfit_id=outfit_id_str)
 
         generation_id = str(uuid.uuid4())
-        now = _now()
+        now = utcnow_iso()
 
         insert = {
             "id": generation_id,
@@ -1610,7 +1073,7 @@ async def start_generation(
             "started_at": now,
             "completed_at": None,
         }
-        await asyncio.to_thread(db.table("outfit_generations").insert(insert).execute)
+        await outfit_service.insert_generation_row(db, insert=insert)
 
         return {
             "data": {"generation_id": generation_id, "status": "processing", "estimated_time": 30},
@@ -1631,22 +1094,16 @@ async def get_generation_status(
 ):
     try:
         generation_id_str = str(generation_id)
-        result = await asyncio.to_thread(
-            db.table("outfit_generations")
-            .select("*")
-            .eq("id", generation_id_str)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
+        row = await outfit_service.fetch_generation_row(
+            db, generation_id=generation_id_str, user_id=user_id
         )
-        if not result or not result.data:
+        if not row:
             raise NotFoundError(
                 "Generation not found",
                 resource_type="generation",
                 resource_id=generation_id_str
             )
 
-        row = result.data
         return {
             "data": {
                 "status": row.get("status"),
@@ -1668,41 +1125,6 @@ async def get_generation_status(
 # ============================================================================
 
 
-def _is_unique_violation(error: Exception) -> bool:
-    """True when a postgrest error reports a unique-constraint violation (23505)."""
-    error_info = getattr(error, "json", lambda: {})() or {}
-    code = error_info.get("code") or getattr(error, "code", None)
-    if code == "23505":
-        return True
-    text = str(error).lower()
-    return "duplicate key" in text or "unique constraint" in text
-
-
-async def _find_outfit_image_by_client_request_id(
-    db: Client, outfit_id: str, client_request_id: str
-) -> Optional[Dict[str, Any]]:
-    """Fetch the outfit image created with an idempotency key (F1-07).
-
-    ``None`` when no replay target exists — the upload proceeds normally.
-    """
-    result = await execute_with_reconnect(
-        lambda d: (
-            d.table("outfit_images")
-            .select("*")
-            .eq("outfit_id", outfit_id)
-            .eq("client_request_id", client_request_id)
-            .maybe_single()
-            .execute()
-        ),
-        db,
-        extra={"operation": "upload_outfit_image.replay_lookup", "outfit_id": outfit_id},
-        max_retries=1,
-    )
-    if not result or not result.data:
-        return None
-    return result.data
-
-
 @router.post("/{outfit_id}/images", response_model=Dict[str, Any], status_code=status.HTTP_201_CREATED)
 async def upload_outfit_image(
     outfit_id: UUID,
@@ -1720,7 +1142,7 @@ async def upload_outfit_image(
     try:
         # Form(max_length=20) already 422s this through FastAPI; the explicit
         # check keeps the direct-call path honest too (the DB column is
-        # VARCHAR(20), migration 001 — an overlong pose would 500 with 22001).
+        # VARCHAR(20), migration 001 -- an overlong pose would 500 with 22001).
         # The isinstance guard skips the raw Form(...) default that direct
         # calls receive (FastAPI resolves it to a real string at request time).
         if isinstance(pose, str) and len(pose) > 20:
@@ -1735,33 +1157,26 @@ async def upload_outfit_image(
                 parsed_profile_id = uuid.UUID(body_profile_id)
             except (ValueError, AttributeError, TypeError):
                 raise ValidationError("body_profile_id must be a valid UUID")
-            profile = await asyncio.to_thread(
-                db.table("body_profiles")
-                .select("id")
-                .eq("id", str(parsed_profile_id))
-                .eq("user_id", user_id)
-                .maybe_single()
-                .execute
+            profile = await outfit_service.fetch_owned_body_profile(
+                db, profile_id=str(parsed_profile_id), user_id=user_id
             )
             if not profile or not profile.data:
                 raise ValidationError("body_profile_id does not belong to the current user")
             body_profile_id_value = str(parsed_profile_id)
 
         outfit_id_str = str(outfit_id)
-        outfit = await asyncio.to_thread(db.table("outfits").select("id").eq("id", outfit_id_str).eq("user_id", user_id).maybe_single().execute)
+        outfit = await outfit_service.fetch_owned_outfit_row(
+            db, outfit_id=outfit_id_str, user_id=user_id, columns="id"
+        )
         if not outfit or not outfit.data:
             raise OutfitNotFoundError(outfit_id=outfit_id_str)
 
-        # F1-07: client idempotency. The client retries this upload on
-        # transport failures; when the first attempt committed but the
-        # response was lost, the retry used to insert a duplicate
-        # outfit_images row AND a duplicate storage object. A repeated
-        # client_request_id replays the original row instead. The
-        # generation-complete update is re-issued too (idempotent, scoped):
-        # a first attempt that died between the image insert and that update
-        # must not leave the generation record stuck in `processing`.
+        # F1-07: client idempotency. A repeated client_request_id replays the
+        # original row instead of inserting a duplicate image and storage
+        # object. The generation-complete update is re-issued too (idempotent,
+        # scoped) so a generation never stays stuck in `processing`.
         if client_request_id:
-            existing = await _find_outfit_image_by_client_request_id(
+            existing = await outfit_service.find_outfit_image_by_client_request_id(
                 db, outfit_id_str, client_request_id
             )
             if existing:
@@ -1772,20 +1187,13 @@ async def upload_outfit_image(
                     image_id=existing["id"],
                 )
                 if generation_id:
-                    await asyncio.to_thread(
-                        db.table("outfit_generations")
-                        .update(
-                            {
-                                "status": GenerationStatus.COMPLETED.value,
-                                "progress": 100,
-                                "image_urls": [existing["image_url"]],
-                                "completed_at": _now(),
-                            }
-                        )
-                        .eq("id", generation_id)
-                        .eq("user_id", user_id)
-                        .eq("outfit_id", outfit_id_str)
-                        .execute
+                    await outfit_service.mark_generation_completed(
+                        db,
+                        generation_id=generation_id,
+                        user_id=user_id,
+                        outfit_id=outfit_id_str,
+                        image_url=existing["image_url"],
+                        completed_at=utcnow_iso(),
                     )
                 return {"data": existing, "message": "Created"}
 
@@ -1801,7 +1209,7 @@ async def upload_outfit_image(
             generation_type="ai",
         )
 
-        now = _now()
+        now = utcnow_iso()
         img_row = {
             "id": str(uuid.uuid4()),
             "outfit_id": outfit_id_str,
@@ -1820,142 +1228,31 @@ async def upload_outfit_image(
             "created_at": now,
         }
 
-        # A4-17: the image insert and the primary reassignment are committed as
-        # ONE server-side transaction (add_outfit_image_and_set_primary,
-        # migration 045), so a crash between them can never leave two primary
-        # images (or a primary flag on a row that never committed). The RPC
-        # also resolves client_request_id replays without a 23505 collision.
-        # The two-step insert-then-clear survives only as the fallback for the
-        # migration gap (RPC missing -> PGRST202).
-        try:
-            rpc_params = {
-                "p_outfit_uuid": outfit_id_str,
-                "p_user_uuid": user_id,
-                "p_image_id": img_row["id"],
-                "p_image_url": img_row["image_url"],
-                "p_thumbnail_url": img_row.get("thumbnail_url"),
-                "p_storage_path": img_row.get("storage_path"),
-                "p_pose": img_row["pose"],
-                "p_lighting": img_row.get("lighting"),
-                "p_body_profile_id": img_row.get("body_profile_id"),
-                "p_generation_type": img_row.get("generation_type") or "ai",
-                "p_is_primary": bool(is_primary),
-                "p_width": img_row.get("width"),
-                "p_height": img_row.get("height"),
-                "p_generation_metadata": img_row.get("generation_metadata"),
-                "p_client_request_id": img_row.get("client_request_id"),
-                "p_created_at": now,
-            }
-            # Build the RPC inside the worker thread so a same-key race
-            # actually contends on the fake/real mutation, not on the
-            # event-loop thread that would otherwise evaluate db.rpc().
-            rpc_result = await asyncio.to_thread(
-                lambda: db.rpc(
-                    "add_outfit_image_and_set_primary",
-                    rpc_params,
-                ).execute()
-            )
-        except Exception as e:
-            if not is_pgrst202_missing_rpc(e):
-                raise
-            logger.warning(
-                "add_outfit_image_and_set_primary RPC missing (migration 045 "
-                "not applied); falling back to two-step insert + primary clear",
-                outfit_id=outfit_id_str,
-            )
-            # Two concurrent uploads with the SAME client_request_id both
-            # missed the replay lookup above and raced to insert; the loser
-            # hits the unique index (23505). Replay the winner's row rather
-            # than surfacing a 500 the client would retry into the same dead
-            # end (F1-07).
-            try:
-                insert_result = await asyncio.to_thread(db.table("outfit_images").insert(img_row).execute)
-            except Exception as insert_err:
-                if client_request_id and _is_unique_violation(insert_err):
-                    winner = await _find_outfit_image_by_client_request_id(
-                        db, outfit_id_str, client_request_id
-                    )
-                    if winner:
-                        logger.info(
-                            "Upload outfit image race collapsed onto client_request_id winner",
-                            user_id=user_id,
-                            outfit_id=outfit_id_str,
-                            image_id=winner["id"],
-                        )
-                        return {"data": winner, "message": "Created"}
-                raise
-            new_image_id = insert_result.data[0]["id"] if insert_result.data else None
-
-            if is_primary and new_image_id:
-                try:
-                    await asyncio.to_thread(
-                        db.rpc(
-                            "set_primary_outfit_image",
-                            {"outfit_uuid": outfit_id_str, "image_uuid": new_image_id},
-                        ).execute
-                    )
-                except Exception as primary_err:
-                    if not is_pgrst202_missing_rpc(primary_err):
-                        raise
-                    # Clear is_primary on all OTHER images for this outfit
-                    await asyncio.to_thread(
-                        db.table("outfit_images")
-                        .update({"is_primary": False})
-                        .eq("outfit_id", outfit_id_str)
-                        .neq("id", new_image_id)
-                        .execute
-                    )
-        else:
-            # add_outfit_image_and_set_primary RETURNS UUID (scalar) — PostgREST
-            # delivers a scalar RPC's result as a bare value in `data`, not a
-            # list. Subscripting it (`data[0]`) truncated a UUID to one
-            # character and broke the winner-resolution below. Read the scalar
-            # directly, tolerating the legacy list shape some test doubles emit.
-            rpc_value = getattr(rpc_result, "data", None)
-            if isinstance(rpc_value, (list, tuple)):
-                new_image_id = rpc_value[0] if rpc_value else img_row["id"]
-            else:
-                new_image_id = rpc_value or img_row["id"]
-
-        # The RPC resolves a client_request_id replay to the WINNER row and
-        # returns its id, but the locally-built img_row is the LOSER's. If they
-        # differ, re-fetch the winner so the generation-complete update and the
-        # response reference the persisted/primary image rather than the loser
-        # the client never sees again (F1-07).
-        result_row = img_row
-        if new_image_id and new_image_id != img_row["id"]:
-            winner_result = await asyncio.to_thread(
-                db.table("outfit_images")
-                .select("*")
-                .eq("id", new_image_id)
-                .eq("outfit_id", outfit_id_str)
-                .maybe_single()
-                .execute
-            )
-            winner_row = getattr(winner_result, "data", None)
-            if winner_row:
-                result_row = winner_row
-                logger.info(
-                    "Upload outfit image returned RPC winner row",
-                    user_id=user_id,
-                    outfit_id=outfit_id_str,
-                    winner_image_id=new_image_id,
-                    loser_image_id=img_row["id"],
-                )
+        # Persist the row and primary flag (see outfit_service.save_outfit_image).
+        # ``collapsed`` is True when a concurrent same-key upload won the race;
+        # the winner row is returned and the generation update is skipped.
+        result_row, collapsed = await outfit_service.save_outfit_image(
+            db,
+            outfit_id=outfit_id_str,
+            user_id=user_id,
+            img_row=img_row,
+            is_primary=bool(is_primary),
+            client_request_id=client_request_id,
+        )
+        if collapsed:
+            return {"data": result_row, "message": "Created"}
 
         # Mark generation complete if provided. The update is scoped by the
-        # outfit as well as the id/user: a client-supplied generation_id from
-        # a different outfit could otherwise mark a foreign generation
-        # complete (the request's own outfit row was already verified above).
+        # outfit as well as the id/user (see outfit_service.mark_generation_completed).
         if generation_id:
-            await asyncio.to_thread(db.table("outfit_generations").update(
-                {
-                    "status": GenerationStatus.COMPLETED.value,
-                    "progress": 100,
-                    "image_urls": [result_row["image_url"]],
-                    "completed_at": now,
-                }
-            ).eq("id", generation_id).eq("user_id", user_id).eq("outfit_id", outfit_id_str).execute)
+            await outfit_service.mark_generation_completed(
+                db,
+                generation_id=generation_id,
+                user_id=user_id,
+                outfit_id=outfit_id_str,
+                image_url=result_row["image_url"],
+                completed_at=now,
+            )
 
         return {"data": result_row, "message": "Created"}
 
@@ -1978,28 +1275,18 @@ async def delete_outfit_image(
         outfit_id_str = str(outfit_id)
         image_id_str = str(image_id)
 
-        outfit = await execute_with_reconnect(
-            lambda d: d.table("outfits")
-            .select("id")
-            .eq("id", outfit_id_str)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute(),
+        outfit = await outfit_service.fetch_owned_outfit_row(
             db,
-            extra={"operation": "delete_outfit_image.load_outfit", "outfit_id": outfit_id_str},
+            outfit_id=outfit_id_str,
+            user_id=user_id,
+            columns="id",
+            operation="delete_outfit_image.load_outfit",
         )
         if not outfit or not outfit.data:
             raise OutfitNotFoundError(outfit_id=outfit_id_str)
 
-        img = await execute_with_reconnect(
-            lambda d: d.table("outfit_images")
-            .select("id, storage_path")
-            .eq("id", image_id_str)
-            .eq("outfit_id", outfit_id_str)
-            .maybe_single()
-            .execute(),
-            db,
-            extra={"operation": "delete_outfit_image.load_image", "outfit_id": outfit_id_str, "image_id": image_id_str},
+        img = await outfit_service.fetch_outfit_image_for_delete(
+            db, outfit_id=outfit_id_str, image_id=image_id_str
         )
         if not img or not img.data:
             raise ImageNotFoundError(image_id=image_id_str)
@@ -2013,14 +1300,8 @@ async def delete_outfit_image(
 
         # Idempotent delete (see delete_outfit): heal a dead pooled
         # Supabase connection with one rebuild + retry instead of a 500.
-        await execute_with_reconnect(
-            lambda d: d.table("outfit_images")
-            .delete()
-            .eq("id", image_id_str)
-            .eq("outfit_id", outfit_id_str)
-            .execute(),
-            db,
-            extra={"operation": "delete_outfit_image.delete", "outfit_id": outfit_id_str, "image_id": image_id_str},
+        await outfit_service.delete_outfit_image_row(
+            db, outfit_id=outfit_id_str, image_id=image_id_str
         )
         return {"data": {"deleted": True}, "message": "OK"}
     except (OutfitNotFoundError, ImageNotFoundError):
@@ -2037,14 +1318,7 @@ async def get_outfit_stats(
 ):
     """Compute outfit statistics for analytics/dashboard."""
     try:
-        outfits = (
-            (await asyncio.to_thread(db.table("outfits")
-            .select("id,name,style,season,worn_count,created_at")
-            .eq("user_id", user_id)
-            .execute))
-            .data
-            or []
-        )
+        outfits = await outfit_service.list_outfit_stat_rows(db, user_id=user_id)
 
         total_outfits = len(outfits)
         outfits_by_style: Dict[str, int] = {}
@@ -2103,8 +1377,10 @@ async def batch_delete_outfits(
                 # derived _thumb siblings, so this is ~2x the image count.
                 logger.warning("Failed to delete outfit images from storage", object_count=len(storage_paths), error=str(e))
 
-        delete_res = await asyncio.to_thread(db.table("outfits").delete().eq("user_id", user_id).in_("id", outfit_ids).execute)
-        deleted_count = len(delete_res.data or [])
+        deleted_rows = await outfit_service.delete_outfits_by_ids(
+            db, user_id=user_id, outfit_ids=outfit_ids
+        )
+        deleted_count = len(deleted_rows)
         return {"data": {"deleted_count": deleted_count}, "message": "OK"}
     except ValidationError:
         raise
@@ -2120,16 +1396,10 @@ async def recently_worn(
     db: Client = Depends(get_db),
 ):
     try:
-        res = await asyncio.to_thread(
-            db.table("outfits")
-            .select("*, outfit_images(*)")
-            .eq("user_id", user_id)
-            .not_.is_("last_worn_at", "null")
-            .order("last_worn_at", desc=True)
-            .limit(limit)
-            .execute
+        rows = await outfit_service.list_recently_worn_outfit_rows(
+            db, user_id=user_id, limit=limit
         )
-        outfits = [_normalize_outfit_images(o) for o in (res.data or [])]
+        outfits = [_normalize_outfit_images(o) for o in rows]
         # Private buckets: materialize fresh presigned URLs at read time.
         outfits = await materialize_parent_images(outfits, owner_user_id=user_id)
         return {"data": {"outfits": outfits}, "message": "OK"}
@@ -2144,16 +1414,8 @@ async def favorites(
     db: Client = Depends(get_db),
 ):
     try:
-        res = await asyncio.to_thread(
-            db.table("outfits")
-            .select("*, outfit_images(*)")
-            .eq("user_id", user_id)
-            .eq("is_favorite", True)
-            .order("updated_at", desc=True)
-            .limit(100)
-            .execute
-        )
-        outfits = [_normalize_outfit_images(o) for o in (res.data or [])]
+        rows = await outfit_service.list_favorite_outfit_rows(db, user_id=user_id)
+        outfits = [_normalize_outfit_images(o) for o in rows]
         # Private buckets: materialize fresh presigned URLs at read time.
         outfits = await materialize_parent_images(outfits, owner_user_id=user_id)
         return {"data": {"outfits": outfits}, "message": "OK"}
@@ -2177,16 +1439,8 @@ async def weather_suggestions(
         elif temperature > 25:
             season = "summer"
 
-        outfits_res = await asyncio.to_thread(
-            db.table("outfits")
-            .select("*, outfit_images(*)")
-            .eq("user_id", user_id)
-            .order("updated_at", desc=True)
-            .limit(50)
-            .execute
-        )
-        outfits = outfits_res.data or []
-        outfits = [_normalize_outfit_images(o) for o in outfits]
+        rows = await outfit_service.list_recent_outfit_rows(db, user_id=user_id, limit=50)
+        outfits = [_normalize_outfit_images(o) for o in rows]
         # Private buckets: materialize fresh presigned URLs at read time.
         outfits = await materialize_parent_images(outfits, owner_user_id=user_id)
 

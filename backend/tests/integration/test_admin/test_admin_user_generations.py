@@ -134,7 +134,7 @@ def _photoshoot_row(**overrides) -> dict:
     row = {
         "id": "ps_1",
         "user_id": USER,
-        "status": "complete",
+        "status": "completed",
         "use_case": "aesthetic",
         "custom_prompt": "golden hour",
         "num_images": 2,
@@ -299,7 +299,7 @@ async def test_kind_all_merges_sorted_with_exact_counts():
                 {"id": "job_old", "user_id": USER, "status": "completed", "created_at": "2026-09-01T00:00:00Z"}
             ],
             "photoshoot_jobs": [
-                {"id": "ps_new", "user_id": USER, "status": "complete", "created_at": "2026-09-05T00:00:00Z"}
+                {"id": "ps_new", "user_id": USER, "status": "completed", "created_at": "2026-09-05T00:00:00Z"}
             ],
             "social_import_jobs": [
                 {"id": "imp_mid", "user_id": USER, "status": "completed", "created_at": "2026-09-03T00:00:00Z"}
@@ -438,7 +438,7 @@ async def test_photoshoot_detail_reaches_job_beyond_list_window():
         {
             "id": f"ps_{i:02d}",
             "user_id": USER,
-            "status": "complete",
+            "status": "completed",
             "use_case": "linkedin",
             "created_at": f"2026-01-{1 + i // 24:02d}T{i % 24:02d}:00:00Z",
         }

@@ -111,6 +111,7 @@ const _$PhotoshootStatusEnumMap = {
   PhotoshootStatus.pending: 'pending',
   PhotoshootStatus.generating: 'generating',
   PhotoshootStatus.complete: 'complete',
+  PhotoshootStatus.completed: 'completed',
   PhotoshootStatus.failed: 'failed',
 };
 

@@ -17,6 +17,14 @@ import { tryOnUsedKey } from '@/lib/activation';
 import { fileToReplayablePreview } from '@/lib/replayable-preview';
 import { getTryOnErrorMessage } from '@/lib/try-on-errors';
 import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
+import {
+  AVATAR_INITIAL,
+  createTryOnMachine,
+  transitionAvatar,
+  transitionTryOn,
+  type TryOnStep,
+} from './tryOnMachine';
+import { useStateMachine } from './useStateMachine';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,8 +43,6 @@ import { WizardSteps } from '@/components/ui/wizard-steps';
 import { GeneratingSurface } from '@/components/jobs';
 import { cn, downloadBlob } from '@/lib/utils';
 import { imageFetchOptions } from '@/lib/sessionCookie';
-
-type TryOnStep = 'upload' | 'options' | 'generating' | 'result';
 
 const STYLE_OPTIONS = [
   { value: 'casual', label: 'Casual' },
@@ -89,6 +95,39 @@ let tryOnRunSeq = 0;
  */
 let lastTryOnResult: { runId: number; result: TryOnResult } | null = null;
 
+/** Latest failed run by run id. Same role as lastTryOnResult, for errors. */
+let lastTryOnFailure: { runId: number; message: string } | null = null;
+
+function isTryOnPillActive(): boolean {
+  const job = useJobUiStore.getState().job;
+  return job?.id === 'try-on' && job.isActive === true;
+}
+
+/**
+ * The only writers of the shared try-on pill. Call them after the step
+ * machine has accepted the matching event.
+ */
+function beginTryOnPill() {
+  useJobUiStore.getState().setJob({
+    id: 'try-on',
+    label: 'Generating try-on…',
+    isActive: true,
+    href: '/try-on',
+  });
+}
+
+/** Clears the pill only while `runId` still owns it. */
+function endTryOnPill(runId: number) {
+  if (runId !== tryOnRunSeq) return;
+  useJobUiStore.getState().clearJob('try-on');
+}
+
+/** Abandons the current run (cancel or reset) and clears the pill. */
+function abandonTryOnRun() {
+  tryOnRunSeq += 1;
+  useJobUiStore.getState().clearJob('try-on');
+}
+
 /**
  * Resolve the best renderable source for a try-on result. URL-first (the
  * backend persists to object storage); base64 only as the storage-failure
@@ -112,31 +151,29 @@ export default function TryOnPage() {
   const setUser = useAuthStore((s) => s.setUser);
   const user = useCurrentUser();
   const { toast } = useToast();
-  const setJob = useJobUiStore((s) => s.setJob);
-  const clearJob = useJobUiStore((s) => s.clearJob);
   /**
-   * In-flight lives in the shared job store, not a module-level `let`, so it
-   * survives a remount (the pill must not vanish) AND stays recoverable:
-   * `clearJob('try-on')` — which the Cancel action below calls — resets it from
-   * anywhere, instead of being writable only from inside `handleGenerate`.
+   * Single source of truth for the step, the garment flag and the run outcome.
+   * Transitions come from the pure table in ./tryOnMachine. A remount restores
+   * the generating step from the shared pill once, at mount. The pill is never
+   * mirrored into local state.
    */
-  const isRequestInFlight = useJobUiStore(
-    (s) => s.job?.id === 'try-on' && s.job.isActive === true
+  const [machine, send, getMachine] = useStateMachine(
+    () => createTryOnMachine(isTryOnPillActive()),
+    transitionTryOn
   );
-
-  const [step, setStep] = useState<TryOnStep>('upload');
+  const step: TryOnStep = machine.step;
   const clothingFileRef = useRef<File | null>(null);
   const [clothingPreview, setClothingPreview] = useState<string | null>(null);
   const [clothingDescription, setClothingDescription] = useState('');
   const [style, setStyle] = useState('casual');
   const [background, setBackground] = useState('studio white');
   const [pose, setPose] = useState('standing front');
-  const [isGenerating, setIsGenerating] = useState(false);
+  const isGenerating = step === 'generating';
   // Single opaque backend call — no phases to report, so show elapsed time
   // rather than a fabricated percentage.
   const tryOnElapsed = useElapsedSeconds(isGenerating);
-  const [result, setResult] = useState<TryOnResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const result = machine.result;
+  const error = machine.error;
   // Result-image self-heal: the backend's image_url is a short-lived
   // presigned URL, so a result rendered long after generation (or after an
   // expired-URL moment) can fail to load. On error we re-mint ONCE via
@@ -148,8 +185,10 @@ export default function TryOnPage() {
   const previewUrlRef = useRef<string | null>(null);
   // Uploading = client sending bytes (real % from axios progress, else
   // indeterminate); Processing = server has the file, we're just waiting.
-  const [avatarPhase, setAvatarPhase] = useState<'uploading' | 'processing' | null>(null);
-  const [avatarUploadPercent, setAvatarUploadPercent] = useState<number | null>(null);
+  const [avatar, sendAvatar] = useStateMachine(AVATAR_INITIAL, transitionAvatar);
+  const avatarPhase =
+    avatar.phase === 'uploading' || avatar.phase === 'processing' ? avatar.phase : null;
+  const avatarUploadPercent = avatar.percent;
   const avatarElapsed = useElapsedSeconds(avatarPhase === 'processing');
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
@@ -166,35 +205,33 @@ export default function TryOnPage() {
     };
   }, [revokePreviewUrl]);
 
-  // Mirrors the shared in-flight bit into local UI state, both ways.
-  // `handleGenerate` owns setJob/clearJob; this effect never creates a pill.
+  // The shared pill is the cross-page signal. When it retires while this page
+  // is generating, the run ended elsewhere: a remounted instance resolved it,
+  // or another caller cleared it. Land the stored outcome for the CURRENT run,
+  // or abandon the run. Nothing is copied from the store into local state.
   useEffect(() => {
-    if (isRequestInFlight && !isGenerating) {
-      // Remounted (or navigated back) mid-request — restore the wait screen.
-      setIsGenerating(true);
-      setStep('generating');
-      return;
-    }
-    if (!isRequestInFlight && isGenerating && step === 'generating') {
-      // The job was retired without this instance resolving it: cancelled, or
-      // the response landed on a previous mount. If a result exists for the
-      // CURRENT run (module-level), land it — a remounted page must never
-      // silently bounce to Options with the render lost.
+    const reconcile = (jobState: ReturnType<typeof useJobUiStore.getState>) => {
+      const pillActive = jobState.job?.id === 'try-on' && jobState.job.isActive === true;
+      if (pillActive || getMachine().step !== 'generating') return;
       const landed = lastTryOnResult;
       if (landed && landed.runId === tryOnRunSeq) {
-        setIsGenerating(false);
-        setResult(landed.result);
-        setStep('result');
+        send({ type: 'SUCCESS', result: landed.result });
         return;
       }
-      // No result for this run: genuinely cancelled/failed. Unwedge instead
-      // of spinning. The options step requires a clothing preview, which a
-      // fresh mount does not have — land on upload rather than a blank
-      // options card.
-      setIsGenerating(false);
-      setStep(clothingPreview ? 'options' : 'upload');
-    }
-  }, [isRequestInFlight, isGenerating, step, clothingPreview]);
+      const failed = lastTryOnFailure;
+      if (failed && failed.runId === tryOnRunSeq) {
+        send({ type: 'FAIL', message: failed.message });
+        return;
+      }
+      abandonTryOnRun();
+      send({ type: 'CANCEL' });
+    };
+    const unsubscribe = useJobUiStore.subscribe(reconcile);
+    // A pill clear that ran between render and this subscription has no event
+    // to observe. Reconcile once against the current store state.
+    reconcile(useJobUiStore.getState());
+    return unsubscribe;
+  }, [send, getMachine]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -205,7 +242,6 @@ export default function TryOnPage() {
     // preview, so fidelity is unaffected.
     revokePreviewUrl();
     clothingFileRef.current = file;
-    setError(null);
     void fileToReplayablePreview(file).then((url) => {
       if (clothingFileRef.current !== file) {
         // Superseded by another pick (or reset) before the preview resolved.
@@ -215,9 +251,9 @@ export default function TryOnPage() {
       }
       previewUrlRef.current = url;
       setClothingPreview(url);
-      setStep('options');
+      send({ type: 'PICK_GARMENT' });
     });
-  }, [revokePreviewUrl]);
+  }, [revokePreviewUrl, send]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -229,22 +265,19 @@ export default function TryOnPage() {
   });
 
   const handleAvatarUpload = async (file: File) => {
-    setAvatarPhase('uploading');
-    setAvatarUploadPercent(null);
+    if (!sendAvatar({ type: 'PICK_AVATAR' })) return;
     try {
       const { avatar_url } = await uploadAvatar(file, (percent) => {
-        setAvatarUploadPercent(percent);
-        if (percent >= 100) setAvatarPhase('processing');
+        sendAvatar({ type: 'PROGRESS', percent });
       });
+      sendAvatar({ type: 'UPLOADED' });
       if (user) {
         setUser({ ...user, avatar_url });
       }
       toast({ title: 'Photo added', description: 'You can generate a try-on now.' });
     } catch {
       // api/client interceptor already toasts the failure.
-    } finally {
-      setAvatarPhase(null);
-      setAvatarUploadPercent(null);
+      sendAvatar({ type: 'UPLOAD_FAILED' });
     }
   };
 
@@ -259,19 +292,16 @@ export default function TryOnPage() {
       return;
     }
 
+    // Transition first. A rejected START (already generating, or no garment)
+    // stops here, before any run id or pill is created.
+    if (!send({ type: 'START' })) return;
     const runId = ++tryOnRunSeq;
-    setIsGenerating(true);
-    setStep('generating');
-    setError(null);
+    lastTryOnResult = null;
+    lastTryOnFailure = null;
     setResultImageSrc(null);
     setResultImageError(false);
     resultSrcRemintRef.current = false;
-    setJob({
-      id: 'try-on',
-      label: 'Generating try-on…',
-      isActive: true,
-      href: '/try-on',
-    });
+    beginTryOnPill();
 
     try {
       const options: TryOnOptions = {
@@ -293,15 +323,15 @@ export default function TryOnPage() {
       if (!resolveResultSrc(tryOnResult)) {
         // Provider returned no image payload at all: an empty result must be
         // a visible failure (with retry), never a silent broken result screen.
-        setError('The generated image came back empty. Please try again.');
-        setStep('options');
+        const message = 'The generated image came back empty. Please try again.';
+        lastTryOnFailure = { runId, message };
+        send({ type: 'FAIL', message });
         return;
       }
-      // Publish before the step transition so a remount racing this response
-      // can still land the render (see the unwedge effect).
+      // Publish before the transition so a remount racing this response can
+      // still land the render (see the subscription effect).
       lastTryOnResult = { runId, result: tryOnResult };
-      setResult(tryOnResult);
-      setStep('result');
+      send({ type: 'SUCCESS', result: tryOnResult });
       try {
         localStorage.setItem(tryOnUsedKey(user?.id), '1');
       } catch {
@@ -309,49 +339,35 @@ export default function TryOnPage() {
       }
     } catch (err) {
       if (tryOnRunSeq !== runId) return;
-      setError(getTryOnErrorMessage(err));
-      setStep('options');
+      const message = getTryOnErrorMessage(err);
+      lastTryOnFailure = { runId, message };
+      send({ type: 'FAIL', message });
     } finally {
-      // Cancelled/superseded runs must not retire a newer request's pill.
-      // The check reads the module-level counter so a stale remount's
-      // response cannot clear a newer run's shared pill.
-      if (tryOnRunSeq === runId) {
-        // Clear the shared flag before local state so the restore effect above
-        // cannot immediately flip us back into `generating`.
-        clearJob('try-on');
-        setIsGenerating(false);
-      }
+      // Cancelled or superseded runs never clear a newer run's pill.
+      endTryOnPill(runId);
     }
   };
 
   const handleCancelGenerate = () => {
-    // Abandon the in-flight response (the API call itself keeps running); the
-    // effect above unwinds the local step once the shared flag drops. The
-    // counter advances so neither this instance nor a stale remount's
-    // response can clear a newer run's pill.
-    tryOnRunSeq += 1;
-    clearJob('try-on');
+    // The API call keeps running, but its response is abandoned: the run id
+    // advances, so neither this instance nor a remount can land it.
+    send({ type: 'CANCEL' });
+    abandonTryOnRun();
   };
 
   const handleReset = () => {
-    // If the user stepped back to options mid-generation and now resets, the
-    // in-flight response must not land afterwards and surprise them with a
-    // result screen for a flow they just abandoned.
-    if (isGenerating) {
-      tryOnRunSeq += 1;
-      clearJob('try-on');
-      setIsGenerating(false);
-    }
+    // Reset mid-generation abandons the run, so its response can never land
+    // a result screen for a flow the user has left.
+    const wasGenerating = getMachine().step === 'generating';
+    send({ type: 'RESET' });
+    if (wasGenerating) abandonTryOnRun();
     revokePreviewUrl();
     clothingFileRef.current = null;
     setClothingPreview(null);
     setClothingDescription('');
-    setResult(null);
     setResultImageSrc(null);
     setResultImageError(false);
     resultSrcRemintRef.current = false;
-    setError(null);
-    setStep('upload');
   };
 
   const handleDownload = async () => {
@@ -377,7 +393,6 @@ export default function TryOnPage() {
   };
 
   const handleRegenerate = () => {
-    setResult(null);
     void handleGenerate();
   };
 
@@ -475,14 +490,7 @@ export default function TryOnPage() {
       <WizardSteps
         steps={[...STEPS]}
         currentStepId={step}
-        onStepClick={isGenerating ? undefined : (id) => {
-          const order: TryOnStep[] = ['upload', 'options', 'generating', 'result'];
-          const target = order.indexOf(id as TryOnStep);
-          const current = order.indexOf(step);
-          if (target >= 0 && target < current && id !== 'generating') {
-            setStep(id as TryOnStep);
-          }
-        }}
+        onStepClick={isGenerating ? undefined : (id) => send({ type: 'STEP_BACK', to: id as TryOnStep })}
       />
 
       {step === 'upload' && (
@@ -494,6 +502,7 @@ export default function TryOnPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="px-4 pb-4 md:px-6 md:pb-6">
+            {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
             <div
               {...getRootProps()}
               className={cn(

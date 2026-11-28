@@ -1,6 +1,6 @@
 # Frontend
 
-Last updated: 2026-10-26
+Last updated: 2026-11-28
 
 React + TypeScript web app under `frontend/`. Package-local agent entry: `frontend/AGENTS.md` (thin pointer here). UI direction: `docs/DESIGN.md`.
 
@@ -54,7 +54,7 @@ All HTTP goes through `src/api/client.ts`:
 - Auth token injection
 - Refresh on 401 with request queue
 - Global error toasts (`skipToast` to opt out)
-- `getApiError()` for consistent messages
+- `getApiError()` (from `src/lib/errors.ts`) for consistent messages
 
 Domain modules: `src/api/*.ts` (auth, items, outfits, ai, batch, etc.).
 
@@ -199,15 +199,14 @@ Inter and Manrope are **self-hosted from `public/fonts/`** with two hand-written
 `@font-face` rules at the top of `src/index.css`, named to match
 `tailwind.config.ts` (`Inter`, `Manrope`).
 
-The paper studio landing adds four more: **Paper Studio** (Basteleur Bold,
-display / the H1) and **Paper Studio Moonlight** (section heads), each with a
-Georgia-based metric-override Fallback face so `font-display: swap` does not
-shift the layout. The Basteleur subsets were made with `pyftsubset` and renamed
-"Paper Studio" because the SIL OFL reserves the "Basteleur" name for unmodified
-versions. All six `@font-face` rules live at the top of `src/index.css`; the
-landing type is applied through the `.paper-display` / `.paper-head` classes,
-and Paper Studio Bold carries `.paper-display` on the hero H1 — the mobile LCP
-element — preloaded from the prerendered HTML.
+The public marketing site (`PublicLayout`, landing page, `Navbar`, `Footer`,
+feature pages, SEO pages, blog, and legal pages) uses the Snaptitle-inspired
+crayon-and-paper design system (`src/styles/crayon.css`) with **Gaegu**
+(weight 700, `public/fonts/gaegu-700-latin.woff2` + `Gaegu Fallback`), **Inter**,
+and **JetBrains Mono** (`public/fonts/jetbrains-mono-latin-var.woff2`). On `/`,
+`scripts/prerender-html.mjs` preloads `gaegu-700-latin.woff2` alongside
+`inter-latin-var.woff2` and the hero LCP image. The `Paper Studio` (Basteleur)
+subsets remain in `public/fonts/` for `scripts/creative/` store-listing builds.
 
 Do not reintroduce `@fontsource-variable/*`: those packages register the
 families as `"Inter Variable"` / `"Manrope Variable"`, which never matched the

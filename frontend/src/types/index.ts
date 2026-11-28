@@ -600,7 +600,7 @@ export interface MultiItemDetectionResult {
  */
 export interface MultiItemExtractionState {
   /** Current step in the flow */
-  step: "upload" | "detecting" | "generating" | "review" | "saving";
+  step: BatchExtractionStep;
   /** Original uploaded file */
   originalFile: File | null;
   /** Original image preview URL */
@@ -893,12 +893,19 @@ export interface JobCompleteData {
 }
 
 /**
+ * Every step of the batch extraction flow. Single source of truth: the store,
+ * the hook, the transition table (stores/batchExtractionMachine.ts), and the UI
+ * all use this union.
+ */
+export type BatchExtractionStep =
+  "select" | "uploading" | "extracting" | "generating" | "review" | "saving";
+
+/**
  * State for the batch extraction flow
  */
 export interface BatchExtractionState {
   /** Current step in the flow */
-  step:
-    "select" | "uploading" | "extracting" | "generating" | "review" | "saving";
+  step: BatchExtractionStep;
   /** All selected images */
   images: BatchImageInput[];
   /** Current job ID */
@@ -1193,6 +1200,7 @@ export interface PlanDetails {
     monthly_extractions: number;
     monthly_generations: number;
     monthly_embeddings: number;
+    daily_photoshoot_images?: number;
   };
   features: string[];
 }

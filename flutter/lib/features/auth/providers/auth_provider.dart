@@ -11,7 +11,7 @@ import '../../../core/services/persistence_service.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/utils/error_handler.dart';
 import '../../../core/i18n/l10n.dart';
-import '../../subscription/repositories/subscription_repository.dart';
+import '../../subscription/providers/subscription_providers.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/referral_service.dart';
@@ -54,7 +54,9 @@ final referralServiceProvider = Provider<ReferralService>(
   ),
 );
 final userInitializationServiceProvider = Provider<UserInitializationService>(
-  (ref) => UserInitializationService(subscriptionRepo: SubscriptionRepository()),
+  (ref) => UserInitializationService(
+    subscriptionRepo: ref.read(subscriptionRepositoryProvider),
+  ),
 );
 final supabaseServiceProvider = Provider<SupabaseService>(
   (ref) => SupabaseService.instance,

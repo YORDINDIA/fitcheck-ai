@@ -1,0 +1,20 @@
+{
+  "free": {
+    "monthly_extractions": 50,
+    "monthly_generations": 50,
+    "monthly_embeddings": 200,
+    "daily_photoshoot_images": 10
+  },
+  "plus": {
+    "monthly_extractions": 200,
+    "monthly_generations": 350,
+    "monthly_embeddings": 2000,
+    "daily_photoshoot_images": 30
+  },
+  "pro": {
+    "monthly_extractions": 400,
+    "monthly_generations": 1000,
+    "monthly_embeddings": 5000,
+    "daily_photoshoot_images": 50
+  }
+}

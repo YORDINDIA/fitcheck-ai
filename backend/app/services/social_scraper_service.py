@@ -264,7 +264,7 @@ class SocialScraperService:
             )
         except Exception as e:
             # Keep the full traceback so production failures are diagnosable,
-            # not just the stringified message (SIMPLIFY B1).
+            # not just the stringified message (TD-147).
             cls._logger.exception(
                 "Unexpected error during Instagram login",
                 extra={"error": str(e)},

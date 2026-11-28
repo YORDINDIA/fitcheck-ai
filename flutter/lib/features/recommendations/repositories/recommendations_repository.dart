@@ -25,15 +25,13 @@ class RecommendationsRepository {
 
   /// Find matching items for selected items
   Future<Map<String, dynamic>> findMatchingItems(List<String> itemIds) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.recommendations}/match',
         data: {'item_ids': itemIds},
       );
       return _extractDataMap(response);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get complete look suggestions
@@ -43,7 +41,7 @@ class RecommendationsRepository {
     String? season,
     String? occasion,
   }) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.post(
         '${ApiConstants.recommendations}/complete-look',
         data: {
@@ -54,9 +52,7 @@ class RecommendationsRepository {
         queryParameters: {if (style != null) 'style': style},
       );
       return _extractDataMap(response);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get weather-based recommendations
@@ -65,7 +61,7 @@ class RecommendationsRepository {
     double? latitude,
     double? longitude,
   }) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get(
         '${ApiConstants.recommendations}/weather',
         queryParameters: {
@@ -75,9 +71,7 @@ class RecommendationsRepository {
         },
       );
       return _extractDataMap(response);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get shopping recommendations
@@ -87,7 +81,7 @@ class RecommendationsRepository {
     double? maxBudget,
     List<String>? brands,
   }) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get(
         '${ApiConstants.recommendations}/shopping',
         queryParameters: {
@@ -103,9 +97,7 @@ class RecommendationsRepository {
         return data;
       }
       return const <dynamic>[];
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get astrology-based color recommendations

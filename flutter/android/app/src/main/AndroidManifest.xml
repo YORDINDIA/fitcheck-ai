@@ -33,10 +33,6 @@
         android:icon="@mipmap/ic_launcher"
         android:localeConfig="@xml/locales_config"
         android:allowBackup="false">
-        <!-- Placeholder for OAuth redirect scheme (used by flutter_appauth) -->
-        <meta-data
-            android:name="appAuthRedirectScheme"
-            android:value="fitcheck.ai" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

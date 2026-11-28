@@ -2,7 +2,8 @@
  * Waitlist API endpoints
  */
 
-import { apiClient, getApiError } from './client';
+import { apiClient } from './client';
+import { getApiError } from '@/lib/errors';
 import type { ApiEnvelope } from '../types';
 
 // ============================================================================

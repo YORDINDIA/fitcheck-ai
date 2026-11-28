@@ -1,5 +1,8 @@
 {
   "title": "Dashboard",
+  "routeTitles": {
+    "trends": "Trends"
+  },
   "refresh": "Refresh",
   "updatedJustNow": "Updated just now",
   "updatedAgo": "Updated {{seconds}}s ago",

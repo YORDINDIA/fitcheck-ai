@@ -3,12 +3,14 @@ Weather service for integrating with weather APIs.
 Used to provide weather-based outfit recommendations.
 """
 
+import asyncio
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
 from collections import Counter, defaultdict
 import re
 
 import httpx
+from supabase import Client
 
 from app.core.config import settings
 from app.core.logging_config import get_context_logger
@@ -625,3 +627,22 @@ def get_weather_service() -> WeatherService:
     if _weather_service is None:
         _weather_service = WeatherService()
     return _weather_service
+
+
+# ============================================================================
+# WEATHER ROUTE QUERIES (moved from app/api/v1/weather.py)
+# ============================================================================
+#
+# The chain below used to sit inline in _resolve_location. The route keeps the
+# try/except fallback and the "New York" default.
+
+
+async def fetch_user_default_location_row(db: Client, user_id: str):
+    """Read default_location from user_settings for weather location resolution."""
+    return await asyncio.to_thread(
+        db.table("user_settings")
+        .select("default_location")
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute
+    )

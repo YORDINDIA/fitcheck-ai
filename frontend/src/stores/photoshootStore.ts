@@ -16,14 +16,16 @@ import {
 } from '@/api/photoshoot';
 import { getApiError, RATE_LIMIT_EXCEEDED } from '@/lib/errors';
 import { logger } from '@/lib/logger';
+import { isPhotoshootComplete } from '@/lib/photoshoot-status';
 import { fileToReplayablePreview } from '@/lib/replayable-preview';
 import { fileToBase64 } from '@/lib/utils';
 import { ensureSessionRecording, setPersonProperties, trackEvent } from '@/lib/analytics';
 import { useJobUiStore } from '@/stores/jobUiStore';
 import { invalidateUsageCache } from '@/stores/subscriptionStore';
+import { canTransition, transition, type PhotoshootStep } from './photoshootMachine';
 
 // Types
-export type PhotoshootStep = 'upload' | 'configure' | 'generating' | 'results';
+export type { PhotoshootStep } from './photoshootMachine';
 
 /** Progress floor once generation starts; the remaining span maps to per-image completion. */
 const PROGRESS_BASE = 10;
@@ -190,7 +192,7 @@ export const usePhotoshootStore = create<PhotoshootState>()((set, get) => {
   const settleCancelled = () => {
     set({
       isGenerating: false,
-      currentStep: 'configure',
+      currentStep: transition(get().currentStep, 'configure', { running: true, cancel: true }),
       statusMessage: '',
       progress: null,
       currentSceneLabel: null,
@@ -202,7 +204,8 @@ export const usePhotoshootStore = create<PhotoshootState>()((set, get) => {
   return {
     ...initialState,
 
-    setStep: (step) => set({ currentStep: step }),
+    setStep: (step) =>
+      set({ currentStep: transition(get().currentStep, step, { running: get().isGenerating }) }),
 
     addPhotos: (files) => {
       const current = get().photos;
@@ -262,6 +265,7 @@ export const usePhotoshootStore = create<PhotoshootState>()((set, get) => {
       // guard is the backstop so a double-click / re-entry can never burn the
       // daily quota twice or race the results.
       if (isGenerating) return null;
+      if (!canTransition(get().currentStep, 'generating', { running: false })) return null;
 
       if (photos.length === 0) {
         set({ error: 'Please add at least one photo' });
@@ -303,7 +307,7 @@ export const usePhotoshootStore = create<PhotoshootState>()((set, get) => {
         error: null,
         progress: null,
         statusMessage: 'Preparing your photos…',
-        currentStep: 'generating',
+        currentStep: transition(get().currentStep, 'generating', { running: false }),
         jobId: '',
         currentSceneLabel: null,
         etaSeconds: null,
@@ -393,7 +397,7 @@ export const usePhotoshootStore = create<PhotoshootState>()((set, get) => {
               failedCount,
               failedIndices,
               partialSuccess,
-              currentStep: 'results',
+              currentStep: transition(get().currentStep, 'results', { running: false }),
               isGenerating: false,
             });
             if (usageData) set({ usage: usageData });
@@ -422,8 +426,9 @@ export const usePhotoshootStore = create<PhotoshootState>()((set, get) => {
               statusMessage: 'Generation failed',
               currentSceneLabel: null,
               etaSeconds: null,
-              // Stay on generating surface so user can retry without losing photos
-              currentStep: 'generating',
+              // Failed run stays on the generating surface: the error and
+              // Try again / Back to options render there.
+              currentStep: transition(get().currentStep, 'generating', { running: false }),
             });
             trackEvent('photoshoot_session_failed', {
               use_case: useCase,
@@ -491,7 +496,7 @@ export const usePhotoshootStore = create<PhotoshootState>()((set, get) => {
                 // null means the run was cancelled mid-poll; already settled.
                 if (terminal === null) return;
                 const pollImages = [...terminal.images].sort((a, b) => a.index - b.index);
-                if (terminal.status === 'complete') {
+                if (isPhotoshootComplete(terminal.status)) {
                   // The status payload does not carry session_id; the job id
                   // is the stable identifier used for the session.
                   settleComplete(
@@ -652,8 +657,8 @@ export const usePhotoshootStore = create<PhotoshootState>()((set, get) => {
           statusMessage: 'Generation failed',
           currentSceneLabel: null,
           etaSeconds: null,
-          // Stay on generating surface so user can retry without losing photos
-          currentStep: 'generating',
+          // Failed start stays on the generating surface (see settleFailed).
+          currentStep: transition(get().currentStep, 'generating', { running: false }),
         });
         // A hard quota wall means the stored `usage.remaining` is now stale —
         // refresh it so the configure step renders the real 0-remaining wall and
@@ -688,6 +693,13 @@ export const usePhotoshootStore = create<PhotoshootState>()((set, get) => {
         await cancelPhotoshootJob(jobId);
       } catch (e) {
         logger.warn('Failed to cancel photoshoot job:', e);
+      }
+
+      // The run may have completed while the cancel request was in flight.
+      // Settling a finished run would move results back to configure.
+      if (!get().isGenerating) {
+        set({ jobId: '' });
+        return;
       }
 
       // Abort the SSE stream; the terminal job_cancelled event (or the abort

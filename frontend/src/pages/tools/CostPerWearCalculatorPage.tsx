@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { trialRegisterHref } from '@/lib/trial-offer'
 import { ArrowRight, Calculator } from 'lucide-react'
-import SEO from '@/components/seo/SEO'
+
+import { CrayonBox, CrayonLink, PaperCard } from '@/components/crayon/CrayonPrimitives'
 import { BreadcrumbJsonLd, buildFaqSchema } from '@/components/seo/JsonLd'
+import SEO from '@/components/seo/SEO'
 import { SEO_CONFIG } from '@/components/seo/seo-config'
-import { Button } from '@/components/ui/button'
-import { AnimatedSection } from '@/components/landing/AnimatedSection'
+import { trialRegisterHref } from '@/lib/trial-offer'
 
 const PATH = '/tools/cost-per-wear-calculator'
 const CANONICAL = `${SEO_CONFIG.siteUrl}${PATH}`
@@ -34,18 +34,37 @@ function formatCurrency(value: number): string {
 }
 
 function cpwInsight(cpw: number): { label: string; tone: string } {
-  if (cpw <= 0) return { label: 'Enter a price and wears to see your cost per wear.', tone: 'text-stone-500 dark:text-stone-400' }
-  if (cpw < 1) return { label: 'Excellent value — this item has earned its cost.', tone: 'text-emerald-600 dark:text-emerald-400' }
-  if (cpw <= 5) return { label: 'Solid value — typical for quality, well-worn pieces.', tone: 'text-stone-700 dark:text-stone-300' }
-  if (cpw <= 10) return { label: 'On the higher side — wear it more to lower the number.', tone: 'text-amber-600 dark:text-amber-400' }
-  return { label: 'High cost per wear — wear it more or skip similar buys.', tone: 'text-red-600 dark:text-red-400' }
+  if (cpw <= 0) {
+    return {
+      label: 'Enter a price and wears to see your cost per wear.',
+      tone: 'text-[var(--cp-ink-3)]',
+    }
+  }
+  if (cpw < 1) {
+    return {
+      label: 'Excellent value — this item has earned its cost.',
+      tone: 'text-[var(--cp-green)]',
+    }
+  }
+  if (cpw <= 5) {
+    return {
+      label: 'Solid value — typical for quality, well-worn pieces.',
+      tone: 'text-[var(--cp-ink-2)]',
+    }
+  }
+  if (cpw <= 10) {
+    return {
+      label: 'On the higher side — wear it more to lower the number.',
+      tone: 'text-[var(--cp-orange-deep)]',
+    }
+  }
+  return {
+    label: 'High cost per wear — wear it more or skip similar buys.',
+    tone: 'text-[var(--cp-red)]',
+  }
 }
 
-
 export default function CostPerWearCalculatorPage() {
-  // Keep raw strings in state so a partial entry like "49." or "1.5" is not
-  // destroyed by Number() coercion on every keystroke (a controlled number
-  // input that snaps to an integer makes decimal entry impossible).
   const [price, setPrice] = useState('')
   const [wears, setWears] = useState('')
 
@@ -72,114 +91,108 @@ export default function CostPerWearCalculatorPage() {
       />
       <BreadcrumbJsonLd items={breadcrumbs} />
 
-      <div className="pt-20 landing-surface">
-        <section className="border-b border-stone-200 bg-stone-50 py-14 dark:border-stone-800 dark:bg-stone-950 md:py-20">
-          <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
-            <AnimatedSection>
-              <p className="mb-4 flex items-center gap-2 text-sm font-semibold text-primary">
-                <Calculator className="h-4 w-4" aria-hidden />
-                Free tool
-              </p>
-              <h1 className="landing-display text-3xl font-semibold leading-tight text-stone-900 dark:text-stone-50 sm:text-4xl md:text-5xl">
-                Cost per wear calculator
-              </h1>
-              <p className="mt-5 max-w-2xl text-base leading-relaxed text-stone-600 dark:text-stone-400 md:text-lg">
-                Cost per wear = price ÷ wears. It is the honest test of whether
-                a purchase was worth it — and the number that makes
-                “buy less, wear more” measurable.
-              </p>
-            </AnimatedSection>
-
-            <div className="mt-10 rounded-2xl border border-stone-200 bg-white p-6 dark:border-stone-800 dark:bg-stone-900 md:p-8">
-              <div className="grid gap-4 sm:grid-cols-2 sm:gap-6">
-                <label className="block">
-                  <span className="text-sm font-medium text-stone-700 dark:text-stone-300">
-                    Item price (USD)
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={price}
-                    onChange={(e) => setPrice(e.target.value)}
-                    placeholder="49.99"
-                    className="mt-2 w-full rounded-lg border border-stone-300 bg-white px-4 py-3 text-stone-900 outline-none focus:border-primary dark:border-stone-700 dark:bg-stone-950 dark:text-stone-50"
-                    inputMode="decimal"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-medium text-stone-700 dark:text-stone-300">
-                    Expected wears
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="1"
-                    value={wears}
-                    onChange={(e) => setWears(e.target.value)}
-                    placeholder="30"
-                    className="mt-2 w-full rounded-lg border border-stone-300 bg-white px-4 py-3 text-stone-900 outline-none focus:border-primary dark:border-stone-700 dark:bg-stone-950 dark:text-stone-50"
-                    inputMode="numeric"
-                  />
-                </label>
-              </div>
-
-
-              <div className="mt-8 rounded-xl bg-stone-100 p-4 dark:bg-stone-950 sm:p-6">
-                <p className="text-sm text-stone-500 dark:text-stone-400">Cost per wear</p>
-                <p className="landing-display mt-1 text-4xl font-semibold text-stone-900 dark:text-stone-50">
-                  {cpw > 0 ? formatCurrency(cpw) : '—'}
-                </p>
-                <p className={`mt-2 text-sm ${insight.tone}`}>{insight.label}</p>
-              </div>
-
-              <p className="mt-6 text-xs leading-relaxed text-stone-500 dark:text-stone-400">
-                Tip: track high-ticket and high-guilt items first. Raising wears
-                on what you already own beats buying anything new. FitCheck AI
-                wardrobe analytics does this automatically from your outfits.
-              </p>
-            </div>
-
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Button asChild size="lg" className="h-12 px-6">
-                <Link to={trialRegisterHref()}>
-                  Track wears automatically
-                  <ArrowRight className="ms-2 h-4 w-4" />
-                </Link>
-              </Button>
-              <Button asChild size="lg" variant="outline" className="h-12 px-6">
-                <Link to="/guides/cost-per-wear-calculator-explained">
-                  Read the full guide
-                </Link>
-              </Button>
-            </div>
-          </div>
+      <div className="cp-wrap">
+        <section className="cp-doc-head">
+          <p className="cp-eyebrow inline-flex items-center justify-center gap-2">
+            <Calculator className="h-4 w-4" aria-hidden="true" />
+            FREE TOOL
+          </p>
+          <h1>Cost per wear calculator</h1>
+          <p className="cp-lead">
+            Cost per wear = price ÷ wears. It is the honest test of whether a purchase was worth it
+            — and the number that makes “buy less, wear more” measurable.
+          </p>
         </section>
 
-        <section className="bg-white py-14 dark:bg-stone-950 md:py-16">
-          <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
-            <h2 className="landing-display text-2xl font-semibold text-stone-900 dark:text-stone-50">
-              Frequently asked questions
-            </h2>
-            <div className="mt-6 space-y-5">
-              {FAQS.map((faq) => (
-                <div key={faq.question} className="border-b border-stone-200 pb-5 dark:border-stone-800">
-                  <h3 className="font-medium text-stone-900 dark:text-stone-50">{faq.question}</h3>
-                  <p className="mt-2 text-stone-600 dark:text-stone-400">{faq.answer}</p>
-                </div>
-              ))}
+        <CrayonBox fill="var(--cp-yellow-banner)" radius={30} className="cp-doc bg-[var(--cp-surface)]">
+          <PaperCard className="p-6 md:p-8">
+            <div className="grid gap-4 sm:grid-cols-2 sm:gap-6">
+              <label className="block">
+                <span className="text-sm font-bold text-[var(--cp-ink)]">Item price (USD)</span>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  placeholder="49.99"
+                  className="mt-2 h-12 w-full rounded-xl border-2 border-[var(--cp-ink)] bg-[var(--cp-paper)] px-4 font-mono text-[var(--cp-ink)] outline-none placeholder:text-[var(--cp-ink-3)]"
+                  inputMode="decimal"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-bold text-[var(--cp-ink)]">Expected wears</span>
+                <input
+                  type="number"
+                  min={0}
+                  step="1"
+                  value={wears}
+                  onChange={(e) => setWears(e.target.value)}
+                  placeholder="30"
+                  className="mt-2 h-12 w-full rounded-xl border-2 border-[var(--cp-ink)] bg-[var(--cp-paper)] px-4 font-mono text-[var(--cp-ink)] outline-none placeholder:text-[var(--cp-ink-3)]"
+                  inputMode="numeric"
+                />
+              </label>
             </div>
-            <div className="mt-8 flex flex-wrap gap-x-5 gap-y-2">
-              <Link to="/guides/what-is-wardrobe-utilization" className="inline-flex min-h-11 items-center text-sm font-medium text-primary hover:text-primary-pressed transition-colors">
-                Wardrobe utilization
-              </Link>
-              <Link to="/guides/what-is-a-capsule-wardrobe" className="inline-flex min-h-11 items-center text-sm font-medium text-primary hover:text-primary-pressed transition-colors">
-                Capsule wardrobes
-              </Link>
-              <Link to="/features/wardrobe-analytics" className="inline-flex min-h-11 items-center text-sm font-medium text-primary hover:text-primary-pressed transition-colors">
-                Wardrobe analytics
-              </Link>
+
+            <div
+              role="status"
+              aria-live="polite"
+              className="mt-7 rounded-2xl bg-[var(--cp-paper)] p-5 shadow-[0_0_0_2.5px_var(--cp-ink)] sm:p-6"
+            >
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-[var(--cp-ink-3)]">
+                Cost per wear
+              </p>
+              <p className="cp-hand mt-1 text-6xl text-[var(--cp-orange-deep)]">
+                {cpw > 0 ? formatCurrency(cpw) : '—'}
+              </p>
+              <p className={`mt-2 text-sm font-semibold ${insight.tone}`}>{insight.label}</p>
             </div>
+
+            <p className="mt-5 text-xs leading-relaxed text-[var(--cp-ink-3)]">
+              Tip: track high-ticket and high-guilt items first. Raising wears on what you already
+              own beats buying anything new. FitCheck AI wardrobe analytics does this automatically
+              from your outfits.
+            </p>
+          </PaperCard>
+
+          <div className="cp-ctas">
+            <CrayonLink to={trialRegisterHref()} variant="orange" size="sm">
+              Track wears automatically
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </CrayonLink>
+            <CrayonLink to="/guides/cost-per-wear-calculator-explained" variant="dark" size="sm">
+              Read the full guide
+            </CrayonLink>
+          </div>
+        </CrayonBox>
+
+        <section className="mx-auto mt-14 max-w-[820px]">
+          <h2 className="cp-hand text-4xl text-[var(--cp-ink)]">Frequently asked questions</h2>
+          <div className="mt-5 space-y-4">
+            {FAQS.map((faq, idx) => (
+              <PaperCard key={faq.question} className="p-5">
+                <h3 className="cp-hand flex items-baseline gap-2 text-2xl text-[var(--cp-ink)]">
+                  <span className="font-mono text-xs font-bold text-[var(--cp-orange-deep)]">
+                    0{idx + 1}
+                  </span>
+                  <span>{faq.question}</span>
+                </h3>
+                <p className="mt-2 text-[var(--cp-ink-2)]">{faq.answer}</p>
+              </PaperCard>
+            ))}
+          </div>
+
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link to="/guides/what-is-wardrobe-utilization" className="cp-chip">
+              Wardrobe utilization
+            </Link>
+            <Link to="/guides/what-is-a-capsule-wardrobe" className="cp-chip">
+              Capsule wardrobes
+            </Link>
+            <Link to="/features/wardrobe-analytics" className="cp-chip">
+              Wardrobe analytics
+            </Link>
           </div>
         </section>
       </div>

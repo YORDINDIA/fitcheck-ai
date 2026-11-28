@@ -4,7 +4,8 @@
 
 import { isAxiosError } from 'axios';
 
-import { apiClient, getApiError, skipToast } from './client';
+import { apiClient, skipToast } from './client';
+import { getApiError } from '@/lib/errors';
 import { logger } from '../lib/logger';
 import type {
   ApiEnvelope,

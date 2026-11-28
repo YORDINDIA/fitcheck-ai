@@ -33,9 +33,7 @@
       "@/stores/*": ["src/stores/*"],
       "@/types/*": ["src/types/*"],
       "@/pages/*": ["src/pages/*"],
-      "@/api/*": ["src/api/*"],
-      "@/agents/*": ["src/agents/*"],
-      "@/assets/*": ["src/assets/*"]
+      "@/api/*": ["src/api/*"]
     }
   },
   "include": ["src"],

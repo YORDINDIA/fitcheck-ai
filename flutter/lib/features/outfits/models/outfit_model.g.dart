@@ -182,34 +182,6 @@ Map<String, dynamic> _$AIGenerationRequestToJson(
   'body_profile_id': instance.bodyProfileId,
 };
 
-_GenerationStatus _$GenerationStatusFromJson(Map<String, dynamic> json) =>
-    _GenerationStatus(
-      id: json['id'] as String,
-      status: json['status'] as String,
-      progress: (json['progress'] as num?)?.toDouble(),
-      message: json['message'] as String?,
-      imageUrl: json['imageUrl'] as String?,
-      error: json['error'] as String?,
-      createdAt: json['created_at'] == null
-          ? null
-          : DateTime.parse(json['created_at'] as String),
-      completedAt: json['completed_at'] == null
-          ? null
-          : DateTime.parse(json['completed_at'] as String),
-    );
-
-Map<String, dynamic> _$GenerationStatusToJson(_GenerationStatus instance) =>
-    <String, dynamic>{
-      'id': instance.id,
-      'status': instance.status,
-      'progress': instance.progress,
-      'message': instance.message,
-      'imageUrl': instance.imageUrl,
-      'error': instance.error,
-      'created_at': instance.createdAt?.toIso8601String(),
-      'completed_at': instance.completedAt?.toIso8601String(),
-    };
-
 _SharedOutfitModel _$SharedOutfitModelFromJson(Map<String, dynamic> json) =>
     _SharedOutfitModel(
       id: json['id'] as String,

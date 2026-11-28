@@ -1,11 +1,5 @@
 /**
  * ExtractionDemo Component
- *
- * Handles the item extraction demo flow:
- * 1. Upload image with dropzone
- * 2. Show loading state
- * 3. Display extracted items
- * 4. CTA to save to wardrobe (prompts login)
  */
 
 import { useEffect, useState, useCallback } from 'react'
@@ -18,7 +12,7 @@ import {
   ArrowRight,
   Shirt,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { CrayonButton } from '@/components/crayon/CrayonPrimitives'
 import { cn } from '@/lib/utils'
 import { trackLandingCta } from '@/lib/analytics'
 import { SIGNATURE_ITEMS } from './signature-data'
@@ -40,8 +34,6 @@ export function ExtractionDemo() {
   const [error, setError] = useState<string | null>(null)
   const [showLoginModal, setShowLoginModal] = useState(false)
 
-  // Blob URLs leak unless revoked: revoke the previous preview whenever it is
-  // replaced (including reset to null) and on unmount.
   useEffect(() => {
     return () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl)
@@ -67,7 +59,7 @@ export function ExtractionDemo() {
       setError(
         demoError.isRateLimit
           ? 'Daily demo limit reached. Sign up free to keep using extraction.'
-          : demoError.message || 'Failed to analyze image'
+          : demoError.message || 'Failed to analyze image',
       )
       setState('error')
     }
@@ -81,39 +73,36 @@ export function ExtractionDemo() {
   })
 
   const handleReset = () => {
-    // Revocation is centralized in the previewUrl cleanup effect above.
     setPreviewUrl(null)
     setResults(null)
     setError(null)
     setState('idle')
   }
 
-  const handleSaveToWardrobe = () => {
-    setShowLoginModal(true)
-  }
-
   return (
-    <EditorialPanel className="p-6 h-full flex flex-col">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="flex shrink-0 items-center">
-          <Camera className="h-5 w-5 text-paper-accent" />
+    <EditorialPanel fill="var(--cp-sky)" className="h-full">
+      <div className="mb-4 flex items-center gap-3">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--cp-sky)] text-[var(--cp-ink)] shadow-[0_0_0_2px_var(--cp-ink)]">
+          <Camera className="h-5 w-5" aria-hidden="true" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold tracking-tight text-paper-text">Item extraction</h3>
-          <p className="text-sm text-paper-text-3">Upload a photo to detect clothing</p>
+          <h3 className="cp-hand text-[28px] leading-none text-[var(--cp-ink)]">
+            Item extraction
+          </h3>
+          <p className="mt-1 text-xs font-medium text-[var(--cp-ink-3)]">
+            Upload a photo to detect clothing
+          </p>
         </div>
       </div>
 
-      <div className="flex-1 min-h-[300px]">
-        {/* Idle State: a real example result (the hero photo) over a drop zone
-            that covers the whole area, so a click or a drop starts a run. */}
+      <div className="min-h-[300px] flex-1">
         {state === 'idle' && (
           <div
             {...getRootProps()}
             className={cn(
-              'flex h-full cursor-pointer flex-col rounded-xl border border-dashed border-paper-edge bg-paper-sunk/60 p-4',
-              'transition-[border-color,background-color] duration-200 hover:border-paper-accent/60 hover:bg-paper-tint',
-              isDragActive && 'border-paper-accent bg-paper-tint'
+              'flex h-full cursor-pointer flex-col rounded-xl border-2 border-dashed border-[var(--cp-ink)] bg-[var(--cp-paper)] p-4',
+              'transition-colors duration-150 hover:bg-[var(--cp-surface-muted)]',
+              isDragActive && 'bg-[var(--cp-sky)]/30',
             )}
           >
             <input {...getInputProps({ 'aria-label': 'Upload a clothing photo' })} />
@@ -125,11 +114,13 @@ export function ExtractionDemo() {
                 height={120}
                 loading="lazy"
                 decoding="async"
-                className="h-16 w-20 shrink-0 rounded-lg object-cover"
+                className="h-16 w-20 shrink-0 rounded-lg object-cover shadow-[0_0_0_2px_var(--cp-ink)]"
               />
               <div className="min-w-0">
-                <p className="text-xs text-paper-text-3">Example result</p>
-                <p className="text-sm font-semibold text-paper-text">
+                <p className="font-mono text-[11px] font-semibold uppercase text-[var(--cp-ink-3)]">
+                  Example result
+                </p>
+                <p className="text-sm font-bold text-[var(--cp-ink)]">
                   Found {SIGNATURE_ITEMS.length} items
                 </p>
               </div>
@@ -137,90 +128,94 @@ export function ExtractionDemo() {
             <ul className="mt-3 space-y-1.5">
               {SIGNATURE_ITEMS.slice(0, 4).map((item) => (
                 <li key={item.key} className="flex items-baseline justify-between gap-3 text-sm">
-                  <span className="font-medium text-paper-text">{item.name}</span>
-                  <span className="truncate text-xs text-paper-text-3">{item.colors}</span>
+                  <span className="font-semibold text-[var(--cp-ink)]">{item.name}</span>
+                  <span className="truncate font-mono text-xs text-[var(--cp-ink-3)]">
+                    {item.colors}
+                  </span>
                 </li>
               ))}
-              <li className="text-xs text-paper-text-3">and {SIGNATURE_ITEMS.length - 4} more</li>
+              <li className="text-xs font-medium text-[var(--cp-ink-3)]">
+                and {SIGNATURE_ITEMS.length - 4} more
+              </li>
             </ul>
-            <p className="mt-auto flex items-center justify-center gap-2 pt-5 font-semibold text-paper-text">
+            <p className="mt-auto flex items-center justify-center gap-2 pt-5 text-sm font-bold text-[var(--cp-orange-deep)]">
               <Upload
-                className={cn('h-4 w-4 text-paper-accent transition-transform duration-200', isDragActive && 'scale-110')}
+                className={cn('h-4 w-4 transition-transform duration-200', isDragActive && 'scale-110')}
                 aria-hidden="true"
               />
               {isDragActive ? 'Drop your photo here' : 'Try it with your photo'}
             </p>
-            <p className="mt-1 text-center text-xs text-paper-text-3">Drop a clothing photo or click to browse</p>
-          </div>
-        )}
-
-        {/* Processing State */}
-        {state === 'processing' && previewUrl && (
-          <div className="h-full flex flex-col items-center justify-center">
-            <img
-              src={previewUrl}
-              alt="Preview"
-              className="max-h-48 rounded-lg mb-4 object-contain"
-            />
-            <Loader2 className="w-8 h-8 text-paper-accent animate-spin mb-2" />
-            <p className="text-paper-text-2">
-              Analyzing clothing items...
+            <p className="mt-1 text-center text-xs text-[var(--cp-ink-3)]">
+              Drop a clothing photo or click to browse
             </p>
           </div>
         )}
 
-        {/* Results State */}
+        {state === 'processing' && previewUrl && (
+          <div className="flex h-full flex-col items-center justify-center" role="status">
+            <img
+              src={previewUrl}
+              alt="Preview"
+              className="mb-4 max-h-48 rounded-lg object-contain shadow-[0_0_0_2px_var(--cp-ink)]"
+            />
+            <Loader2 className="mb-2 h-8 w-8 animate-spin text-[var(--cp-orange)]" aria-hidden="true" />
+            <p className="font-semibold text-[var(--cp-ink-2)]">Analyzing clothing items...</p>
+          </div>
+        )}
+
         {state === 'results' && results && (
-          <div className="h-full flex flex-col">
-            <div className="flex gap-4 mb-4">
+          <div className="flex h-full flex-col">
+            <div className="mb-4 flex gap-4">
               {previewUrl && (
                 <img
                   src={previewUrl}
                   alt="Original"
-                  className="w-20 h-20 rounded-lg object-cover"
+                  className="h-20 w-20 rounded-lg object-cover shadow-[0_0_0_2px_var(--cp-ink)]"
                 />
               )}
               <div>
-                <p className="text-sm text-paper-text-3">
-                  Found {results.item_count} item
-                  {results.item_count !== 1 ? 's' : ''}
+                <p className="text-sm font-bold text-[var(--cp-ink)]">
+                  Found {results.item_count} item{results.item_count !== 1 ? 's' : ''}
                 </p>
-                <p className="text-xs text-paper-text-3">
+                <p className="font-mono text-xs text-[var(--cp-ink-3)]">
                   {Math.round(results.overall_confidence * 100)}% confidence
                 </p>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-3 mb-4">
+            <div className="mb-4 flex-1 space-y-2.5 overflow-y-auto">
               {results.items.map((item, idx) => (
                 <ExtractedItemCard key={idx} item={item} />
               ))}
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="sm" onClick={handleReset}>
+              <CrayonButton variant="paper" size="sm" onClick={handleReset}>
                 Try Another
-              </Button>
-              <Button
+              </CrayonButton>
+              <CrayonButton
+                variant="orange"
                 size="sm"
                 className="flex-1"
-                onClick={handleSaveToWardrobe}
+                onClick={() => setShowLoginModal(true)}
               >
                 Save to Closet
-                <ArrowRight className="w-4 h-4 ms-2" />
-              </Button>
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </CrayonButton>
             </div>
           </div>
         )}
 
-        {/* Error State */}
         {state === 'error' && (
-          <div className="flex h-full flex-col items-center justify-center rounded-xl bg-error-pale p-6 text-center">
-            <AlertCircle className="w-10 h-10 text-error mb-4" />
-            <p className="text-error mb-4">{error}</p>
-            <Button variant="outline" onClick={handleReset}>
+          <div
+            role="alert"
+            className="flex h-full flex-col items-center justify-center rounded-xl bg-[var(--cp-pink)]/30 p-6 text-center shadow-[0_0_0_2px_var(--cp-ink)]"
+          >
+            <AlertCircle className="mb-3 h-9 w-9 text-[var(--cp-red)]" aria-hidden="true" />
+            <p className="mb-4 text-sm font-semibold text-[var(--cp-red)]">{error}</p>
+            <CrayonButton variant="dark" size="sm" onClick={handleReset}>
               Try Again
-            </Button>
+            </CrayonButton>
           </div>
         )}
       </div>
@@ -236,22 +231,20 @@ export function ExtractionDemo() {
 
 function ExtractedItemCard({ item }: { item: DemoDetectedItem }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg bg-paper-sunk p-3">
-      <div className="flex shrink-0 items-center">
-        <Shirt className="h-4 w-4 text-paper-accent" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="font-medium text-paper-text text-sm capitalize">
+    <div className="flex items-center gap-3 rounded-xl bg-[var(--cp-paper)] p-3 shadow-[0_0_0_2px_var(--cp-ink)]">
+      <Shirt className="h-4 w-4 shrink-0 text-[var(--cp-orange)]" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-bold text-[var(--cp-ink)] capitalize">
           {item.sub_category || item.category}
         </p>
-        <div className="flex items-center gap-2 text-xs text-paper-text-3">
+        <div className="flex items-center gap-2 font-mono text-xs text-[var(--cp-ink-3)]">
           {item.colors.length > 0 && (
             <span className="capitalize">{item.colors.slice(0, 2).join(', ')}</span>
           )}
           {item.material && <span>{item.material}</span>}
         </div>
       </div>
-      <span className="text-xs text-paper-text-3">
+      <span className="font-mono text-xs font-semibold text-[var(--cp-ink-3)]">
         {Math.round(item.confidence * 100)}%
       </span>
     </div>

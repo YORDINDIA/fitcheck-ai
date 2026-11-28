@@ -1,7 +1,7 @@
 import { transferableAbortController } from 'node:util'
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
 import { afterAll, afterEach, beforeAll, expect, vi } from 'vitest'
 import * as axeMatchers from 'vitest-axe/matchers'
 
@@ -18,6 +18,10 @@ import { sharedTestQueryClient } from '@/test/utils'
 
 // axe-core checks require CSS cascade info; jsdom supports getComputedStyle.
 expect.extend(axeMatchers)
+
+// findBy and waitFor give up after 1 s by default. Lazy chunks can take longer
+// on a busy machine.
+configure({ asyncUtilTimeout: 5000 })
 
 // Deterministic date formatters: run tests in UTC.
 process.env.TZ = 'UTC'

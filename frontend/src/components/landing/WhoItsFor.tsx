@@ -1,121 +1,116 @@
 import { Link } from 'react-router-dom'
-import { ArrowUpRight, LockKeyhole, ShieldCheck, Trash2 } from 'lucide-react'
+import { ArrowUpRight, EyeOff, LockKeyhole, ShieldCheck, Trash2 } from 'lucide-react'
 
-import { GeneratedImage } from '@/components/ui/generated-image'
+import { CrayonBox } from '@/components/crayon/CrayonPrimitives'
 
-const privacyFacts = [
+const privacyPoints = [
   {
     icon: ShieldCheck,
     title: 'Private storage',
-    body: 'Wardrobe images sit in private storage. Every read and write checks that the account owns them.',
+    body: 'Account-scoped checks on every read & write',
   },
   {
     icon: LockKeyhole,
     title: 'Encrypted',
-    body: 'Photos and wardrobe data are encrypted in transit and at rest.',
+    body: 'Photos encrypted in transit and at rest',
   },
   {
     icon: Trash2,
     title: 'Delete it all',
-    body: 'Deleting the account removes the profile, the wardrobe and every stored image tied to it.',
+    body: 'Wipe profile, wardrobe & images anytime',
+  },
+  {
+    icon: EyeOff,
+    title: 'Zero ad sharing',
+    body: 'Member photos are never sold or public',
   },
 ]
 
 const personas = [
   {
     title: 'Busy professionals',
-    body: 'Weather-aware workday outfits from the wardrobe you already own.',
+    body: 'Weather-aware workday outfits from what you own.',
     href: '/for/busy-professionals',
   },
   {
     title: 'Content creators',
-    body: 'Planned looks and studio-style images for a content schedule.',
+    body: 'Planned looks & studio portraits for a schedule.',
     href: '/for/content-creators',
   },
   {
-    title: 'Festive and wedding guests',
-    body: 'Occasion wear catalogued and combinations ready before the next invitation.',
+    title: 'Festive & wedding guests',
+    body: 'Occasion wear cataloged before the next invite.',
     href: '/for/festive-and-wedding-outfits',
   },
 ]
 
 export default function WhoItsFor() {
   return (
-    <section
-      id="who-its-for"
-      className="paper-section paper-tear stock-ink pb-24 pt-20 md:pb-32 md:pt-28"
-    >
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <h2 className="paper-display text-[clamp(2.4rem,5.2vw,4.5rem)] text-paper-text">
-          Your photos stay yours.
-        </h2>
-        <div className="mt-10 grid grid-cols-1 gap-16 lg:mt-14 lg:grid-cols-12 lg:gap-16">
-          <div className="min-w-0 lg:col-span-5">
-            <ul className="space-y-7">
-              {privacyFacts.map((fact) => (
-                <li key={fact.title} className="reveal grid grid-cols-[1.75rem_minmax(0,1fr)] gap-3">
-                  <fact.icon className="mt-1 h-5 w-5 text-paper-accent" aria-hidden="true" />
-                  <div>
-                    <p className="paper-head text-xl text-paper-text">{fact.title}</p>
-                    <p className="mt-1 text-[15px] leading-relaxed text-paper-text-2">{fact.body}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <Link
-              to="/privacy"
-              className="mt-8 inline-flex min-h-11 items-center gap-1.5 text-[15px] font-semibold text-paper-accent hover:text-paper-text"
-            >
-              Read the privacy policy
-              <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
-            </Link>
-          </div>
+    <section id="who-its-for" className="cp-wrap cp-sec" aria-labelledby="who-its-for-heading">
+      <CrayonBox solid="var(--cp-navy)" radius={36} showLine={false} className="cp-night">
+        <div className="cp-left">
+          <p className="cp-eyebrow">PRIVACY &amp; WHO IT IS FOR</p>
+          <h2 id="who-its-for-heading" className="cp-h2">
+            Your photos stay yours.
+          </h2>
+          <p className="cp-sub">
+            Your closet holds personal outfits, home mirrors, and selfies. FitCheck keeps your
+            wardrobe private by default — built for anyone who wants effortless mornings.
+          </p>
 
-          <div className="min-w-0 lg:col-span-7">
-            <h3 className="paper-head text-[1.7rem] text-paper-text">Who it is for</h3>
-            <ul className="mt-4">
-              {personas.map((persona) => (
-                <li key={persona.title} className="reveal">
-                  <Link
-                    to={persona.href}
-                    className="group grid min-w-0 grid-cols-[minmax(0,1fr)_1.5rem] gap-5 rounded-lg py-5"
-                  >
-                    <span>
-                      <span className="block text-xl font-semibold text-paper-text transition-colors group-hover:text-paper-accent sm:text-2xl">
-                        {persona.title}
-                      </span>
-                      <span className="mt-1.5 block max-w-xl text-[15px] leading-relaxed text-paper-text-2">
-                        {persona.body}
-                      </span>
+          <ul className="mt-7 grid gap-2.5">
+            {personas.map((persona) => (
+              <li key={persona.title}>
+                <Link
+                  to={persona.href}
+                  className="group flex items-center justify-between gap-4 rounded-2xl bg-[#ffffff14] px-4 py-3 text-white shadow-[0_0_0_1.5px_#ffffff4d] transition-colors hover:bg-[#ffffff24]"
+                >
+                  <span>
+                    <span className="block text-[15.5px] font-bold text-white">
+                      {persona.title}
                     </span>
-                    <ArrowUpRight
-                      className="mt-1 h-5 w-5 text-paper-text-3 transition-[color,transform] group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-paper-accent"
-                      aria-hidden="true"
-                    />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-            <figure className="paper-sheet mt-8 p-2 sm:rotate-[-0.6deg] sm:p-3">
-              <GeneratedImage
-                src="/generated/lifestyle-mumbai-3x4-640.webp"
-                srcSet="/generated/lifestyle-mumbai-3x4-640.webp 640w, /generated/lifestyle-mumbai-3x4.webp 900w"
-                sizes="(min-width: 1024px) 50vw, calc(100vw - 32px)"
-                alt="Workday look example in a navy blazer, street style"
-                className="aspect-[16/10] h-auto w-full rounded-[10px] object-cover"
-                loading="lazy"
-                decoding="async"
-                width={900}
-                height={1200}
-                fallback="hide-figure"
-              />
-              <figcaption className="px-1 pb-1 pt-3 text-xs text-paper-text-3 sm:text-[13px]">
-                Example look. People on this page are AI-generated; member photos are never shown.
-              </figcaption>
-            </figure>
-          </div>
+                    <span className="block text-xs text-[var(--cp-navy-sub)]">{persona.body}</span>
+                  </span>
+                  <ArrowUpRight
+                    className="h-4 w-4 shrink-0 text-[var(--cp-yellow)] transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+                    aria-hidden="true"
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
+
+          <Link
+            to="/privacy"
+            className="mt-4 inline-flex min-h-11 items-center gap-1.5 text-sm font-bold text-[var(--cp-yellow)] hover:underline"
+          >
+            Read the privacy policy
+            <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+          </Link>
         </div>
-      </div>
+
+        <CrayonBox lineColor="#ffffff" radius={26} className="cp-zero">
+          <p className="lbl">SOLD OR SHARED WITH DATA BROKERS</p>
+          <p className="big">
+            0<em>bytes</em>
+          </p>
+          <p className="mt-2.5 text-sm text-[var(--cp-navy-sub)]">
+            <b className="text-white">Private by default</b> — only you see your closet unless you
+            share a link.
+          </p>
+          <ul className="cp-pts">
+            {privacyPoints.map((pt) => (
+              <li key={pt.title}>
+                <pt.icon className="mt-0.5 h-5 w-5 shrink-0 text-[var(--cp-yellow)]" aria-hidden="true" />
+                <span>
+                  {pt.title}
+                  <small>{pt.body}</small>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </CrayonBox>
+      </CrayonBox>
     </section>
   )
 }

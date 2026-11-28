@@ -45,7 +45,6 @@ from app.core.storage_keys import (
     build_object_url,
     is_owned_storage_key,
     key_from_path,
-    migrate_key_to_users_layout,
     mint_key,
     mint_preview_key,
     thumb_key_for,
@@ -165,12 +164,6 @@ def _with_thumb_siblings(storage_paths: Iterable[str]) -> List[str]:
     for path in storage_paths:
         if not path:
             continue
-        # Map every key to its current ``users/`` home so deletes resolve the
-        # object where it now lives (see app/core/storage_keys.py). Legacy
-        # shapes map to their ``users/{user}/...`` target; current keys pass
-        # through unchanged. The dedupe runs on the MAPPED key so two legacy
-        # aliases of the same object collapse to one delete.
-        path = migrate_key_to_users_layout(path) or path
         if path in seen:
             continue
         seen.add(path)
@@ -690,10 +683,6 @@ class StorageService:
         """
         try:
             backend = get_storage_backend()
-            # Map legacy keys to their current ``users/`` home so the delete
-            # resolves the object where it now lives (see
-            # app/core/storage_keys.py); current keys pass through unchanged.
-            storage_path = migrate_key_to_users_layout(storage_path) or storage_path
             # Deliberately NOT delete_many: that call is best-effort (it logs
             # per-key errors instead of raising), so batching these two would
             # downgrade a failed PRIMARY delete from an exception to a warning.
@@ -858,15 +847,15 @@ class StorageService:
                 # app.core.storage_keys (the one layer both routes and
                 # services may import — ARCHITECTURE.md).
                 #
-                # The DB value is reduced through ``key_from_path`` (which
-                # applies ``migrate_key_to_users_layout``) BEFORE the ownership
-                # check, mirroring the read path (materialize_image_urls). A
-                # bare legacy key (``{user}/items/{hex}.png``) is rejected by
-                # ``is_owned_storage_key`` -> ``parse_key`` (no ``users/``
-                # prefix), so without this reduction a pre-migration source
-                # photo would be silently dropped from the cleanup set and
-                # orphaned on account deletion. The reduced key is what we
-                # store for deletion so it matches the migrated object.
+                # The DB value is reduced through ``key_from_path`` BEFORE the
+                # ownership check, mirroring the read path
+                # (materialize_image_urls). Legacy keys are not remapped, so a
+                # bare legacy key (``{user}/items/{hex}.png``) fails
+                # ``is_owned_storage_key`` (``parse_key`` knows only the
+                # ``users/`` prefix). Its source photo is then skipped on
+                # account deletion and its object stays in the bucket. That is
+                # an accepted failure (see the 2026-08-31 closet 404 RCA).
+                # The reduced key is what we store for deletion.
                 for row in rows:
                     raw = row.get("source_image_storage_path")
                     if not raw:
@@ -1423,13 +1412,10 @@ class StorageService:
         delete_source: bool,
     ) -> dict:
         """Shared promotion body for the move/copy variants (see their docs)."""
-        # Legacy preview keys (pre-restructure shapes held in DB rows) are
-        # mapped to their current ``users/`` home before the move, mirroring
-        # the delete paths (see app/core/storage_keys.py): after the layout
-        # migration moved the bytes, the legacy key no longer exists and the
-        # copy would raise NoSuchKey. Current ``users/`` keys pass through
-        # unchanged.
-        source_path = migrate_key_to_users_layout(temp_storage_path) or temp_storage_path
+        # Legacy keys are not remapped (see app/core/storage_keys.py). A legacy
+        # key whose bytes the layout migration moved fails the copy with
+        # NoSuchKey (accepted, see the 2026-08-31 closet 404 RCA).
+        source_path = temp_storage_path
         # The extension comes from the SOURCE key, not the hint: temp objects
         # are sniffed at upload time (upload_temp_generated_image re-derives
         # the real format from the bytes), so ``tmp/.../abc.webp`` really is

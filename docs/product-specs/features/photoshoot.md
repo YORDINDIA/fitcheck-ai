@@ -193,7 +193,7 @@ POST /api/v1/photoshoot/generate
 {
   "data": {
     "session_id": "ps_abc123",
-    "status": "complete",
+    "status": "completed",
     "images": [
       {
         "id": "img_1",

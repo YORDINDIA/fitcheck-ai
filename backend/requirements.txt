@@ -5,7 +5,6 @@ pydantic-settings==2.14.2
 python-multipart==0.0.32
 python-jose[cryptography]==3.5.0
 PyJWT[crypto]==2.13.0
-passlib[bcrypt]==1.7.4
 httpx==0.28.1
 supabase==2.31.0
 aioboto3==13.4.0
@@ -17,7 +16,6 @@ mcp==1.28.1
 python-dotenv==1.2.2
 stripe==15.3.0
 python-dateutil==2.9.0.post0
-beautifulsoup4==4.15.0
 cryptography==49.0.0
 Pillow==11.3.0
 # HEIC/HEIF decode (iPhone/modern-camera photos). Registers a PIL opener at
