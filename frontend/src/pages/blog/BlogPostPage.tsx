@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Calendar, Clock, ArrowLeft, User, ArrowRight, Loader2 } from 'lucide-react'
 
@@ -9,7 +10,7 @@ import SEO from '@/components/seo/SEO'
 import { formatDate } from '@/i18n'
 import { useBlogPost, useBlogPosts } from '@/hooks/useBlog'
 import { trialRegisterHref } from '@/lib/trial-offer'
-import { escapeHtml, sanitizeMarkdownUrl } from '@/lib/utils'
+import { sanitizeMarkdownUrl } from '@/lib/utils'
 
 export default function BlogPostPage() {
   const { slug } = useParams<{ slug: string }>()
@@ -171,12 +172,7 @@ export default function BlogPostPage() {
                   return (
                     <ul key={index}>
                       {items.map((item, i) => (
-                        <li
-                          key={i}
-                          dangerouslySetInnerHTML={{
-                            __html: formatInlineText(item.replace('- ', '')),
-                          }}
-                        />
+                        <li key={i}>{renderInlineMarkdown(item.trim().replace(/^-\s+/, ''))}</li>
                       ))}
                     </ul>
                   )
@@ -186,22 +182,14 @@ export default function BlogPostPage() {
                   return (
                     <ol key={index}>
                       {items.map((item, i) => (
-                        <li
-                          key={i}
-                          dangerouslySetInnerHTML={{
-                            __html: formatInlineText(item.replace(/^\d+\.\s*/, '')),
-                          }}
-                        />
+                        <li key={i}>
+                          {renderInlineMarkdown(item.trim().replace(/^\d+\.\s*/, ''))}
+                        </li>
                       ))}
                     </ol>
                   )
                 }
-                return (
-                  <p
-                    key={index}
-                    dangerouslySetInnerHTML={{ __html: formatInlineText(trimmed) }}
-                  />
-                )
+                return <p key={index}>{renderInlineMarkdown(trimmed)}</p>
               })}
 
               <div className="mt-10 border-t-2 border-dashed border-[var(--cp-rule-dashed)] pt-6">
@@ -282,13 +270,25 @@ export default function BlogPostPage() {
   )
 }
 
-function formatInlineText(text: string): string {
-  return escapeHtml(text)
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(
-      /\[([^\]]+)\]\(([^)]+)\)/g,
-      (_match, label, url) =>
-        `<a href="${sanitizeMarkdownUrl(url)}" class="break-words">${label}</a>`,
-    )
+const INLINE_TOKEN_RE = /(\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g
+
+function renderInlineMarkdown(text: string): ReactNode[] {
+  return text.split(INLINE_TOKEN_RE).map((part, idx) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      return <strong key={idx}>{part.slice(2, -2)}</strong>
+    }
+    if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
+      return <em key={idx}>{part.slice(1, -1)}</em>
+    }
+    const linkMatch = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part)
+    if (linkMatch) {
+      const [, label, rawUrl] = linkMatch
+      return (
+        <a key={idx} href={sanitizeMarkdownUrl(rawUrl)} className="break-words">
+          {label}
+        </a>
+      )
+    }
+    return part
+  })
 }
