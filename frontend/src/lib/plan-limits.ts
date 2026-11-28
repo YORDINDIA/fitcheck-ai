@@ -2,7 +2,11 @@
  * Single source of truth for plan limits and platform availability
  * shown in marketing copy, FAQ, pricing, and settings.
  *
- * Keep in sync with backend/app/core/config.py PLAN_* settings.
+ * Marketing pages prerender, so they read these constants. The settings
+ * panel reads /plans and uses these values only while /plans loads.
+ *
+ * Keep in sync with backend/app/core/config.py PLAN_* settings and with
+ * docs/generated/plan-limits.json (checked by backend and vitest tests).
  */
 
 export const PLAN_LIMITS = {

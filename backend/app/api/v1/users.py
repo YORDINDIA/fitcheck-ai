@@ -15,14 +15,12 @@ Implements:
 
 import asyncio
 import json
-import uuid
 import re
 from app.utils.datetime_util import utcnow, utcnow_iso
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, UploadFile, status
-from pydantic import ValidationError as PydanticValidationError
 from supabase import Client
 
 from app.core.concurrency import PER_USER_LOCK
@@ -40,8 +38,7 @@ from app.api.v1.deps import get_active_user_id
 from app.core.uploads import read_upload_capped
 from app.core.storage_keys import key_from_path, mint_export_key, parse_key
 from app.db.connection import get_db
-from app.utils import maybe_single_data
-from app.utils.db import execute_with_reconnect, run_sync_with_reconnect
+from app.utils.db import execute_with_reconnect
 from app.models.user import (
     BodyProfile,
     BodyProfileCreate,
@@ -53,6 +50,7 @@ from app.models.user import (
     UserSettingsUpdate,
     UserUpdate,
 )
+from app.services import user_service
 from app.services.storage_service import MAX_FILE_SIZE, StorageService
 from app.services.vector_service import get_vector_service
 from app.services.weather_service import get_weather_service
@@ -61,10 +59,6 @@ from app.api.v1.images import _is_owned_by_user, materialize_avatar_url, materia
 logger = get_context_logger(__name__)
 
 router = APIRouter()
-
-
-def _now() -> str:
-    return utcnow_iso()
 
 
 def _is_owned_avatar_key(key: str, user_id: str) -> bool:
@@ -163,111 +157,6 @@ def _first_row(result_data: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
 T = Dict[str, Any]
 
 
-def _get_or_create_record(
-    db: Client,
-    table: str,
-    user_id: str,
-    defaults: Dict[str, Any],
-    model_class: Any,
-) -> Tuple[Dict[str, Any], bool]:
-    """
-    Get existing record or create with defaults.
-    Returns (record_data, was_created).
-    """
-    # Read side rebuilds + retries once on a dead pooled Supabase connection
-    # (ConnectionTerminated 500s on GET /users/settings 2026-08-03). The
-    # insert goes through the same wrapper: `user_id` is the PK (migration
-    # 001), so the upsert is exact-once — a lost response after a committed
-    # insert collapses onto the existing row instead of duplicating or 500ing
-    # on the stale dead client.
-    result = run_sync_with_reconnect(
-        lambda d: d.table(table).select("*").eq("user_id", user_id).execute(),
-        db,
-        extra={"operation": f"get_or_create_{table}", "user_id": user_id},
-    )
-    if result.data:
-        return model_class.model_validate(result.data[0]).model_dump(mode="json"), False
-
-    insert_defaults = {**defaults, "user_id": user_id}
-    run_sync_with_reconnect(
-        lambda d: d.table(table)
-        .upsert(insert_defaults, on_conflict="user_id", ignore_duplicates=True)
-        .execute(),
-        db,
-        extra={"operation": f"create_{table}", "user_id": user_id},
-    )
-    # Re-read so the returned row reflects the actual stored record (a
-    # concurrent create could have won the upsert with different values).
-    result = run_sync_with_reconnect(
-        lambda d: d.table(table).select("*").eq("user_id", user_id).execute(),
-        db,
-        extra={"operation": f"get_or_create_{table}_reload", "user_id": user_id},
-    )
-    row = _first_row(result.data or [])
-    if not row:
-        raise DatabaseError(f"Failed to create {table}")
-    return model_class.model_validate(row).model_dump(mode="json"), True
-
-
-def _upsert_record(
-    db: Client,
-    table: str,
-    user_id: str,
-    update_data: Any,
-    model_class: Any,
-    defaults: Optional[Dict[str, Any]] = None,
-    *,
-    updated_field: Optional[str] = "updated_at",
-    created_field: Optional[str] = "created_at",
-) -> Dict[str, Any]:
-    """
-    Upsert a record for user: update if exists, insert if not.
-    Returns validated record data.
-    """
-    update_dict = update_data.model_dump(exclude_unset=True)
-    if updated_field:
-        update_dict[updated_field] = _now()
-
-    existing = run_sync_with_reconnect(
-        lambda d: d.table(table).select("user_id").eq("user_id", user_id).execute(),
-        db,
-        extra={"operation": f"upsert_{table}_lookup", "user_id": user_id},
-    )
-
-    if existing.data:
-        result = run_sync_with_reconnect(
-            lambda d: d.table(table).update(update_dict).eq("user_id", user_id).execute(),
-            db,
-            extra={"operation": f"upsert_{table}_update", "user_id": user_id},
-        )
-    else:
-        insert = {
-            "user_id": user_id,
-            **(defaults or {}),
-            **update_dict,
-        }
-        if created_field:
-            insert[created_field] = _now()
-        if updated_field:
-            insert[updated_field] = _now()
-        # Same reconnect treatment as the update branch: the insert is an
-        # upsert on the user_id PK, so a retry after a lost response
-        # collapses onto the existing row (exact-once) instead of running on
-        # the stale dead client.
-        result = run_sync_with_reconnect(
-            lambda d: d.table(table)
-            .upsert(insert, on_conflict="user_id")
-            .execute(),
-            db,
-            extra={"operation": f"upsert_{table}_insert", "user_id": user_id},
-        )
-
-    row = _first_row(result.data or [])
-    if not row:
-        raise DatabaseError(f"Failed to update {table}")
-    return model_class.model_validate(row).model_dump(mode="json")
-
-
 def _sync_birth_fields_to_auth(
     db: Client,
     user_id: str,
@@ -297,16 +186,11 @@ async def get_current_user(
     db: Client = Depends(get_db),
 ):
     try:
-        result = await execute_with_reconnect(
-            lambda d: d.table("users").select("*").eq("id", user_id).execute(),
-            db,
-            extra={"operation": "get_current_user", "user_id": user_id},
-            max_retries=2,
-        )
-        if not result.data:
+        rows = await user_service.fetch_user_row(db, user_id=user_id)
+        if not rows:
             raise UserNotFoundError(user_id=user_id)
 
-        user = UserResponse.model_validate(_normalize_user_birth_fields(result.data[0]))
+        user = UserResponse.model_validate(_normalize_user_birth_fields(rows[0]))
         user_data = user.model_dump(mode="json")
 
         # Fallback for projects that haven't applied astrology profile migration yet.
@@ -367,9 +251,9 @@ async def update_current_user(
             update_payload.pop(admin_only, None)
 
         while True:
-            update_payload["updated_at"] = _now()
+            update_payload["updated_at"] = utcnow_iso()
             try:
-                result = await asyncio.to_thread(db.table("users").update(update_payload).eq("id", user_id).execute)
+                rows = await user_service.update_user_row(db, user_id=user_id, update_payload=update_payload)
                 break
             except Exception as e:
                 missing_col = _extract_missing_users_column(e)
@@ -400,7 +284,7 @@ async def update_current_user(
                         "meta": {"skipped_fields": skipped_fields},
                     }
 
-        row = _first_row(result.data or [])
+        row = _first_row(rows)
         if not row:
             raise DatabaseError("Failed to update user")
 
@@ -487,22 +371,8 @@ async def delete_current_user(
         owned = await StorageService.resolve_owned_storage_paths(db, user_id)
         storage_paths = owned["storage_paths"]
 
-        # Feedback/service-ticket attachments are tracked by their durable
-        # bucket keys (support_tickets.attachment_storage_paths) so their
-        # objects are not orphaned on account deletion. attachment_urls holds
-        # only short-lived presigned URLs and must not be used as the durable
-        # reference. Read-only; routed through execute_with_reconnect so a
-        # dead pooled connection (observed 2026-08-04: "Failed to delete
-        # account" 500s) heals instead of failing the whole deletion.
-        tickets_result = await execute_with_reconnect(
-            lambda d: d.table("support_tickets")
-            .select("attachment_storage_paths")
-            .eq("user_id", user_id)
-            .execute(),
-            db,
-            extra={"operation": "delete_account.tickets", "user_id": user_id},
-        )
-        for ticket_row in (tickets_result.data or []):
+        tickets_rows = await user_service.list_support_ticket_attachments(db, user_id=user_id)
+        for ticket_row in tickets_rows:
             for path in (ticket_row.get("attachment_storage_paths") or []):
                 if path:
                     storage_paths.append(str(path))
@@ -512,16 +382,7 @@ async def delete_current_user(
         # `key_from_path` reduces the stored (presigned) URL to its bucket key
         # (replaces the removed `url_to_storage_path`); the S3 backend uses a
         # single configured bucket, so the key is appended to the shared list.
-        avatar_result = await execute_with_reconnect(
-            lambda d: d.table("users")
-            .select("avatar_url")
-            .eq("id", user_id)
-            .maybe_single()
-            .execute(),
-            db,
-            extra={"operation": "delete_account.avatar", "user_id": user_id},
-        )
-        avatar_row = maybe_single_data(avatar_result)
+        avatar_row = await user_service.fetch_avatar_row(db, user_id=user_id)
         avatar_key = key_from_path(
             (avatar_row or {}).get("avatar_url")
         )
@@ -551,7 +412,7 @@ async def delete_current_user(
                 await StorageService.delete_multiple_images(db=db, storage_paths=storage_paths)
 
         async def _delete_vectors() -> None:
-            if hasattr(db.table("items"), "select"):  # pragma: no cover - real clients always have select
+            if user_service.has_items_select(db):  # pragma: no cover - real clients always have select
                 try:
                     await get_vector_service().delete_user_items(user_id)
                 except Exception as error:
@@ -561,35 +422,9 @@ async def delete_current_user(
         # row delete stays last so an Auth outage cannot leave a live profile.
         await asyncio.gather(_delete_storage(), _delete_vectors())
 
-        # ANONYMIZE, do not delete. support_tickets.user_id is ON DELETE SET
-        # NULL because 009_support_tickets supports anonymous tickets, and the
-        # table also holds in-app CONTENT REPORTS about other users plus open
-        # support/billing threads. Hard-deleting the requester's rows destroys
-        # the only record of a third party's violation (the reported user is
-        # never actioned and the content stays up) and any unresolved dispute
-        # support still needs.
-        #
-        # Erasure applies to the requester's personal data, not to the ticket
-        # itself: clearing user_id and contact_email severs every link back to
-        # them while the body/category/status survive for moderation. Their
-        # attachment objects were already deleted above.
-        await execute_with_reconnect(
-            lambda d: d.table("support_tickets")
-            .update({"user_id": None, "contact_email": None})
-            .eq("user_id", user_id)
-            .execute(),
-            db,
-            extra={"operation": "delete_account.support_tickets", "user_id": user_id},
-        )
+        await user_service.anonymize_support_tickets(db, user_id=user_id)
 
-        # The user-row delete is idempotent (a replayed delete is a no-op), so
-        # it is safe through the reconnect retry: a dead pooled connection
-        # mid-delete rebuilds the client and completes (2026-08-04 RCA).
-        await execute_with_reconnect(
-            lambda d: d.table("users").delete().eq("id", user_id).execute(),
-            db,
-            extra={"operation": "delete_account.user_row", "user_id": user_id},
-        )
+        await user_service.delete_user_row(db, user_id=user_id)
         # The row is gone; a cached copy must not serve later requests.
         user_profile_cache.invalidate(user_id)
 
@@ -627,23 +462,12 @@ async def export_user_data(
     returns a fresh URL, so repeat requests never hand out a stale link.
     """
     try:
-        user_result = await execute_with_reconnect(
-            lambda d: d.table("users").select("*").eq("id", user_id).execute(),
-            db,
-            extra={"operation": "export_user_data.user", "user_id": user_id},
-            max_retries=2,
-        )
-        if not user_result.data:
+        user_rows = await user_service.fetch_user_row_for_export(db, user_id=user_id)
+        if not user_rows:
             raise UserNotFoundError(user_id=user_id)
 
         async def _rows(table: str) -> List[Dict[str, Any]]:
-            result = await execute_with_reconnect(
-                lambda d: d.table(table).select("*").eq("user_id", user_id).execute(),
-                db,
-                extra={"operation": f"export_user_data.{table}", "user_id": user_id},
-                max_retries=2,
-            )
-            return result.data or []
+            return await user_service.list_user_rows(db, table=table, user_id=user_id)
 
         # Sections are independent; read them concurrently (same pattern as
         # the dashboard aggregate and the deletion cascade).
@@ -658,9 +482,9 @@ async def export_user_data(
         )
 
         payload = {
-            "generated_at": _now(),
+            "generated_at": utcnow_iso(),
             "note": "Metadata export: image files are not included; rows carry their storage keys.",
-            "user": user_result.data[0],
+            "user": user_rows[0],
             "preferences": (preferences or [None])[0],
             "settings": (settings or [None])[0],
             "body_profiles": body_profiles,
@@ -716,10 +540,8 @@ async def upload_avatar(
         # (measured: 47 orphan avatar objects / 53MB in the bucket).
         old_avatar_url = None
         try:
-            row = await asyncio.to_thread(
-                db.table("users").select("avatar_url").eq("id", user_id).maybe_single().execute
-            )
-            old_avatar_url = (row.data or {}).get("avatar_url") if row and row.data else None
+            avatar_row = await user_service.fetch_current_avatar_row(db, user_id=user_id)
+            old_avatar_url = (avatar_row or {}).get("avatar_url") if avatar_row else None
         except Exception as e:
             logger.warning("Failed to read current avatar before replace", user_id=user_id, error=str(e))
 
@@ -729,7 +551,7 @@ async def upload_avatar(
         )
 
         try:
-            await asyncio.to_thread(db.table("users").update({"avatar_url": avatar_url, "updated_at": _now()}).eq("id", user_id).execute)
+            await user_service.set_user_avatar(db, user_id=user_id, avatar_url=avatar_url)
             # Keep the auth-path profile cache coherent with the new avatar.
             user_profile_cache.invalidate(user_id)
         except Exception:
@@ -796,10 +618,10 @@ async def get_user_preferences(
     db: Client = Depends(get_db),
 ):
     try:
-        prefs_data, _ = _get_or_create_record(
+        prefs_data, _ = user_service.get_or_create_record(
             db, "user_preferences", user_id, _PREFERENCES_DEFAULTS, UserPreferences
         )
-        prefs_data["last_updated"] = _now()
+        prefs_data["last_updated"] = utcnow_iso()
         return {"data": prefs_data, "message": "OK"}
 
     except (UserNotFoundError, ValidationError, DatabaseError):
@@ -815,7 +637,7 @@ async def update_user_preferences(
     db: Client = Depends(get_db),
 ):
     try:
-        prefs_data = _upsert_record(
+        prefs_data = user_service.upsert_record(
             db,
             "user_preferences",
             user_id,
@@ -885,7 +707,7 @@ async def get_user_settings(
     db: Client = Depends(get_db),
 ):
     try:
-        settings_data, _ = _get_or_create_record(
+        settings_data, _ = user_service.get_or_create_record(
             db, "user_settings", user_id, _SETTINGS_DEFAULTS, UserSettings
         )
         return {"data": settings_data, "message": "OK"}
@@ -907,7 +729,7 @@ async def update_user_settings(
         # `language_explicit = FALSE` so the next request defers to
         # `Accept-Language` instead of pinning the stored default 'en'.
         _derive_language_explicit(update_data)
-        settings_data = _upsert_record(
+        settings_data = user_service.upsert_record(
             db, "user_settings", user_id, update_data, UserSettings, _SETTINGS_DEFAULTS
         )
         # The profile embed (`user_settings(language)`) that the auth
@@ -935,15 +757,8 @@ async def list_body_profiles(
 ):
     """List all body profiles for the user."""
     try:
-        res = await asyncio.to_thread(
-            db.table("body_profiles")
-            .select("*")
-            .eq("user_id", user_id)
-            .order("is_default", desc=True)
-            .order("created_at", desc=True)
-            .execute
-        )
-        profiles = [BodyProfile.model_validate(r).model_dump(mode="json") for r in (res.data or [])]
+        rows = await user_service.list_body_profile_rows(db, user_id=user_id)
+        profiles = [BodyProfile.model_validate(r).model_dump(mode="json") for r in rows]
         return {"data": {"body_profiles": profiles}, "message": "OK"}
 
     except (UserNotFoundError, ValidationError, DatabaseError, BodyProfileNotFoundError):
@@ -965,26 +780,14 @@ async def create_body_profile(
     # The per-user lock serializes the check-and-insert within this process.
     async with PER_USER_LOCK(user_id):
         try:
-            now = _now()
-            existing_count = await asyncio.to_thread(db.table("body_profiles").select("id", count="exact").eq("user_id", user_id).execute)
-            count = getattr(existing_count, "count", len(existing_count.data or []))
+            now = utcnow_iso()
+            count = await user_service.count_body_profiles(db, user_id=user_id)
 
             payload = request.model_dump()
             if count == 0:
                 payload["is_default"] = True
 
-            if payload.get("is_default"):
-                await asyncio.to_thread(db.table("body_profiles").update({"is_default": False}).eq("user_id", user_id).execute)
-
-            profile_id = str(uuid.uuid4())
-            insert = {"id": profile_id, "user_id": user_id, **payload, "created_at": now, "updated_at": now}
-            res = await asyncio.to_thread(db.table("body_profiles").insert(insert).execute)
-            row = _first_row(res.data or [])
-            if not row:
-                raise DatabaseError("Failed to create body profile")
-
-            if payload.get("is_default"):
-                await asyncio.to_thread(db.table("users").update({"body_profile_id": profile_id}).eq("id", user_id).execute)
+            row = await user_service.create_body_profile_row(db, user_id=user_id, payload=payload, now=now)
 
             profile = BodyProfile.model_validate(row)
             return {"data": profile.model_dump(mode="json"), "message": "Created"}
@@ -1005,23 +808,9 @@ async def update_body_profile(
     """Update an existing body profile."""
     try:
         profile_id_str = str(profile_id)
-        existing = await asyncio.to_thread(db.table("body_profiles").select("*").eq("id", profile_id_str).eq("user_id", user_id).execute)
-        if not existing.data:
-            raise BodyProfileNotFoundError(profile_id=profile_id_str)
-
-        update = update_data.model_dump(exclude_unset=True)
-        update["updated_at"] = _now()
-
-        if update.get("is_default") is True:
-            await asyncio.to_thread(db.table("body_profiles").update({"is_default": False}).eq("user_id", user_id).execute)
-
-        res = await asyncio.to_thread(db.table("body_profiles").update(update).eq("id", profile_id_str).eq("user_id", user_id).execute)
-        row = _first_row(res.data or [])
-        if not row:
-            raise DatabaseError("Failed to update body profile")
-
-        if update.get("is_default") is True:
-            await asyncio.to_thread(db.table("users").update({"body_profile_id": profile_id_str}).eq("id", user_id).execute)
+        row = await user_service.update_body_profile_row(
+            db, user_id=user_id, profile_id_str=profile_id_str, update_data=update_data
+        )
 
         profile = BodyProfile.model_validate(row)
         return {"data": profile.model_dump(mode="json"), "message": "Updated"}
@@ -1041,30 +830,7 @@ async def delete_body_profile(
     """Delete a body profile."""
     try:
         profile_id_str = str(profile_id)
-        existing = await asyncio.to_thread(db.table("body_profiles").select("id,is_default").eq("id", profile_id_str).eq("user_id", user_id).execute)
-        if not existing.data:
-            raise BodyProfileNotFoundError(profile_id=profile_id_str)
-
-        was_default = existing.data[0].get("is_default") if existing.data else False
-
-        await asyncio.to_thread(db.table("body_profiles").delete().eq("id", profile_id_str).eq("user_id", user_id).execute)
-
-        # If deleting the default profile, promote the newest remaining profile (if any)
-        if was_default:
-            remaining = await asyncio.to_thread(
-                db.table("body_profiles")
-                .select("id")
-                .eq("user_id", user_id)
-                .order("created_at", desc=True)
-                .limit(1)
-                .execute
-            )
-            if remaining.data:
-                new_default_id = remaining.data[0]["id"]
-                await asyncio.to_thread(db.table("body_profiles").update({"is_default": True, "updated_at": _now()}).eq("id", new_default_id).execute)
-                await asyncio.to_thread(db.table("users").update({"body_profile_id": new_default_id}).eq("id", user_id).execute)
-            else:
-                await asyncio.to_thread(db.table("users").update({"body_profile_id": None}).eq("id", user_id).execute)
+        await user_service.delete_body_profile_row(db, user_id=user_id, profile_id_str=profile_id_str)
 
         return None
 
@@ -1080,20 +846,11 @@ async def get_body_profile(
     db: Client = Depends(get_db),
 ):
     try:
-        result = await asyncio.to_thread(
-            db.table("body_profiles")
-            .select("*")
-            .eq("user_id", user_id)
-            .order("is_default", desc=True)
-            .order("created_at", desc=True)
-            .limit(1)
-            .maybe_single()
-            .execute
-        )
-        if not result or not result.data:
+        row = await user_service.fetch_latest_body_profile(db, user_id=user_id)
+        if not row:
             raise BodyProfileNotFoundError()
 
-        profile = BodyProfile.model_validate(result.data)
+        profile = BodyProfile.model_validate(row)
         return {"data": profile.model_dump(mode="json"), "message": "OK"}
 
     except (UserNotFoundError, ValidationError, DatabaseError, BodyProfileNotFoundError):
@@ -1109,70 +866,9 @@ async def upsert_body_profile(
     db: Client = Depends(get_db),
 ):
     try:
-        existing = await asyncio.to_thread(
-            db.table("body_profiles")
-            .select("id, is_default")
-            .eq("user_id", user_id)
-            .order("is_default", desc=True)
-            .order("created_at", desc=True)
-            .limit(1)
-            .maybe_single()
-            .execute
-        )
-
-        now = _now()
-        if not existing or not existing.data:
-            # Creating requires full payload; validate via BodyProfileCreate.
-            # A partial payload raises pydantic's ValidationError, which is
-            # NOT the app's ValidationError — translate it so the client gets
-            # a clean 422 instead of a 500 (B3-09).
-            try:
-                create = BodyProfileCreate(**update_data.model_dump(exclude_unset=True))
-            except PydanticValidationError as exc:
-                invalid_fields = [
-                    list(e.get("loc", ()))
-                    for e in exc.errors()
-                ]
-                raise ValidationError(
-                    "First body-profile save requires a full profile "
-                    "(name, height_cm, weight_kg, body_shape, skin_tone)",
-                    details={"missing_or_invalid_fields": invalid_fields},
-                ) from exc
-            insert = {
-                "user_id": user_id,
-                **create.model_dump(),
-                "is_default": True,
-                "created_at": now,
-                "updated_at": now,
-            }
-            result = await asyncio.to_thread(db.table("body_profiles").insert(insert).execute)
-            row = _first_row(result.data or [])
-            if not row:
-                raise DatabaseError("Failed to create body profile")
-            profile_id = row["id"]
-            # Link default profile
-            await asyncio.to_thread(db.table("users").update({"body_profile_id": profile_id}).eq("id", user_id).execute)
-            profile = BodyProfile.model_validate(row)
-            return {"data": profile.model_dump(mode="json"), "message": "Created"}
-
-        profile_id = existing.data["id"]
-        update_dict = update_data.model_dump(exclude_unset=True)
-        update_dict["updated_at"] = now
-
-        if update_dict.get("is_default") is True:
-            await asyncio.to_thread(db.table("body_profiles").update({"is_default": False}).eq("user_id", user_id).execute)
-
-        result = await asyncio.to_thread(db.table("body_profiles").update(update_dict).eq("id", profile_id).execute)
-        row = _first_row(result.data or [])
-        if not row:
-            raise DatabaseError("Failed to update body profile")
-
-        # If user toggles is_default, keep users.body_profile_id updated
-        if update_dict.get("is_default") is True:
-            await asyncio.to_thread(db.table("users").update({"body_profile_id": profile_id}).eq("id", user_id).execute)
-
+        row, created = await user_service.upsert_body_profile_row(db, user_id=user_id, update_data=update_data)
         profile = BodyProfile.model_validate(row)
-        return {"data": profile.model_dump(mode="json"), "message": "Updated"}
+        return {"data": profile.model_dump(mode="json"), "message": "Created" if created else "Updated"}
 
     except (UserNotFoundError, ValidationError, DatabaseError, BodyProfileNotFoundError):
         raise
@@ -1257,8 +953,8 @@ async def _build_recent_activity(
 async def _get_weather_suggestion(user_id: str, db: Client) -> Optional[Dict[str, Any]]:
     """Get weather-based suggestion for user."""
     try:
-        settings_row = await asyncio.to_thread(db.table("user_settings").select("default_location").eq("user_id", user_id).execute)
-        location = settings_row.data[0].get("default_location") if (settings_row.data and len(settings_row.data) > 0) else None
+        settings_rows = await user_service.fetch_default_location_rows(db, user_id=user_id)
+        location = settings_rows[0].get("default_location") if (settings_rows and len(settings_rows) > 0) else None
         if not location:
             return None
 
@@ -1285,14 +981,7 @@ async def _get_weather_suggestion(user_id: str, db: Client) -> Optional[Dict[str
 async def _get_outfit_of_the_day(user_id: str, db: Client) -> Optional[Dict[str, Any]]:
     """Get the most recently updated outfit for the user."""
     try:
-        outfit = (await asyncio.to_thread(
-            db.table("outfits")
-            .select("id,name,outfit_images(storage_path,image_url,thumbnail_url,is_primary)")
-            .eq("user_id", user_id)
-            .order("updated_at", desc=True)
-            .limit(1)
-            .execute
-        )).data or []
+        outfit = await user_service.fetch_outfit_of_the_day_rows(db, user_id=user_id)
 
         if not outfit:
             return None
@@ -1327,9 +1016,6 @@ async def get_dashboard(
         now_dt = utcnow()
         month_start = now_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
 
-        # All count/recent queries are independent reads; run them concurrently
-        # so the home-screen endpoint waits on the slowest query, not their sum
-        # (the export path above uses the same pattern on the same client).
         (
             user_row,
             items_count,
@@ -1341,59 +1027,7 @@ async def get_dashboard(
             fav_outfits,
             recent_items,
             recent_outfits,
-        ) = await asyncio.gather(
-            asyncio.to_thread(d.table("users").select("*").eq("id", user_id).execute),
-            asyncio.to_thread(d.table("items").select("id", count="exact").eq("user_id", user_id).eq("is_deleted", False).execute),
-            asyncio.to_thread(d.table("outfits").select("id", count="exact").eq("user_id", user_id).execute),
-            asyncio.to_thread(
-                d.table("items")
-                .select("id", count="exact")
-                .eq("user_id", user_id)
-                .eq("is_deleted", False)
-                .gte("created_at", month_start)
-                .execute
-            ),
-            asyncio.to_thread(
-                d.table("outfits")
-                .select("id", count="exact")
-                .eq("user_id", user_id)
-                .gte("created_at", month_start)
-                .execute
-            ),
-            asyncio.to_thread(
-                d.table("items")
-                .select("name,usage_times_worn")
-                .eq("user_id", user_id)
-                .eq("is_deleted", False)
-                # nullslast: NULL wear count must not outrank every real count
-                # (Postgres sorts NULLs first under DESC by default).
-                .order("usage_times_worn", desc=True, nullsfirst=False)
-                .limit(1)
-                .execute
-            ),
-            asyncio.to_thread(d.table("items").select("id", count="exact").eq("user_id", user_id).eq("is_favorite", True).eq("is_deleted", False).execute),
-            asyncio.to_thread(d.table("outfits").select("id", count="exact").eq("user_id", user_id).eq("is_favorite", True).execute),
-            # Recent activity (images are needed so the activity feed can render
-            # thumbnails; storage_path is materialized to a fresh presigned URL in
-            # _build_recent_activity).
-            asyncio.to_thread(
-                d.table("items")
-                .select("id,name,created_at,item_images(storage_path,image_url,thumbnail_url,is_primary)")
-                .eq("user_id", user_id)
-                .eq("is_deleted", False)
-                .order("created_at", desc=True)
-                .limit(5)
-                .execute
-            ),
-            asyncio.to_thread(
-                d.table("outfits")
-                .select("id,name,created_at,outfit_images(storage_path,image_url,thumbnail_url,is_primary)")
-                .eq("user_id", user_id)
-                .order("created_at", desc=True)
-                .limit(5)
-                .execute
-            ),
-        )
+        ) = await user_service.fetch_dashboard_results(d, user_id=user_id, month_start=month_start)
         if not user_row.data:
             raise UserNotFoundError(user_id=user_id)
 

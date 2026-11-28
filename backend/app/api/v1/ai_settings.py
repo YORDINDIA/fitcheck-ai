@@ -4,7 +4,6 @@ AI Settings API routes.
 Provides endpoints for managing per-user AI provider configuration.
 """
 
-import asyncio
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, status
@@ -23,7 +22,7 @@ from app.models.ai import (
     UsageStatsResponse,
     RateLimitCheckResponse,
 )
-from app.services.ai_settings_service import AISettingsService
+from app.services.ai_settings_service import AISettingsService, save_provider_configs
 from app.services.ai_provider_interface import AIProvider, valid_provider_values
 from app.services.ai_provider_service import get_system_provider_config
 
@@ -387,9 +386,11 @@ async def reset_provider_config(
             del provider_configs[provider]
 
             # Update settings
-            await asyncio.to_thread(db.table("user_ai_settings").update({
-                "provider_configs": provider_configs,
-            }).eq("user_id", user_id).execute)
+            await save_provider_configs(
+                user_id=user_id,
+                provider_configs=provider_configs,
+                db=db,
+            )
 
         return {
             "data": {"provider": provider, "reset": True},

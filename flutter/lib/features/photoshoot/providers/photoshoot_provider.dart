@@ -833,6 +833,7 @@ class PhotoshootNotifier extends Notifier<PhotoshootState> {
 
     switch (status.status) {
       case 'complete':
+      case 'completed':
         await _complete(id, {
           'session_id': status.jobId,
           'failed_count': status.failedCount,

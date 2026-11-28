@@ -39,7 +39,7 @@ export function ThemeToggle({ className }: ThemeToggleProps) {
           )}
           title="Toggle theme"
         >
-          <CurrentIcon className="h-5 w-5" />
+          <CurrentIcon className="h-5 w-5" aria-hidden="true" />
           <span className="sr-only">Toggle theme</span>
         </button>
       </DropdownMenuTrigger>
@@ -56,9 +56,9 @@ export function ThemeToggle({ className }: ThemeToggleProps) {
               theme === value && 'bg-accent font-semibold text-foreground'
             )}
           >
-            <Icon className="h-4 w-4" />
+            <Icon className="h-4 w-4" aria-hidden="true" />
             <span>{label}</span>
-            {theme === value && <Check className="ms-auto h-4 w-4" />}
+            {theme === value && <Check className="ms-auto h-4 w-4" aria-hidden="true" />}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

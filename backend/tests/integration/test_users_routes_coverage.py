@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from app.api.v1 import users as users_module
+from app.services import user_service
 from app.core.exceptions import (
     BodyProfileNotFoundError,
     DatabaseError,
@@ -310,7 +311,7 @@ async def test_get_current_user_avatar_materialization_failure_is_tolerated(monk
 
 @pytest.mark.asyncio
 async def test_get_current_user_generic_db_error_raises_database_error(monkeypatch):
-    monkeypatch.setattr(users_module, "execute_with_reconnect", AsyncMock(side_effect=ValueError("boom")))
+    monkeypatch.setattr(user_service, "execute_with_reconnect", AsyncMock(side_effect=ValueError("boom")))
 
     with pytest.raises(DatabaseError, match="Failed to fetch user"):
         await users_module.get_current_user(user_id=USER_ID, db=Mock())
@@ -534,7 +535,7 @@ def _boom_run_sync(fn, db, **kwargs):
 
 @pytest.mark.asyncio
 async def test_get_user_preferences_generic_error_raises_database_error(monkeypatch):
-    monkeypatch.setattr(users_module, "run_sync_with_reconnect", _boom_run_sync)
+    monkeypatch.setattr(user_service, "run_sync_with_reconnect", _boom_run_sync)
 
     with pytest.raises(DatabaseError, match="Failed to fetch preferences"):
         await users_module.get_user_preferences(user_id=USER_ID, db=Mock())
@@ -562,7 +563,7 @@ async def test_get_user_preferences_raises_when_reload_returns_no_row(monkeypatc
             return SimpleNamespace(data=[])
         return fn(_LenientDB())
 
-    monkeypatch.setattr(users_module, "run_sync_with_reconnect", _fake)
+    monkeypatch.setattr(user_service, "run_sync_with_reconnect", _fake)
 
     with pytest.raises(DatabaseError, match="Failed to create user_preferences"):
         await users_module.get_user_preferences(user_id=USER_ID, db=Mock())
@@ -570,7 +571,7 @@ async def test_get_user_preferences_raises_when_reload_returns_no_row(monkeypatc
 
 @pytest.mark.asyncio
 async def test_update_user_preferences_generic_error_raises_database_error(monkeypatch):
-    monkeypatch.setattr(users_module, "run_sync_with_reconnect", _boom_run_sync)
+    monkeypatch.setattr(user_service, "run_sync_with_reconnect", _boom_run_sync)
 
     with pytest.raises(DatabaseError, match="Failed to update preferences"):
         await users_module.update_user_preferences(
@@ -586,10 +587,10 @@ async def test_update_user_preferences_raises_when_write_echoes_no_row(monkeypat
     from tests.factories.row_factories import preferences_row
 
     db = FakeDB(rows={"user_preferences": [preferences_row(user_id=USER_ID)]})
-    real = users_module.run_sync_with_reconnect
+    real = user_service.run_sync_with_reconnect
     state = {"n": 0, "at": 2}  # select lookup, then the update itself
     monkeypatch.setattr(
-        users_module, "run_sync_with_reconnect", _run_sync_fake_with(real, state)
+        user_service, "run_sync_with_reconnect", _run_sync_fake_with(real, state)
     )
 
     with pytest.raises(DatabaseError, match="Failed to update user_preferences"):
@@ -618,7 +619,7 @@ async def test_get_user_settings_raises_when_reload_returns_no_row(monkeypatch):
             return SimpleNamespace(data=[])
         return fn(_LenientDB())
 
-    monkeypatch.setattr(users_module, "run_sync_with_reconnect", _fake)
+    monkeypatch.setattr(user_service, "run_sync_with_reconnect", _fake)
 
     with pytest.raises(DatabaseError, match="Failed to create user_settings"):
         await users_module.get_user_settings(user_id=USER_ID, db=Mock())
@@ -626,7 +627,7 @@ async def test_get_user_settings_raises_when_reload_returns_no_row(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_user_settings_generic_error_raises_database_error(monkeypatch):
-    monkeypatch.setattr(users_module, "run_sync_with_reconnect", _boom_run_sync)
+    monkeypatch.setattr(user_service, "run_sync_with_reconnect", _boom_run_sync)
 
     with pytest.raises(DatabaseError, match="Failed to fetch settings"):
         await users_module.get_user_settings(user_id=USER_ID, db=Mock())
@@ -634,7 +635,7 @@ async def test_get_user_settings_generic_error_raises_database_error(monkeypatch
 
 @pytest.mark.asyncio
 async def test_update_user_settings_generic_error_raises_database_error(monkeypatch):
-    monkeypatch.setattr(users_module, "run_sync_with_reconnect", _boom_run_sync)
+    monkeypatch.setattr(user_service, "run_sync_with_reconnect", _boom_run_sync)
 
     with pytest.raises(DatabaseError, match="Failed to update settings"):
         await users_module.update_user_settings(
@@ -645,10 +646,10 @@ async def test_update_user_settings_generic_error_raises_database_error(monkeypa
 @pytest.mark.asyncio
 async def test_upsert_record_raises_when_write_returns_no_row(monkeypatch):
     """_upsert_record must fail loudly when the write echoes no row back."""
-    real = users_module.run_sync_with_reconnect
+    real = user_service.run_sync_with_reconnect
     state = {"n": 0, "at": 2}  # select lookup, then the write itself
     monkeypatch.setattr(
-        users_module, "run_sync_with_reconnect", _run_sync_fake_with(real, state)
+        user_service, "run_sync_with_reconnect", _run_sync_fake_with(real, state)
     )
 
     with pytest.raises(DatabaseError, match="Failed to update user_settings"):
@@ -664,7 +665,7 @@ async def test_upsert_record_without_updated_field_skips_timestamps():
     from tests.utils.fake_db import FakeDB
 
     db = FakeDB(insert_defaults={"last_updated": "2026-01-01T00:00:00+00:00"})
-    result = users_module._upsert_record(
+    result = user_service.upsert_record(
         db,
         "user_preferences",
         USER_ID,

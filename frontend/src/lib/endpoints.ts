@@ -132,11 +132,3 @@ export const LONG_RUNNING_PREFIXES = [
   ENDPOINTS.ITEMS.UPLOAD,
   ENDPOINTS.USERS.AVATAR,
 ] as const;
-
-/**
- * Timeout for image-upload requests whose path is too templated to match a
- * static prefix (see the note above). Re-exported from `api/client.ts` rather
- * than restated: two independent 600_000 literals that the interceptor and the
- * per-call override had to keep equal is exactly how they drift apart.
- */
-export { LONG_RUNNING_TIMEOUT_MS as UPLOAD_TIMEOUT_MS } from "@/api/client";

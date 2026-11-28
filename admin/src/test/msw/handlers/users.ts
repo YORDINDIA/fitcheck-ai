@@ -207,7 +207,7 @@ export const adminUserDetailFixture: AdminUserDetail & Record<string, unknown> =
   })),
   photoshoot_jobs: Array.from({ length: 3 }, (_, i) => ({
     id: `ps_job_${i + 1}`,
-    status: i === 1 ? 'failed' : 'complete',
+    status: i === 1 ? 'failed' : 'completed',
     use_case: i === 0 ? 'linkedin' : i === 1 ? 'dating' : 'fashion',
     error_message: i === 1 ? 'Image generation failed' : null,
     image_failures: i === 1 ? 2 : 0,
@@ -301,7 +301,7 @@ export const adminUserGenerationsFixture: AdminUserGenerationsPage = {
     {
       kind: 'photoshoot',
       id: 'ps_job_1',
-      status: 'complete',
+      status: 'completed',
       created_at: '2026-08-06T14:00:00Z',
       completed_at: '2026-08-06T14:05:00Z',
       duration_ms: 300000,

@@ -9,7 +9,7 @@ import '../../../app/routes/app_routes.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/i18n/l10n.dart';
 import '../../../core/widgets/app_ui.dart';
-import '../../subscription/repositories/subscription_repository.dart';
+import '../../subscription/providers/subscription_providers.dart';
 import '../providers/auth_provider.dart';
 import 'widgets/auth_ui.dart';
 
@@ -58,7 +58,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       bool valid;
       String? referrer;
       try {
-        final result = await SubscriptionRepository().validateReferralCode(code);
+        final repository = ref.read(subscriptionRepositoryProvider);
+        final result = await repository.validateReferralCode(code);
         valid = result.valid;
         referrer = result.referrerName;
       } catch (_) {

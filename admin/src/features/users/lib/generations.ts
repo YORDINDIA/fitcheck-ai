@@ -50,7 +50,6 @@ export function generationStatusLabelKey(status: string | null | undefined): str
 /** Statuses offered in the explorer's status filter (exact server eq match). */
 export const GENERATION_STATUSES = [
   'completed',
-  'complete',
   'extracting',
   'generating',
   'cancelled',

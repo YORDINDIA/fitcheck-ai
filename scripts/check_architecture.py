@@ -6,6 +6,7 @@ Backend rules:
   - models must not import app.services
   - core must not import app.services or app.api
   - db must not import app.services
+  - api routes (app/api/) must not call db.table(); queries belong in app/services/
   - utils (app/utils/) is infrastructure helpers: must not import api or services
   - mcp (app/mcp/) talks to the API via in-process ASGI loopback only: may
     import core (and itself), must not import api/services/models/db/agents;
@@ -157,6 +158,16 @@ def check_backend_file(path: Path) -> None:
     file_layer = path_layer or file_layer
 
     imports = collect_imports(path, tree)
+
+    # routes must not query the database directly; queries belong in services
+    if file_layer == "api":
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "table":
+                errors.append(
+                    f"{path}:{node.lineno}: route calls '.table(' directly. "
+                    f"REMEDIATE: move the query into a service in app/services/ and call that "
+                    f"function from the route. See ARCHITECTURE.md."
+                )
 
     for imp in imports:
         if not imp.startswith("app"):

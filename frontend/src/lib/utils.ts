@@ -1,30 +1,12 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { imageFetchOptions } from './sessionCookie';
-import {
-  formatCurrencyFromCents as formatCurrencyFromCentsLocalized,
-  formatDate as formatDateLocalized,
-} from '@/i18n/runtime';
+import { formatCurrencyFromCents as formatCurrencyFromCentsLocalized } from '@/i18n/runtime';
 
 /**
  * Merge Tailwind CSS classes with proper precedence
  */
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
-}
-
-/**
- * Format a date to a human-readable string in the active locale.
- *
- * These three helpers used to pin `'en-US'`. That is the whole bug: a French
- * user saw "Mar 4, 2025" and a Japanese user saw a US date order, because the
- * `Intl` instance was frozen at module load with the wrong locale. They now
- * delegate to `i18n/runtime`, which reads the active locale at call time — so a
- * language switch changes the output of an already-mounted component on its next
- * render, without threading a locale argument through two hundred call sites.
- */
-export function formatDate(date: string | Date): string {
-  return formatDateLocalized(date);
 }
 
 /**
@@ -36,69 +18,6 @@ export function formatDate(date: string | Date): string {
  */
 export function formatUsd(cents: number): string {
   return formatCurrencyFromCentsLocalized(cents);
-}
-
-/**
- * Calculate cost per wear
- */
-export function calculateCostPerWear(price: number, timesWorn: number): number {
-  if (timesWorn === 0) return price;
-  return price / timesWorn;
-}
-
-/**
- * Truncate text to a max length
- */
-export function truncate(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text;
-  return text.slice(0, maxLength) + '…';
-}
-
-/**
- * Debounce function
- */
-export function debounce<T extends (...args: unknown[]) => unknown>(
-  func: T,
-  wait: number
-): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout | null = null;
-
-  return function executedFunction(...args: Parameters<T>) {
-    const later = () => {
-      timeout = null;
-      func(...args);
-    };
-
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-    timeout = setTimeout(later, wait);
-  };
-}
-
-/**
- * Generate a random ID
- */
-export function generateId(): string {
-  return Math.random().toString(36).substring(2) + Date.now().toString(36);
-}
-
-/**
- * Sleep for a specified duration
- */
-export function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/**
- * Check if an object is empty
- */
-export function isEmpty(obj: unknown): boolean {
-  if (obj === null || obj === undefined) return true;
-  if (Array.isArray(obj)) return obj.length === 0;
-  if (typeof obj === 'object') return Object.keys(obj).length === 0;
-  if (typeof obj === 'string') return obj.trim().length === 0;
-  return false;
 }
 
 /**
@@ -129,22 +48,6 @@ export function downloadBlob(blob: Blob, filename: string): void {
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(objectUrl);
-}
-
-/**
- * Download a file from a URL
- */
-export async function downloadFile(url: string, filename: string): Promise<void> {
-  const response = await fetch(url, imageFetchOptions(url));
-  const blob = await response.blob();
-  const downloadUrl = window.URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = downloadUrl;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  window.URL.revokeObjectURL(downloadUrl);
 }
 
 /**

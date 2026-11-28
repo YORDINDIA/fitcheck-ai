@@ -12,7 +12,6 @@ Every webhook is signature-verified and deduplicated; a failed handler raises
 so the store retries. Entitlements are only written from provider-verified
 data.
 """
-import asyncio
 from datetime import timedelta
 from typing import Any, Dict, Optional
 
@@ -23,11 +22,12 @@ from app.api.v1.deps import get_current_user, get_db
 from app.core.exceptions import ValidationError
 from app.core.logging_config import get_context_logger
 from app.models.subscription import PlanType, RegisterIapTransactionRequest, StoreType
+from app.services import iap_service
 from app.services.apple_iap_service import AppleIAPService, AppleIAPSignatureError
 from app.services.google_play_service import GooglePlayService, GooglePlayVerificationError
 from app.services.subscription_service import SubscriptionService
 from app.utils import maybe_single_data
-from app.utils.datetime_util import parse_utc_datetime, utcnow, utcnow_iso
+from app.utils.datetime_util import parse_utc_datetime, utcnow
 
 
 def _is_unique_violation(error: Exception) -> bool:
@@ -135,16 +135,8 @@ async def _claim_event(db: Client, table: str, pk_column: str, pk_value: str, ev
     from app.utils.db import execute_with_reconnect
 
     def _insert(d: Client):
-        return (
-            d.table(table)
-            .insert({
-                pk_column: pk_value,
-                "event_type": event_type,
-                "status": _WEBHOOK_STATUS_PROCESSING,
-                "processing_started_at": utcnow_iso(),
-                "attempts": 1,
-            })
-            .execute()
+        return iap_service.insert_webhook_event(
+            d, table, pk_column, pk_value, event_type, _WEBHOOK_STATUS_PROCESSING
         )
 
     try:
@@ -173,13 +165,7 @@ async def _claim_event(db: Client, table: str, pk_column: str, pk_value: str, ev
 
     # Duplicate: inspect the existing row before deciding.
     def _select(d: Client):
-        return (
-            d.table(table)
-            .select("status,processing_started_at,attempts")
-            .eq(pk_column, pk_value)
-            .maybe_single()
-            .execute()
-        )
+        return iap_service.select_webhook_event(d, table, pk_column, pk_value)
 
     try:
         existing = await execute_with_reconnect(
@@ -220,20 +206,9 @@ async def _claim_event(db: Client, table: str, pk_column: str, pk_value: str, ev
     attempts = int(row.get("attempts") or 0) + 1
 
     def _claim(d: Client):
-        query = (
-            d.table(table)
-            .update({
-                "status": _WEBHOOK_STATUS_PROCESSING,
-                "processing_started_at": utcnow_iso(),
-                "attempts": attempts,
-            })
-            .eq(pk_column, pk_value)
+        return iap_service.claim_webhook_event(
+            d, table, pk_column, pk_value, _WEBHOOK_STATUS_PROCESSING, previous_started, attempts
         )
-        if previous_started is not None:
-            query = query.eq("processing_started_at", previous_started)
-        else:
-            query = query.is_("processing_started_at", "null")
-        return query.execute()
 
     claim = await execute_with_reconnect(
         _claim, db, extra={"operation": "iap_claim_reclaim", "table": table},
@@ -272,20 +247,9 @@ async def _claim_event(db: Client, table: str, pk_column: str, pk_value: str, ev
         fresh_attempts = int(current.get("attempts") or 0) + 1
 
         def _reclaim(d: Client):
-            query = (
-                d.table(table)
-                .update({
-                    "status": _WEBHOOK_STATUS_PROCESSING,
-                    "processing_started_at": utcnow_iso(),
-                    "attempts": fresh_attempts,
-                })
-                .eq(pk_column, pk_value)
+            return iap_service.reclaim_webhook_event(
+                d, table, pk_column, pk_value, _WEBHOOK_STATUS_PROCESSING, fresh_started, fresh_attempts
             )
-            if fresh_started is not None:
-                query = query.eq("processing_started_at", fresh_started)
-            else:
-                query = query.is_("processing_started_at", "null")
-            return query.execute()
 
         retry = await execute_with_reconnect(
             _reclaim, db, extra={"operation": "iap_claim_reclaim_retry", "table": table},
@@ -308,15 +272,8 @@ async def _claim_event(db: Client, table: str, pk_column: str, pk_value: str, ev
 
 async def _finish_event(db: Client, table: str, pk_column: str, pk_value: str, status: str, error: Optional[str] = None) -> None:
     try:
-        await asyncio.to_thread(
-            db.table(table)
-            .update({
-                "status": status,
-                "processed_at": utcnow_iso() if status == _WEBHOOK_STATUS_PROCESSED else None,
-                "last_error": error,
-            })
-            .eq(pk_column, pk_value)
-            .execute
+        await iap_service.mark_webhook_event_status(
+            db, table, pk_column, pk_value, status, _WEBHOOK_STATUS_PROCESSED, error
         )
     except Exception:
         logger.error("Failed to update webhook event ledger", extra={"table": table, "pk": pk_value})
@@ -335,13 +292,7 @@ async def _user_id_for_app_account_token(
     if not app_account_token:
         return None
     try:
-        result = await asyncio.to_thread(
-            db.table("users")
-            .select("id")
-            .eq("id", app_account_token)
-            .limit(1)
-            .execute
-        )
+        result = await iap_service.fetch_user_by_id(db, app_account_token)
     except Exception as exc:
         logger.warning(
             "Could not resolve user from appAccountToken (query failed)",
@@ -386,14 +337,7 @@ async def _user_id_for_store_purchase(
     # Order by recency and take the newest claimant. `limit(2)` is enough to
     # detect (and log) a collision without paying for the full set.
     try:
-        result = await asyncio.to_thread(
-            db.table("subscriptions")
-            .select("user_id,updated_at")
-            .eq(column, identifier)
-            .order("updated_at", desc=True)
-            .limit(2)
-            .execute
-        )
+        result = await iap_service.fetch_subscription_claimants(db, column, identifier)
     except Exception as exc:
         logger.warning(
             "Could not resolve user for store purchase (query failed)",
@@ -472,14 +416,7 @@ async def _ensure_identifier_available(
         "apple_original_transaction_id" if provider == "apple" else "google_purchase_token"
     )
     try:
-        result = await asyncio.to_thread(
-            db.table("subscriptions")
-            .select("user_id")
-            .eq(column, identifier)
-            .neq("user_id", user_id)
-            .limit(1)
-            .execute
-        )
+        result = await iap_service.fetch_other_claimant(db, column, identifier, user_id)
     except Exception as exc:
         logger.warning(
             "Could not verify store purchase ownership (fail closed)",

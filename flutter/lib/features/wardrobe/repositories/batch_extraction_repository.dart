@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/constants/api_constants.dart';
@@ -24,7 +23,7 @@ class BatchExtractionRepository {
     bool autoGenerate = true,
     int generationBatchSize = 5,
   }) async {
-    try {
+    return runDioRequest(() async {
       final payload = {
         'images': images.map((img) => img.toJson()).toList(),
         'auto_generate': autoGenerate,
@@ -37,9 +36,7 @@ class BatchExtractionRepository {
       );
 
       return BatchExtractionResponse.fromJson(response.data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Subscribe to SSE events for a batch extraction job
@@ -54,25 +51,21 @@ class BatchExtractionRepository {
 
   /// Cancel a batch extraction job
   Future<void> cancelJob(String jobId) async {
-    try {
+    await runDioRequest(() async {
       await _apiClient.post(ApiConstants.aiBatchExtractCancel(jobId));
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get the current status of a batch extraction job
   ///
   /// Can be used as a fallback if SSE connection fails
   Future<BatchJobStatusResponse> getJobStatus(String jobId) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get(
         ApiConstants.aiBatchExtractStatus(jobId),
       );
       return BatchJobStatusResponse.fromJson(response.data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Parse SSE event data into extracted items

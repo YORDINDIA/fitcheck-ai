@@ -42,6 +42,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    // Busy machines can slow one jsdom test many times over. The 5 s default
+    // flaked in full parallel runs.
+    testTimeout: 20000,
     css: false,
     // MSW uses one process-wide interception lifecycle. Run test files in
     // sequence so handlers and browser storage are reset deterministically.

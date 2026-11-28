@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from app.api.v1 import deps
+from app.services import user_service
 from app.api.v1.deps import get_current_user
 from app.core.exceptions import AuthenticationError
 from app.core.security import TokenData
@@ -43,7 +44,7 @@ async def test_non_missing_lookup_error_raises_lookup_failure(monkeypatch):
     async def _lookup(*_a, **_k):
         raise _DBError("boom")
 
-    monkeypatch.setattr(deps, "execute_with_reconnect", _lookup)
+    monkeypatch.setattr(user_service, "execute_with_reconnect", _lookup)
     with pytest.raises(AuthenticationError, match="lookup failed"):
         await get_current_user(db=Mock(), token_data=_token())
 
@@ -82,7 +83,7 @@ async def test_missing_profile_auto_provisions(monkeypatch):
     async def _run_query(callable_, *_a, **_k):
         return callable_(recorder)
 
-    monkeypatch.setattr(deps, "execute_with_reconnect", _run_query)
+    monkeypatch.setattr(user_service, "execute_with_reconnect", _run_query)
     client = Mock()
     # Auth lookup succeeds with metadata.
     client.auth.admin.get_user_by_id.return_value = Mock(
@@ -112,7 +113,7 @@ async def test_missing_profile_legacy_pgrst116_still_provisions(monkeypatch):
     """Back-compat: an error whose structured code is PGRST116 still means
     'no row' and enters auto-provisioning."""
     monkeypatch.setattr(
-        deps,
+        user_service,
         "execute_with_reconnect",
         AsyncMock(side_effect=type("_E", (Exception,), {"code": "PGRST116"})()),
     )
@@ -130,9 +131,34 @@ async def test_missing_profile_legacy_pgrst116_still_provisions(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_missing_profile_auto_provision_cuts_name_and_keeps_avatar(monkeypatch):
+    """First-login profiles get the same length limits as oauth_sync."""
+    monkeypatch.setattr(
+        user_service,
+        "execute_with_reconnect",
+        AsyncMock(return_value=None),
+    )
+    client = Mock()
+    client.auth.admin.get_user_by_id.return_value = Mock(
+        user=Mock(user_metadata={"full_name": "N" * 300, "picture": "p" * 600}, email=None)
+    )
+    monkeypatch.setattr(deps.SupabaseDB, "get_service_client", lambda: client)
+
+    db = Mock()
+    db.table.return_value.upsert.return_value.execute.side_effect = [None, None, None]
+
+    await get_current_user(db=db, token_data=_token())
+
+    upserted = [c.args[0] for c in db.table.return_value.upsert.call_args_list]
+    profile = next(u for u in upserted if "email_verified" in u)
+    assert profile["full_name"] == "N" * 255
+    assert profile["avatar_url"] == "p" * 600
+
+
+@pytest.mark.asyncio
 async def test_missing_profile_auto_provision_survives_preference_failures(monkeypatch):
     monkeypatch.setattr(
-        deps,
+        user_service,
         "execute_with_reconnect",
         AsyncMock(return_value=None),
     )
@@ -161,7 +187,7 @@ async def test_missing_profile_deleted_auth_user_not_resurrected(monkeypatch):
     still valid — the profile must NOT be auto-created, and the
     AUTH_PROFILE_NOT_FOUND error must surface unwrapped."""
     monkeypatch.setattr(
-        deps,
+        user_service,
         "execute_with_reconnect",
         AsyncMock(return_value=None),
     )
@@ -181,7 +207,7 @@ async def test_missing_profile_provision_crash_raises_auth_error(monkeypatch):
         raise RuntimeError("profile creation crashed")
 
     monkeypatch.setattr(
-        deps,
+        user_service,
         "execute_with_reconnect",
         AsyncMock(return_value=None),
     )
@@ -194,7 +220,7 @@ async def test_missing_profile_provision_crash_raises_auth_error(monkeypatch):
 @pytest.mark.asyncio
 async def test_suspended_account_is_rejected(monkeypatch):
     monkeypatch.setattr(
-        deps,
+        user_service,
         "execute_with_reconnect",
         AsyncMock(return_value=_profile_result(is_active=False)),
     )

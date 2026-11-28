@@ -1,13 +1,5 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AnimatedSection } from './AnimatedSection'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
-import { ChevronDown } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import { freeVsProSummary, platformsSummary, PLAN_LIMITS } from '@/lib/plan-limits'
 
 /** Shared with LandingPage FAQ schema so visible copy and JSON-LD stay in sync. */
@@ -43,8 +35,7 @@ export const LANDING_FAQS = [
   },
   {
     question: 'Does virtual try-on use my real clothes?',
-    answer:
-      `Yes. Try-on is built around pieces in your wardrobe or photos you provide, so you visualize combinations of clothes you actually own, not only brand catalog garments. Monthly generation limits apply per plan: ${PLAN_LIMITS.free.monthlyGenerations} on Free, ${PLAN_LIMITS.plus.monthlyGenerations} on Plus, ${PLAN_LIMITS.pro.monthlyGenerations.toLocaleString()} on Pro.`,
+    answer: `Yes. Try-on is built around pieces in your wardrobe or photos you provide, so you visualize combinations of clothes you actually own, not only brand catalog garments. Monthly generation limits apply per plan: ${PLAN_LIMITS.free.monthlyGenerations} on Free, ${PLAN_LIMITS.plus.monthlyGenerations} on Plus, ${PLAN_LIMITS.pro.monthlyGenerations.toLocaleString()} on Pro.`,
   },
   {
     question: 'What can I use the AI photoshoot for?',
@@ -76,93 +67,112 @@ export const LANDING_FAQS = [
   },
 ]
 
-const faqs = LANDING_FAQS
-
-function FAQItem({ question, answer }: { question: string; answer: string }) {
-  const [isOpen, setIsOpen] = useState(false)
+function FAQItem({
+  index,
+  question,
+  answer,
+  defaultOpen = false,
+}: {
+  index: number
+  question: string
+  answer: string
+  defaultOpen?: boolean
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen)
+  const num = String(index + 1).padStart(2, '0')
+  const triggerId = `landing-faq-btn-${index}`
+  const panelId = `landing-faq-panel-${index}`
 
   return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      {/* Paper accordion item: a sheet on its slab. */}
-      <div className="paper-sheet">
-        <CollapsibleTrigger className="group flex min-h-14 w-full items-center justify-between rounded-2xl px-5 py-5 text-start-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-          <span className="pe-4 text-[15px] font-semibold text-paper-text md:text-base">
-            {question}
-          </span>
-          <ChevronDown
-            className={cn(
-              'h-5 w-5 shrink-0 text-paper-text-3 transition-transform',
-              isOpen && 'rotate-180 text-paper-accent'
-            )}
-          />
-        </CollapsibleTrigger>
-        {/* Height animation rides on Radix's --radix-collapsible-content-height
-            var via the accordion-down/up keyframes in tailwind.config.ts. */}
-        <CollapsibleContent className="overflow-hidden data-[state=open]:animate-accordion-down data-[state=closed]:animate-accordion-up">
-          <div className="space-y-2 px-5 pb-5 pe-8 text-[15px] leading-relaxed text-paper-text-2 [overflow-wrap:anywhere]">
+    <li className="cp-faq-item" data-open={isOpen}>
+      <button
+        id={triggerId}
+        type="button"
+        aria-expanded={isOpen}
+        aria-controls={panelId}
+        onClick={() => setIsOpen((v) => !v)}
+        className="cp-faq-btn"
+      >
+        <span className="cp-faq-n">{num}</span>
+        <span className="cp-faq-q">{question}</span>
+        <span className="cp-pm" aria-hidden="true">
+          {isOpen ? '−' : '+'}
+        </span>
+      </button>
+      <div
+        id={panelId}
+        role="region"
+        aria-labelledby={triggerId}
+        className="cp-faq-a"
+        ref={(el) => {
+          if (el) {
+            const panel = el as HTMLDivElement & { inert: boolean }
+            panel.inert = !isOpen
+          }
+        }}
+      >
+        <div>
+          <div className="cp-faq-body space-y-2">
             <p>{answer}</p>
             {question.includes('Acloset') && (
-              <p className="text-sm">
+              <p className="text-sm font-semibold">
                 <Link
                   to="/compare/fitcheck-vs-acloset"
-                  className="font-semibold text-paper-accent hover:text-paper-text"
+                  className="text-[var(--cp-orange-deep)] underline"
                 >
                   FitCheck vs Acloset
                 </Link>
                 {' · '}
                 <Link
                   to="/compare/fitcheck-vs-whering"
-                  className="font-semibold text-paper-accent hover:text-paper-text"
+                  className="text-[var(--cp-orange-deep)] underline"
                 >
                   FitCheck vs Whering
                 </Link>
                 {' · '}
                 <Link
                   to="/best/virtual-closet-apps"
-                  className="font-semibold text-paper-accent hover:text-paper-text"
+                  className="text-[var(--cp-orange-deep)] underline"
                 >
                   Best virtual closet apps
                 </Link>
               </p>
             )}
             {question.includes('Who is FitCheck') && (
-              <p className="text-sm">
+              <p className="text-sm font-semibold">
                 <Link
                   to="/for/busy-professionals"
-                  className="font-semibold text-paper-accent hover:text-paper-text"
+                  className="text-[var(--cp-orange-deep)] underline"
                 >
                   Professionals
                 </Link>
                 {' · '}
                 <Link
                   to="/for/content-creators"
-                  className="font-semibold text-paper-accent hover:text-paper-text"
+                  className="text-[var(--cp-orange-deep)] underline"
                 >
                   Creators
                 </Link>
                 {' · '}
                 <Link
                   to="/for/festive-and-wedding-outfits"
-                  className="font-semibold text-paper-accent hover:text-paper-text"
+                  className="text-[var(--cp-orange-deep)] underline"
                 >
-                  Festive & wedding
+                  Festive &amp; wedding
                 </Link>
               </p>
             )}
             {question.includes('private') && (
-              <p className="text-sm">
-                <Link
-                  to="/privacy"
-                  className="font-semibold text-paper-accent hover:text-paper-text"
-                >
+              <p className="text-sm font-semibold">
+                <Link to="/privacy" className="text-[var(--cp-orange-deep)] underline">
                   Privacy Policy
                 </Link>
               </p>
             )}
           </div>
-        </CollapsibleContent>
+        </div>
       </div>
-    </Collapsible>
+    </li>
   )
 }
 
@@ -171,34 +181,27 @@ export default function FAQ() {
     <section
       id="faq"
       aria-labelledby="faq-heading"
-      className="paper-section paper-tear stock-stone pb-24 pt-20 md:pb-32 md:pt-28"
+      className="cp-wrap cp-sec"
     >
-      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-12 px-4 sm:px-6 lg:grid-cols-12 lg:gap-16 lg:px-8">
-        <AnimatedSection className="reveal min-w-0 lg:col-span-4">
-          <div className="lg:sticky lg:top-24">
-            <h2 id="faq-heading" className="paper-display text-[clamp(2.2rem,3.6vw,3.25rem)] text-paper-text">
-              Before you upload.
-            </h2>
-            <p className="mt-4 text-[15px] leading-relaxed text-paper-text-2">
-              Product, privacy, billing and platform answers in one place.
-            </p>
-            <p className="mt-6 text-sm text-paper-text-3">
-              Need more detail?{' '}
-              <Link to="/faq" className="font-semibold text-paper-accent hover:text-paper-text">
-                Open the full FAQ
-              </Link>
-            </p>
-          </div>
-        </AnimatedSection>
+      <p className="cp-eyebrow">FAQ</p>
+      <h2 id="faq-heading" className="cp-h2">
+        Questions, answered.
+      </h2>
+      <p className="cp-sub">
+        Product, privacy, billing, and platform answers in one place.{' '}
+        <Link
+          to="/faq"
+          className="font-bold text-[var(--cp-orange-deep)] underline underline-offset-4"
+        >
+          Open the full FAQ →
+        </Link>
+      </p>
 
-        <div className="min-w-0 space-y-3 lg:col-span-8">
-          {faqs.map((faq, index) => (
-            <AnimatedSection key={faq.question} delay={index * 40}>
-              <FAQItem {...faq} />
-            </AnimatedSection>
-          ))}
-        </div>
-      </div>
+      <ol className="cp-faq">
+        {LANDING_FAQS.map((faq, index) => (
+          <FAQItem key={faq.question} index={index} defaultOpen={index === 0} {...faq} />
+        ))}
+      </ol>
     </section>
   )
 }

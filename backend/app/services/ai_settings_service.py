@@ -777,3 +777,19 @@ class AISettingsService:
             return result
         finally:
             await service.close()
+
+
+# =============================================================================
+# AI SETTINGS ROUTE QUERIES (moved from app/api/v1/ai_settings.py)
+# =============================================================================
+
+
+async def save_provider_configs(
+    user_id: str,
+    provider_configs: Dict[str, Any],
+    db,
+) -> None:
+    """Persist the provider_configs map for a user after a provider reset."""
+    await asyncio.to_thread(db.table("user_ai_settings").update({
+        "provider_configs": provider_configs,
+    }).eq("user_id", user_id).execute)

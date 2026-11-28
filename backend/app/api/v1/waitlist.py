@@ -4,7 +4,6 @@ Waitlist API routes.
 Public endpoint for mobile app waitlist signups.
 """
 
-import asyncio
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, Request, status
@@ -19,6 +18,7 @@ from app.core.exceptions import (
 from app.core.ip_rate_limit import auth_rate_limited_operation
 from app.core.logging_config import get_context_logger
 from app.db.connection import get_db
+from app.services.waitlist_service import insert_waitlist_row
 
 logger = get_context_logger(__name__)
 
@@ -96,7 +96,7 @@ async def _insert_waitlist_entry(
             "source": "landing_page",
         }
 
-        result = await asyncio.to_thread(db.table("waitlist").insert(insert_data).execute)
+        result = await insert_waitlist_row(db, insert_data)
 
         if not result.data:
             raise DatabaseError(

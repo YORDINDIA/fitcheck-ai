@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:dio/dio.dart';
 import 'package:gal/gal.dart';
 import 'package:http/http.dart' as http;
 
@@ -20,11 +19,9 @@ class PhotoshootRepository {
   static const String _baseEndpoint = '${ApiConstants.apiVersion}/photoshoot';
 
   Future<T> _guard<T>(Future<T> Function() call) async {
-    try {
+    return runDioRequest(() async {
       return await call();
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Current user's photoshoot usage.

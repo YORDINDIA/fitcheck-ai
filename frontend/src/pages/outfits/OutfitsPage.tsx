@@ -12,6 +12,8 @@ import { useParams, useSearchParams, useNavigate, useLocation, Navigate } from '
 import {
   useFilteredOutfits,
   useOutfitStore,
+  generationStatusOf,
+  hasGenerationInFlight,
 } from '../../stores/outfitStore'
 import { useClosetStore } from '../../stores/wardrobeStore'
 import { useJobUiStore } from '../../stores/jobUiStore'
@@ -91,10 +93,11 @@ export default function OutfitsPage() {
   const fetchOutfitById = useOutfitStore((state) => state.fetchOutfitById)
   const startGeneration = useOutfitStore((state) => state.startGeneration)
   const resetGeneration = useOutfitStore((state) => state.resetGeneration)
-  const isGenerating = useOutfitStore((state) => state.isGenerating)
-  const generationStatus = useOutfitStore((state) => state.generationStatus)
   const generatedImageUrl = useOutfitStore((state) => state.generatedImageUrl)
   const generatingOutfits = useOutfitStore((state) => state.generatingOutfits)
+  // The pane's job, scoped to the outfit the pane generates for.
+  const generationStatus = generationStatusOf(generatingOutfits, generationOutfitId)
+  const isPaneGenerating = generationStatus === 'pending' || generationStatus === 'processing'
   const markOutfitAsWorn = useOutfitStore((state) => state.markOutfitAsWorn)
   const duplicateOutfit = useOutfitStore((state) => state.duplicateOutfit)
   const deleteOutfit = useOutfitStore((state) => state.deleteOutfit)
@@ -184,7 +187,7 @@ export default function OutfitsPage() {
     // never be reopened.
     navigate({ pathname: LIST_PATH, search: location.search })
     setIsShareOpen(false)
-    if (!isGenerating) {
+    if (!isPaneGenerating) {
       resetGeneration()
       setGenerationOutfitId(null)
     }
@@ -230,19 +233,17 @@ export default function OutfitsPage() {
         ? `Generating look… (${generationElapsed}s elapsed)`
         : generationStatus === 'failed'
           ? 'Generation failed'
-          : generationStatus === 'completed'
-            ? 'Look ready'
             : 'Working…'
 
-  // Pane generate (isGenerating) OR fire-and-forget after create (generatingOutfits map).
+  // Any job in flight: a pane generate or a fire-and-forget job after create.
   // `generationOutfitId` survives a soft close, so the pill still names the outfit
   // after the selection has left the URL.
   const mapGeneratingEntry = Array.from(generatingOutfits.entries()).find(
     ([, v]) => v.status === 'pending' || v.status === 'processing'
   )
   const generatingOutfitId =
-    (isGenerating ? generationOutfitId || undefined : undefined) || mapGeneratingEntry?.[0]
-  const isOutfitGenActive = isGenerating || Boolean(mapGeneratingEntry)
+    (isPaneGenerating ? generationOutfitId || undefined : undefined) || mapGeneratingEntry?.[0]
+  const isOutfitGenActive = hasGenerationInFlight(generatingOutfits)
 
   // Background pill while generate look runs (including when the pane is closed).
   useEffect(() => {
@@ -490,7 +491,7 @@ export default function OutfitsPage() {
             isDetailLoading={isDetailLoading}
             wardrobeItems={wardrobeItems}
             generatedImageUrl={isGenerationForSelected ? generatedImageUrl : null}
-            isGenerating={isGenerating && isGenerationForSelected}
+            isGenerating={isPaneGenerating && isGenerationForSelected}
             generationStatus={isGenerationForSelected ? generationStatus : 'idle'}
             generationStageLabel={generationStageLabel}
             notice={detailNotice}
@@ -499,10 +500,10 @@ export default function OutfitsPage() {
         detailFooter={
           selectedOutfit ? (
             <OutfitDetailActions
-              // `isGenerating` stays GLOBAL here on purpose: the client runs one
-              // generation at a time, so the button must be disabled even when the
-              // running job belongs to another outfit. Only the label is scoped.
-              isGenerating={isGenerating}
+              // The pane's job, not the selected outfit's. The client runs one pane
+              // generation at a time, so the button must stay disabled even when that
+              // job belongs to another outfit. Only the label is scoped.
+              isGenerating={isPaneGenerating}
               isManaging={isManaging}
               generationStatus={isGenerationForSelected ? generationStatus : 'idle'}
               onGenerate={() => {

@@ -61,8 +61,7 @@ if [ ! -d "$BACKEND_DIR/.venv" ]; then
     echo -e "  pip install -r requirements.txt"
     exit 1
 fi
-source "$BACKEND_DIR/.venv/bin/activate"
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 &
+"$BACKEND_DIR/.venv/bin/python" -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 
 # Wait for the backend to become healthy (bounded retry loop instead of a

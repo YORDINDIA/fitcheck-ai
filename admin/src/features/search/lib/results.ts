@@ -33,15 +33,3 @@ export function firstString(record: JsonRecord | undefined | null, keys: readonl
   }
   return null
 }
-
-/** Group headings for each entity kind — one entry per non-empty array. */
-export function groupHasResults(
-  results: Record<'users' | 'posts' | 'tickets' | 'promo_codes', readonly JsonRecord[] | undefined>,
-): boolean {
-  return (
-    (results.users?.length ?? 0) > 0 ||
-    (results.posts?.length ?? 0) > 0 ||
-    (results.tickets?.length ?? 0) > 0 ||
-    (results.promo_codes?.length ?? 0) > 0
-  )
-}

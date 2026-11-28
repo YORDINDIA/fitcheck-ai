@@ -239,30 +239,6 @@ Map<String, dynamic> _$ExtractedItemToJson(_ExtractedItem instance) =>
       'bounding_box': instance.boundingBox,
     };
 
-_ExtractionResponse _$ExtractionResponseFromJson(Map<String, dynamic> json) =>
-    _ExtractionResponse(
-      id: json['id'] as String,
-      status: json['status'] as String,
-      items: (json['items'] as List<dynamic>?)
-          ?.map((e) => ExtractedItem.fromJson(e as Map<String, dynamic>))
-          .toList(),
-      imageUrl: json['imageUrl'] as String?,
-      error: json['error'] as String?,
-      createdAt: json['created_at'] == null
-          ? null
-          : DateTime.parse(json['created_at'] as String),
-    );
-
-Map<String, dynamic> _$ExtractionResponseToJson(_ExtractionResponse instance) =>
-    <String, dynamic>{
-      'id': instance.id,
-      'status': instance.status,
-      'items': instance.items,
-      'imageUrl': instance.imageUrl,
-      'error': instance.error,
-      'created_at': instance.createdAt?.toIso8601String(),
-    };
-
 _BoundingBox _$BoundingBoxFromJson(Map<String, dynamic> json) => _BoundingBox(
   x: (json['x'] as num).toDouble(),
   y: (json['y'] as num).toDouble(),

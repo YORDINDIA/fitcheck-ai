@@ -1,5 +1,9 @@
 {
   "title": "Users",
+  "routeTitles": {
+    "userDetail": "User details",
+    "userGeneration": "Generation details"
+  },
   "description": "Search, filter, and manage FitCheck AI users — roles, suspension, and activity.",
   "searchPlaceholder": "Search by name or email…",
   "filters": {
@@ -214,7 +218,6 @@
     "genStatusFilter": "Filter by status",
     "genStatusAll": "All statuses",
     "genStatus_completed": "Completed",
-    "genStatus_complete": "Completed",
     "genStatus_extracting": "Extracting",
     "genStatus_generating": "Generating",
     "genStatus_cancelled": "Cancelled",

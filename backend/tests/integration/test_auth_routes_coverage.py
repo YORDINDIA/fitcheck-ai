@@ -1093,6 +1093,26 @@ async def test_oauth_sync_new_user_creates_profile_and_redeems_referral(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_oauth_sync_new_user_cuts_name_and_keeps_avatar(monkeypatch):
+    """A name over the VARCHAR(255) column is cut before the insert. The avatar URL is kept whole."""
+    admin_client = Mock()
+    admin_client.auth.admin.get_user_by_id.return_value = SimpleNamespace(
+        user=SimpleNamespace(
+            user_metadata={"full_name": "N" * 300, "picture": "p" * 600},
+            email="meta@example.com",
+        )
+    )
+    monkeypatch.setattr(auth_module.SupabaseDB, "get_service_client", staticmethod(lambda: admin_client))
+    db = FakeDB()
+
+    result = await auth_module.oauth_sync(request=None, db=db, token_data=_token_data())
+
+    assert result["data"]["user"]["full_name"] == "N" * 255
+    assert result["data"]["user"]["avatar_url"] == "p" * 600
+    assert db.rows["users"][0]["full_name"] == "N" * 255
+
+
+@pytest.mark.asyncio
 async def test_oauth_sync_new_user_metadata_fetch_failure_uses_defaults(monkeypatch):
     def _raise(*_a, **_k):
         raise RuntimeError("admin client unavailable")
@@ -1166,7 +1186,11 @@ async def test_oauth_sync_new_user_fills_email_from_auth_metadata(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_oauth_sync_new_user_skips_defaults_when_upserts_fail(monkeypatch):
-    monkeypatch.setattr(auth_module.SupabaseDB, "get_service_client", staticmethod(lambda: Mock()))
+    admin_client = Mock()
+    admin_client.auth.admin.get_user_by_id.return_value = SimpleNamespace(
+        user=SimpleNamespace(user_metadata={}, email=None)
+    )
+    monkeypatch.setattr(auth_module.SupabaseDB, "get_service_client", staticmethod(lambda: admin_client))
     db = _FlakyDefaultsDB()
 
     result = await auth_module.oauth_sync(
@@ -1192,7 +1216,11 @@ async def test_oauth_sync_profile_creation_failure_raises_database_error(monkeyp
 
 @pytest.mark.asyncio
 async def test_oauth_sync_new_user_referral_rejected(monkeypatch):
-    monkeypatch.setattr(auth_module.SupabaseDB, "get_service_client", staticmethod(lambda: Mock()))
+    admin_client = Mock()
+    admin_client.auth.admin.get_user_by_id.return_value = SimpleNamespace(
+        user=SimpleNamespace(user_metadata={}, email=None)
+    )
+    monkeypatch.setattr(auth_module.SupabaseDB, "get_service_client", staticmethod(lambda: admin_client))
     db = FakeDB()
     with patch.object(
         ReferralService,
@@ -1210,7 +1238,11 @@ async def test_oauth_sync_new_user_referral_rejected(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_oauth_sync_new_user_referral_failure_deferred(monkeypatch):
-    monkeypatch.setattr(auth_module.SupabaseDB, "get_service_client", staticmethod(lambda: Mock()))
+    admin_client = Mock()
+    admin_client.auth.admin.get_user_by_id.return_value = SimpleNamespace(
+        user=SimpleNamespace(user_metadata={}, email=None)
+    )
+    monkeypatch.setattr(auth_module.SupabaseDB, "get_service_client", staticmethod(lambda: admin_client))
     db = FakeDB()
     with patch.object(
         ReferralService, "redeem_referral", new=AsyncMock(side_effect=RuntimeError("missing rpc"))

@@ -38,23 +38,10 @@ import { useIsSplitViewport } from '@/hooks/useMediaQuery'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n'
 
-/** Grouped settings IA (legacy ?tab= values still resolve). */
+/** Grouped settings IA. Any other ?tab= value, including retired names, opens Account. */
 type TabType = 'account' | 'style' | 'app' | 'plan' | 'help'
 
-const LEGACY_TAB_MAP: Record<string, TabType> = {
-  account: 'account',
-  style: 'style',
-  app: 'app',
-  plan: 'plan',
-  help: 'help',
-  profile: 'account',
-  security: 'account',
-  preferences: 'style',
-  settings: 'app',
-  ai: 'app',
-  subscription: 'plan',
-  support: 'help',
-}
+const TAB_IDS: readonly TabType[] = ['account', 'style', 'app', 'plan', 'help']
 
 function normalizeBirthTimeForInput(value?: string | null): string {
   if (!value) return ''
@@ -69,8 +56,7 @@ function normalizeBirthTimeForApi(value: string): string | undefined {
 }
 
 function resolveTab(value: string | null): TabType {
-  if (!value) return 'account'
-  return LEGACY_TAB_MAP[value] ?? 'account'
+  return TAB_IDS.find((id) => id === value) ?? 'account'
 }
 
 /** Copy params minus the one-shot Stripe ack keys (SubscriptionPanel strips them via history.replaceState). */

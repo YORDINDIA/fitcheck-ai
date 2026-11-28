@@ -5,7 +5,6 @@ Provides CRUD operations for blog posts with public read access
 and admin-only write access.
 """
 
-import asyncio
 from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
@@ -22,6 +21,7 @@ from app.models.blog import (
     BlogPostSummary,
     BlogPostUpdate,
 )
+from app.services import blog_service
 from app.services.audit_service import record_audit
 from app.utils import maybe_single_data
 from app.utils.db import safe_search_term
@@ -114,25 +114,14 @@ async def list_posts(
     Supports filtering by category and searching by title/excerpt.
     """
     try:
-        # Build base query for published posts
-        query = db.table("blog_posts").select("*", count="exact").eq("is_published", True)
-
-        # Apply category filter
-        if params.category:
-            query = query.eq("category", params.category)
-
-        # Apply search filter
+        # Sanitize the search term only when the search filter applies. The
+        # term is interpolated into postgrest's .or_() filter syntax; sanitize
+        # it exactly like the admin path (A4-20) so a crafted query cannot
+        # inject extra filter clauses or 500 the route.
+        search_term = None
         if params.search:
-            # The term is interpolated into postgrest's .or_() filter syntax;
-            # sanitize it exactly like the admin path (A4-20) so a crafted
-            # query cannot inject extra filter clauses or 500 the route.
             safe_term = safe_search_term(params.search)
-            # Search in title and excerpt (case-insensitive)
             search_term = f"%{safe_term}%"
-            query = query.or_(f"title.ilike.{search_term},excerpt.ilike.{search_term}")
-
-        # Order by date descending (newest first)
-        query = query.order("date", desc=True)
 
         # Apply pagination and execute ONCE: PostgREST returns the exact count
         # of the full filtered set alongside the page, so the previous
@@ -140,8 +129,8 @@ async def list_posts(
         # endpoint sat on the blog's mobile critical path (3.4 s in the
         # 2026-08-07 PSI run), so the round trip matters.
         offset = (params.page - 1) * params.page_size
-        result = await asyncio.to_thread(
-            query.range(offset, offset + params.page_size - 1).execute
+        result = await blog_service.fetch_published_posts_page(
+            db, params.category, search_term, offset, params.page_size
         )
         total = result.count if hasattr(result, "count") else 0
 
@@ -188,14 +177,7 @@ async def get_post(
     Only returns published posts for public access.
     """
     try:
-        result = await asyncio.to_thread(
-            db.table("blog_posts")
-            .select("*")
-            .eq("slug", slug)
-            .eq("is_published", True)
-            .maybe_single()
-            .execute
-        )
+        result = await blog_service.fetch_published_post_by_slug(db, slug)
 
         if not result or not result.data:
             raise NotFoundError(
@@ -233,12 +215,7 @@ async def get_categories(
     """
     try:
         # Get distinct categories from published posts
-        result = await asyncio.to_thread(
-            db.table("blog_posts")
-            .select("category")
-            .eq("is_published", True)
-            .execute
-        )
+        result = await blog_service.fetch_published_categories(db)
 
         categories = sorted(list(set(row["category"] for row in (result.data or []))))
 
@@ -277,13 +254,7 @@ async def create_post(
 
     try:
         # Check for duplicate slug
-        existing = await asyncio.to_thread(
-            db.table("blog_posts")
-            .select("id")
-            .eq("slug", post_data.slug)
-            .maybe_single()
-            .execute
-        )
+        existing = await blog_service.fetch_slug_taken_for_create(db, post_data)
 
         if maybe_single_data(existing):
             raise ValidationError(
@@ -293,7 +264,7 @@ async def create_post(
 
         # Insert the new post
         insert_data = post_data.model_dump()
-        result = await asyncio.to_thread(db.table("blog_posts").insert(insert_data).execute)
+        result = await blog_service.insert_post_row(db, insert_data)
 
         if not result.data:
             raise Exception("Failed to create blog post")
@@ -343,13 +314,7 @@ async def update_post(
 
     try:
         # Check if post exists
-        existing = await asyncio.to_thread(
-            db.table("blog_posts")
-            .select("*")
-            .eq("slug", slug)
-            .maybe_single()
-            .execute
-        )
+        existing = await blog_service.fetch_post_row_for_update(db, slug)
 
         if not maybe_single_data(existing):
             raise NotFoundError(
@@ -360,13 +325,7 @@ async def update_post(
 
         # If changing slug, check new slug is unique
         if post_data.slug and post_data.slug != slug:
-            slug_check = await asyncio.to_thread(
-                db.table("blog_posts")
-                .select("id")
-                .eq("slug", post_data.slug)
-                .maybe_single()
-                .execute
-            )
+            slug_check = await blog_service.fetch_slug_taken_for_update(db, post_data)
 
             if maybe_single_data(slug_check):
                 raise ValidationError(
@@ -385,7 +344,7 @@ async def update_post(
             )
 
         # Update the post
-        result = await asyncio.to_thread(db.table("blog_posts").update(update_data).eq("slug", slug).execute)
+        result = await blog_service.update_post_row(db, slug, update_data)
 
         if not result.data:
             raise Exception("Failed to update blog post")
@@ -433,13 +392,7 @@ async def delete_post(
 
     try:
         # Check if post exists
-        existing = await asyncio.to_thread(
-            db.table("blog_posts")
-            .select("id")
-            .eq("slug", slug)
-            .maybe_single()
-            .execute
-        )
+        existing = await blog_service.fetch_post_id_for_delete(db, slug)
 
         if not maybe_single_data(existing):
             raise NotFoundError(
@@ -450,7 +403,7 @@ async def delete_post(
         existing_row = maybe_single_data(existing)
 
         # Delete the post
-        await asyncio.to_thread(db.table("blog_posts").delete().eq("slug", slug).execute)
+        await blog_service.delete_post_row(db, slug)
 
         logger.info(f"Admin {user.get('id')} deleted blog post: {slug}")
         await record_audit(
@@ -501,47 +454,38 @@ async def list_all_posts(
     _require_content_permission(user, "content.read")
 
     try:
-        # Build query - include all posts
-        query = db.table("blog_posts").select("*", count="exact")
-
-        if not include_unpublished:
-            query = query.eq("is_published", True)
-
-        if category:
-            query = query.eq("category", category)
-
+        # Sanitize the search term only when the search filter applies. The
+        # term is interpolated into postgrest's .or_() filter syntax; strip
+        # characters that would inject extra filter clauses (`,` , `(`, `)`,
+        # the `*` wildcard) or break the ilike value (`.` and `:` are
+        # PostgREST-reserved separators) while keeping % and _ as the intended
+        # ilike wildcards.
+        search_term = None
         if search:
-            # The term is interpolated into postgrest's .or_() filter syntax;
-            # strip characters that would inject extra filter clauses (`,` ,
-            # `(`, `)`, the `*` wildcard) or break the ilike value (`.` and
-            # `:` are PostgREST-reserved separators) while keeping % and _ as
-            # the intended ilike wildcards.
             safe_term = safe_search_term(search)
             search_term = f"%{safe_term}%"
-            # A8-02: the admin console searches by slug too, so slug is part
-            # of the ilike set alongside title/excerpt/author.
-            query = query.or_(
-                f"title.ilike.{search_term},excerpt.ilike.{search_term},author.ilike.{search_term},slug.ilike.{search_term}"
-            )
 
+        # Map the status filter to a plain value. None means no filter applies.
+        status_filter = None
         if post_status == "published":
-            query = query.eq("is_published", True)
+            status_filter = True
         elif post_status == "draft":
-            query = query.eq("is_published", False)
-
-        # Order by updated_at descending
-        query = query.order("updated_at", desc=True)
-
-        # Get total count
-        count_result = await asyncio.to_thread(query.execute)
-        total = count_result.count if hasattr(count_result, "count") else 0
+            status_filter = False
 
         # Apply pagination
         offset = (page - 1) * page_size
-        query = query.range(offset, offset + page_size - 1)
 
-        # Execute query
-        result = await asyncio.to_thread(query.execute)
+        # Count query and page query run in the service, as at HEAD
+        count_result, result = await blog_service.fetch_admin_posts_page(
+            db,
+            published_only=not include_unpublished,
+            category=category,
+            search_term=search_term,
+            status_filter=status_filter,
+            offset=offset,
+            page_size=page_size,
+        )
+        total = count_result.count if hasattr(count_result, "count") else 0
 
         # Convert to response models (use full BlogPost for admin)
         posts = [BlogPost(**post) for post in (result.data or [])]

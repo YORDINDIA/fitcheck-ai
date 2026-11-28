@@ -133,11 +133,10 @@ async def test_promote_temp_image_to_item_creates_thumb():
         result = await StorageService.promote_temp_image_to_item(
             db=MagicMock(),
             user_id="user-1",
-            temp_storage_path="tmp/user-1/social-import/abc123.png",
+            temp_storage_path="users/user-1/tmp/social-import/abc123.png",
         )
 
-    # Server-side copy (move) + thumb upload for the promoted items key. The
-    # legacy tmp key is mapped to its users/ home before the move.
+    # Server-side copy (move) + thumb upload for the promoted items key.
     assert backend.copy_calls == [
         ("users/user-1/tmp/social-import/abc123.png", result["storage_path"])
     ]
@@ -153,10 +152,9 @@ async def test_delete_image_also_deletes_thumb():
     backend = FakeS3Backend()
     with patch("app.services.storage_service.get_storage_backend", return_value=backend):
         await StorageService.delete_image(
-            db=MagicMock(), storage_path="user-1/items/abc123.jpg"
+            db=MagicMock(), storage_path="users/user-1/items/abc123.jpg"
         )
 
-    # The legacy canonical key is mapped to its users/ home before the delete.
     assert sorted(backend.delete_calls) == [
         "users/user-1/items/abc123.jpg",
         "users/user-1/items/abc123_thumb.webp",
@@ -170,13 +168,12 @@ async def test_delete_multiple_images_expands_thumbs():
         await StorageService.delete_multiple_images(
             db=MagicMock(),
             storage_paths=[
-                "user-1/items/abc123.jpg",
-                "user-1/tmp/social-import/x.png",  # tmp has no thumb
+                "users/user-1/items/abc123.jpg",
+                "users/user-1/tmp/social-import/x.png",  # tmp has no thumb
             ],
         )
 
-    # Legacy keys are mapped to their users/ home; tmp has no thumb sibling.
-    # Sorted: "items/..." sorts before "tmp/...".
+    # tmp has no thumb sibling. Sorted: "items/..." sorts before "tmp/...".
     assert sorted(backend.delete_calls) == [
         "users/user-1/items/abc123.jpg",
         "users/user-1/items/abc123_thumb.webp",
@@ -185,11 +182,10 @@ async def test_delete_multiple_images_expands_thumbs():
 
 
 @pytest.mark.asyncio
-async def test_delete_maps_legacy_preview_keys():
-    """A legacy per-user preview key held in a DB row resolves to its users/
-    home on delete (storage_keys.migrate_key_to_users_layout) so a delete
-    issued after the layout migration has moved the bytes still finds the
-    object. Canonical keys map to users/ too."""
+async def test_delete_passes_legacy_keys_through_unchanged():
+    """Legacy keys held in DB rows are deleted as stored. The layout migration
+    moved those bytes, so a legacy key may miss its object. That failure is
+    accepted (see docs/exec-plans/active/2026-08-31-closet-404-legacy-keys-rca.md)."""
     backend = FakeS3Backend()
     with patch("app.services.storage_service.get_storage_backend", return_value=backend):
         await StorageService.delete_multiple_images(
@@ -201,9 +197,9 @@ async def test_delete_maps_legacy_preview_keys():
         )
 
     assert sorted(backend.delete_calls) == [
-        "users/user-1/items/abc123.jpg",
-        "users/user-1/items/abc123_thumb.webp",
-        "users/user-1/tmp/social-import/x.png",  # mapped to the users/ home
+        "user-1/items/abc123.jpg",
+        "user-1/items/abc123_thumb.webp",
+        "user-1/tmp/social-import/x.png",
     ]
 
 

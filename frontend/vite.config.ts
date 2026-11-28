@@ -20,8 +20,6 @@ export default defineConfig(({ isSsrBuild }) => ({
       "@/types": path.resolve(__dirname, "./src/types"),
       "@/pages": path.resolve(__dirname, "./src/pages"),
       "@/api": path.resolve(__dirname, "./src/api"),
-      "@/agents": path.resolve(__dirname, "./src/agents"),
-      "@/assets": path.resolve(__dirname, "./src/assets"),
     },
   },
   server: {

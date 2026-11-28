@@ -155,7 +155,7 @@ extension PhotoshootAspectRatioExtension on PhotoshootAspectRatio {
   }
 }
 
-/// Photoshoot generation status
+/// Photoshoot generation status. Both "complete" and "completed" mean finished.
 enum PhotoshootStatus {
   @JsonValue('pending')
   pending,
@@ -163,6 +163,8 @@ enum PhotoshootStatus {
   generating,
   @JsonValue('complete')
   complete,
+  @JsonValue('completed')
+  completed,
   @JsonValue('failed')
   failed,
 }

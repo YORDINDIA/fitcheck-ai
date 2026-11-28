@@ -20,7 +20,7 @@ class FeedbackRepository {
     String? contactEmail,
     List<File>? attachments,
   }) async {
-    try {
+    return runDioRequest(() async {
       // Gather device info
       final deviceInfo = await _getDeviceInfo();
       final packageInfo = await PackageInfo.fromPlatform();
@@ -56,9 +56,7 @@ class FeedbackRepository {
       final payload = response.data as Map<String, dynamic>;
       final data = payload['data'] as Map<String, dynamic>? ?? {};
       return FeedbackResponse.fromJson(data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Get user's tickets
@@ -66,7 +64,7 @@ class FeedbackRepository {
     int limit = 20,
     int offset = 0,
   }) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get(
         '${ApiConstants.feedback}/my-tickets',
         queryParameters: {'limit': limit, 'offset': offset},
@@ -80,9 +78,7 @@ class FeedbackRepository {
               .toList() ??
           [];
       return tickets;
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   Future<DeviceInfo> _getDeviceInfo() async {

@@ -144,6 +144,7 @@ async def test_get_plans_reports_billing_unconfigured_and_flattened_limits():
         PLAN_FREE_MONTHLY_EXTRACTIONS=3,
         PLAN_FREE_MONTHLY_GENERATIONS=10,
         PLAN_FREE_MONTHLY_EMBEDDINGS=100,
+        PLAN_FREE_DAILY_PHOTOSHOOT_IMAGES=7,
         PLAN_PLUS_MONTHLY_EXTRACTIONS=30,
         PLAN_PLUS_MONTHLY_GENERATIONS=50,
         PLAN_PLUS_MONTHLY_EMBEDDINGS=500,
@@ -176,10 +177,12 @@ async def test_get_plans_reports_billing_unconfigured_and_flattened_limits():
     assert [p["id"] for p in data["plans"]] == ["free", "plus", "pro"]
     # Flutter clients expect flattened limit keys next to the nested dict.
     assert data["plans"][0]["monthly_extractions"] == 3
+    assert data["plans"][0]["daily_photoshoot_images"] == 7
     assert data["plans"][0]["limits"] == {
         "monthly_extractions": 3,
         "monthly_generations": 10,
         "monthly_embeddings": 100,
+        "daily_photoshoot_images": 7,
     }
     plus = data["plans"][1]
     assert plus["savings_yearly"] == 18  # (9 * 12) - 90

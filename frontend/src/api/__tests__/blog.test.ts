@@ -4,7 +4,6 @@ const { get } = vi.hoisted(() => ({ get: vi.fn() }))
 
 vi.mock('@/api/client', () => ({
   apiClient: { get },
-  getApiError: (error: unknown) => error,
 }))
 
 import { getBlogPosts } from '@/api/blog'

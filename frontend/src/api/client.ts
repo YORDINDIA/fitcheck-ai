@@ -15,7 +15,7 @@ import {
 } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 import { API_BASE_URL } from '@/lib/apiBaseUrl';
-import { RATE_LIMIT_EXCEEDED, getApiError as getBaseApiError, isRateLimitExhausted, isTransientHttpStatus, type ApiError } from '@/lib/errors';
+import { RATE_LIMIT_EXCEEDED, getApiError, isRateLimitExhausted, isTransientHttpStatus } from '@/lib/errors';
 import { ENDPOINTS, LONG_RUNNING_PREFIXES } from '@/lib/endpoints';
 import { useUpgradePromptStore } from '@/stores/upgradePromptStore';
 
@@ -123,10 +123,6 @@ const AUTH_ENDPOINTS = [
 function isAuthEndpoint(url: string | undefined): boolean {
   if (!url) return false;
   return AUTH_ENDPOINTS.some((endpoint) => url.includes(endpoint));
-}
-
-export function isAuthenticated(): boolean {
-  return Boolean(getAccessToken());
 }
 
 /** Single-flight refresh: concurrent callers share one in-flight request. */
@@ -484,6 +480,17 @@ apiClient.interceptors.response.use(
 
     // Extract the API error for analysis
     const apiError = getApiError(error);
+    // DEV log lives here because only this layer has the request URL.
+    if (import.meta.env.DEV) {
+      logger.error('[API Error]', {
+        message: apiError.message,
+        code: apiError.code,
+        status: apiError.status,
+        correlationId: apiError.correlationId,
+        url: originalRequest.url,
+        method: originalRequest.method?.toUpperCase(),
+      });
+    }
 
     // The user hit THEIR OWN plan limit (backend RATE_LIMIT_EXCEEDED): this is
     // the one place we show an upgrade prompt. Upstream AI capacity issues
@@ -507,35 +514,6 @@ apiClient.interceptors.response.use(
     return Promise.reject(error);
   }
 );
-
-// ============================================================================
-// API ERROR TYPES
-// ============================================================================
-
-/**
- * Extract a normalized API error from an Axios error or unknown error.
- * Logs the error with correlation ID for debugging (dev mode only).
- *
- * Field extraction lives in `lib/errors.ts` (single source of truth shared
- * with stores); this wrapper only adds the client-specific DEV logging so
- * metadata (code/status/correlationId/errorKind/retryAfterSeconds) can never
- * drift between the two entry points.
- */
-export function getApiError(error: unknown): ApiError {
-  const apiError = getBaseApiError(error);
-  if (import.meta.env.DEV) {
-    const axiosError = error as AxiosError;
-    logger.error('[API Error]', {
-      message: apiError.message,
-      code: apiError.code,
-      status: apiError.status,
-      correlationId: apiError.correlationId,
-      url: axiosError.config?.url,
-      method: axiosError.config?.method?.toUpperCase(),
-    });
-  }
-  return apiError;
-}
 
 // ============================================================================
 // TOAST SKIP HELPER

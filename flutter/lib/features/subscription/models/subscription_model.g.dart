@@ -142,6 +142,7 @@ _PlanDetailsModel _$PlanDetailsModelFromJson(Map<String, dynamic> json) =>
       priceYearly: (json['price_yearly'] as num?)?.toDouble() ?? 0.0,
       monthlyExtractions: (json['monthly_extractions'] as num?)?.toInt() ?? 50,
       monthlyGenerations: (json['monthly_generations'] as num?)?.toInt() ?? 50,
+      dailyPhotoshootImages: (json['daily_photoshoot_images'] as num?)?.toInt(),
       features:
           (json['features'] as List<dynamic>?)
               ?.map((e) => e as String)
@@ -158,6 +159,7 @@ Map<String, dynamic> _$PlanDetailsModelToJson(_PlanDetailsModel instance) =>
       'price_yearly': instance.priceYearly,
       'monthly_extractions': instance.monthlyExtractions,
       'monthly_generations': instance.monthlyGenerations,
+      'daily_photoshoot_images': instance.dailyPhotoshootImages,
       'features': instance.features,
     };
 

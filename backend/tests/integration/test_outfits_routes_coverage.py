@@ -39,6 +39,7 @@ import pytest
 import httpx
 
 from app.api.v1 import outfits as outfits_module
+from app.services import outfit_service
 from app.api.v1 import images as images_module
 from app.api.v1.deps import get_active_user_id
 from app.core.exceptions import (
@@ -607,8 +608,8 @@ def test_collection_counts_skips_rows_without_an_id():
     assert outfits_module._collection_counts(db, [COLLECTION_ID, "zz"]) == {COLLECTION_ID: 2}
 
 
-def test_now_returns_an_iso_string():
-    assert isinstance(outfits_module._now(), str)
+def test_utcnow_iso_returns_a_string():
+    assert isinstance(outfits_module.utcnow_iso(), str)
 
 
 # ---------------------------------------------------------------------------
@@ -1312,7 +1313,7 @@ async def test_update_outfit_raises_database_error_when_update_returns_nothing()
 async def test_update_outfit_raises_database_error_when_refetch_misses():
     db = _OutfitsFakeDB({"outfits": [_outfit_row()]})
 
-    with patch.object(outfits_module, "_fetch_outfit", return_value=None):
+    with patch.object(outfit_service, "fetch_outfit", return_value=None):
         with pytest.raises(DatabaseError):
             await outfits_module.update_outfit(
                 outfit_id=UUID(OUTFIT_ID),
@@ -2117,7 +2118,7 @@ async def test_add_item_to_outfit_returns_current_when_item_present():
 async def test_add_item_to_outfit_falls_back_to_minimal_dict_when_fetch_misses():
     db = _OutfitsFakeDB({"outfits": [_outfit_row(item_ids=[ITEM_ID])], "items": [_item_row()]})
 
-    with patch.object(outfits_module, "_fetch_outfit", return_value=None):
+    with patch.object(outfit_service, "fetch_outfit", return_value=None):
         result = await outfits_module.add_item_to_outfit(
             outfit_id=UUID(OUTFIT_ID),
             request=outfits_module.AddItemToOutfitRequest(item_id=ITEM_ID),
@@ -2163,7 +2164,7 @@ async def test_add_item_to_outfit_raises_database_error_when_refetch_misses():
         rpc_results={"add_outfit_item": [True]},
     )
 
-    with patch.object(outfits_module, "_fetch_outfit", return_value=None):
+    with patch.object(outfit_service, "fetch_outfit", return_value=None):
         with pytest.raises(DatabaseError):
             await outfits_module.add_item_to_outfit(
                 outfit_id=UUID(OUTFIT_ID),
@@ -2282,7 +2283,7 @@ async def test_remove_item_from_outfit_returns_current_when_item_absent():
 async def test_remove_item_from_outfit_falls_back_to_minimal_dict_when_fetch_misses():
     db = _OutfitsFakeDB({"outfits": [_outfit_row(item_ids=[ITEM_ID])], "items": [_item_row()]})
 
-    with patch.object(outfits_module, "_fetch_outfit", return_value=None):
+    with patch.object(outfit_service, "fetch_outfit", return_value=None):
         result = await outfits_module.remove_item_from_outfit(
             outfit_id=UUID(OUTFIT_ID),
             item_id=UUID(ITEM_ID_2),
@@ -2325,7 +2326,7 @@ async def test_remove_item_from_outfit_raises_database_error_when_refetch_misses
         {"outfits": [_outfit_row(item_ids=[ITEM_ID, ITEM_ID_2])], "items": [_item_row(), _item_row(ITEM_ID_2)]}
     )
 
-    with patch.object(outfits_module, "_fetch_outfit", return_value=None):
+    with patch.object(outfit_service, "fetch_outfit", return_value=None):
         with pytest.raises(DatabaseError):
             await outfits_module.remove_item_from_outfit(
                 outfit_id=UUID(OUTFIT_ID),
@@ -2788,7 +2789,7 @@ async def test_upload_outfit_image_race_collapses_onto_client_request_id_winner(
     # RPC calls actually race on the same key.
     replay_entries = 0
     replay_gate = asyncio.Event()
-    real_replay = outfits_module._find_outfit_image_by_client_request_id
+    real_replay = outfit_service.find_outfit_image_by_client_request_id
 
     async def gated_replay(db_client, outfit_id, client_request_id):
         nonlocal replay_entries
@@ -2799,8 +2800,8 @@ async def test_upload_outfit_image_race_collapses_onto_client_request_id_winner(
         return await real_replay(db_client, outfit_id, client_request_id)
 
     with patch.object(
-        outfits_module,
-        "_find_outfit_image_by_client_request_id",
+        outfit_service,
+        "find_outfit_image_by_client_request_id",
         new=gated_replay,
     ), patch.object(StorageService, "upload_outfit_image", new=AsyncMock(return_value=_UPLOAD_RESPONSE)):
         first_task = asyncio.create_task(

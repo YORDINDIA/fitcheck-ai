@@ -226,8 +226,8 @@ PATH_EXEMPT = {
 # warning, which must be ratcheted down in the same commit that fixes a site.
 # Rules 1-3 never defer.
 RULE4_BUDGETS: dict[str, tuple[int, str]] = {
-    "components/landing": (3, "marketing surfaces. Ratcheted 11 -> 9 -> 8 (2026-08-21 landing rework), then 8 -> 3 after the paper-studio landing (2026-10-01) moved every section onto paper tokens; the remainder are on-color CTA pills that are correct as-is"),
-    "components/seo": (2, "editorial template; same deferral as landing"),
+    "components/landing": (0, "marketing surfaces; migrated to Snaptitle crayon/paper tokens (.cp) with light & dark parity, budget pinned at zero"),
+    "components/seo": (0, "editorial template; migrated to Snaptitle crayon/paper tokens (.cp) with light & dark parity, budget pinned at zero"),
     "pages/blog": (0, "editorial pages; CTA light-on-dark now tokenized via bg-on-image (2026-08-03), budget pinned at zero"),
     "pages/public": (0, "marketing/legal pages; FAQPage cleared, budget pins it at zero"),
     "pages/features": (0, "SEO feature pages; already clean, budget pins it there"),

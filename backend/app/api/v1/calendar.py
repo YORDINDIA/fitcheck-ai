@@ -10,7 +10,6 @@ For MVP, external provider sync is not implemented. We store the connection and
 events in Supabase tables so the user can plan outfits against events.
 """
 
-import asyncio
 import uuid
 from datetime import timezone
 from app.utils.datetime_util import parse_utc_datetime, utcnow_iso
@@ -31,6 +30,7 @@ from app.core.logging_config import get_context_logger
 from app.core.security import get_current_user_email
 from app.api.v1.deps import get_active_user_id
 from app.db.connection import get_db
+from app.services import calendar_service
 
 logger = get_context_logger(__name__)
 
@@ -141,14 +141,7 @@ async def connect_calendar(
     try:
         # Upsert-like behavior: one connection per provider per user.
         # Use maybe_single() so a first-time connect (0 rows) does not raise PGRST116.
-        existing = await asyncio.to_thread(
-            db.table("calendar_connections")
-            .select("id")
-            .eq("user_id", user_id)
-            .eq("provider", provider)
-            .maybe_single()
-            .execute
-        )
+        existing = await calendar_service.fetch_connection_by_provider(db, user_id, provider)
 
         now = utcnow_iso()
         existing_row = existing.data if existing is not None else None
@@ -160,12 +153,7 @@ async def connect_calendar(
                 "updated_at": now,
                 "is_active": True,
             }
-            result = await asyncio.to_thread(
-                db.table("calendar_connections")
-                .update(update)
-                .eq("id", existing_row["id"])
-                .execute
-            )
+            result = await calendar_service.update_connection_row(db, existing_row, update)
             row = (result.data or [None])[0]
             logger.info(
                 "Calendar connection updated",
@@ -186,7 +174,7 @@ async def connect_calendar(
                 "updated_at": now,
                 "is_active": True,
             }
-            result = await asyncio.to_thread(db.table("calendar_connections").insert(insert).execute)
+            result = await calendar_service.insert_connection(db, insert)
             row = (result.data or [None])[0]
             logger.info(
                 "Calendar connection created",
@@ -232,13 +220,7 @@ async def list_calendar_connections(
 ):
     """List connected calendar providers for the user."""
     try:
-        res = await asyncio.to_thread(
-            db.table("calendar_connections")
-            .select("*")
-            .eq("user_id", user_id)
-            .order("connected_at", desc=True)
-            .execute
-        )
+        res = await calendar_service.fetch_connections(db, user_id)
         connections: List[CalendarConnectionData] = []
         for row in res.data or []:
             connections.append(
@@ -276,14 +258,7 @@ async def disconnect_calendar(
 ):
     """Disconnect a calendar provider (soft disable)."""
     try:
-        existing = await asyncio.to_thread(
-            db.table("calendar_connections")
-            .select("id")
-            .eq("id", connection_id)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
-        )
+        existing = await calendar_service.fetch_owned_connection(db, connection_id, user_id)
         if not existing or not existing.data:
             raise NotFoundError(
                 message="Calendar connection not found",
@@ -292,7 +267,7 @@ async def disconnect_calendar(
             )
 
         now = utcnow_iso()
-        await asyncio.to_thread(db.table("calendar_connections").update({"is_active": False, "updated_at": now}).eq("id", connection_id).execute)
+        await calendar_service.deactivate_connection(db, connection_id, now)
         logger.info(
             "Calendar connection disconnected",
             user_id=user_id,
@@ -397,17 +372,13 @@ async def get_calendar_events(
     a whole month/year of events back.
     """
     try:
-        query = db.table("calendar_events").select("*").eq("user_id", user_id)
-
-        if start_date:
-            query = query.gte("start_time", _calendar_day_bound(start_date, is_end=False))
-        if end_date:
-            query = query.lte("start_time", _calendar_day_bound(end_date, is_end=True))
+        start_bound = _calendar_day_bound(start_date, is_end=False) if start_date else None
+        end_bound = _calendar_day_bound(end_date, is_end=True) if end_date else None
 
         # Fetch one past the limit so has_more is known without a second
         # count query (items.py pays for count="exact" because it renders
         # page numbers; the calendar only needs "is there more").
-        result = await asyncio.to_thread(query.order("start_time", desc=False).range(offset, offset + limit).execute)
+        result = await calendar_service.fetch_events_page(db, user_id, start_bound, end_bound, offset, limit)
         rows = list(result.data or [])
         has_more = len(rows) > limit
         events: List[CalendarEventData] = []
@@ -486,7 +457,7 @@ async def create_calendar_event(
             "created_at": now,
             "updated_at": now,
         }
-        result = await asyncio.to_thread(db.table("calendar_events").insert(insert).execute)
+        result = await calendar_service.insert_event(db, insert)
         row = (result.data or [None])[0]
         if not row:
             raise DatabaseError(
@@ -528,14 +499,7 @@ async def update_calendar_event(
         # fields are loaded too so the window validation below can use them:
         # selecting only `id` made one-sided updates (and is_all_day-only
         # updates) skip the guard because omitted values resolved to None.
-        existing = await asyncio.to_thread(
-            db.table("calendar_events")
-            .select("id,start_time,end_time,is_all_day")
-            .eq("id", event_id)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
-        )
+        existing = await calendar_service.fetch_event_window(db, event_id, user_id)
         if not existing or not existing.data:
             raise CalendarEventNotFoundError(event_id=event_id)
 
@@ -593,13 +557,7 @@ async def update_calendar_event(
 
         if not update_data:
             # No fields to update, return existing event
-            result = await asyncio.to_thread(
-                db.table("calendar_events")
-                .select("*")
-                .eq("id", event_id)
-                .maybe_single()
-                .execute
-            )
+            result = await calendar_service.fetch_event_row(db, event_id)
             event_row = result.data if result else None
             if not event_row:
                 raise CalendarEventNotFoundError(event_id=event_id)
@@ -608,12 +566,7 @@ async def update_calendar_event(
         now = utcnow_iso()
         update_data["updated_at"] = now
 
-        result = await asyncio.to_thread(
-            db.table("calendar_events")
-            .update(update_data)
-            .eq("id", event_id)
-            .execute
-        )
+        result = await calendar_service.update_event(db, event_id, update_data)
         row = (result.data or [None])[0]
         if not row:
             raise DatabaseError(
@@ -652,19 +605,12 @@ async def delete_calendar_event(
     """Delete a calendar event."""
     try:
         # Verify event exists and belongs to user
-        existing = await asyncio.to_thread(
-            db.table("calendar_events")
-            .select("id")
-            .eq("id", event_id)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
-        )
+        existing = await calendar_service.fetch_owned_event_id(db, event_id, user_id)
         if not existing or not existing.data:
             raise CalendarEventNotFoundError(event_id=event_id)
 
         # Delete the event
-        await asyncio.to_thread(db.table("calendar_events").delete().eq("id", event_id).execute)
+        await calendar_service.delete_event(db, event_id)
 
         logger.info(
             "Calendar event deleted",
@@ -698,38 +644,19 @@ async def assign_outfit_to_event(
     """Assign an outfit to a calendar event."""
     try:
         # Verify event exists and belongs to user
-        existing = await asyncio.to_thread(
-            db.table("calendar_events")
-            .select("id")
-            .eq("id", event_id)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
-        )
+        existing = await calendar_service.fetch_owned_event_for_outfit(db, event_id, user_id)
         if not existing or not existing.data:
             raise CalendarEventNotFoundError(event_id=event_id)
 
         # A4-05: verify the outfit exists AND belongs to the user before the
         # FK write — a bogus or foreign outfit_id used to surface as a
         # Postgres FK violation → 500 instead of a clean 404.
-        outfit = await asyncio.to_thread(
-            db.table("outfits")
-            .select("id")
-            .eq("id", str(request.outfit_id))
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute
-        )
+        outfit = await calendar_service.fetch_owned_outfit(db, request, user_id)
         if not outfit or not outfit.data:
             raise OutfitNotFoundError(outfit_id=str(request.outfit_id))
 
         now = utcnow_iso()
-        result = await asyncio.to_thread(
-            db.table("calendar_events")
-            .update({"outfit_id": request.outfit_id, "updated_at": now})
-            .eq("id", event_id)
-            .execute
-        )
+        result = await calendar_service.set_event_outfit(db, event_id, request, now)
         row = (result.data or [None])[0]
         if not row:
             raise DatabaseError(
@@ -770,13 +697,7 @@ async def remove_outfit_from_event(
     """Remove outfit assignment from an event."""
     try:
         now = utcnow_iso()
-        result = await asyncio.to_thread(
-            db.table("calendar_events")
-            .update({"outfit_id": None, "updated_at": now})
-            .eq("id", event_id)
-            .eq("user_id", user_id)
-            .execute
-        )
+        result = await calendar_service.clear_event_outfit(db, event_id, user_id, now)
         if not result.data:
             raise CalendarEventNotFoundError(event_id=event_id)
         logger.info(

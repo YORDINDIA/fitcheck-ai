@@ -1,11 +1,5 @@
 /**
  * TryOnDemo Component
- *
- * Handles the virtual try-on demo flow:
- * 1. Upload person photo
- * 2. Upload outfit/clothing photo
- * 3. Show loading state
- * 4. Display generated try-on result
  */
 
 import { useState, useCallback, useEffect } from 'react'
@@ -18,7 +12,7 @@ import {
   Shirt,
   ArrowRight,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { CrayonButton } from '@/components/crayon/CrayonPrimitives'
 import { GeneratedImage } from '@/components/ui/generated-image'
 import { cn } from '@/lib/utils'
 import { trackLandingCta } from '@/lib/analytics'
@@ -37,14 +31,12 @@ export function TryOnDemo() {
   const [error, setError] = useState<string | null>(null)
   const [showLoginModal, setShowLoginModal] = useState(false)
 
-  // Blob URLs leak unless revoked: revoke each preview when it is replaced
-  // and on unmount. One effect per URL so replacing one never revokes the
-  // other while it is still rendered.
   useEffect(() => {
     return () => {
       if (personPreview) URL.revokeObjectURL(personPreview)
     }
   }, [personPreview])
+
   useEffect(() => {
     return () => {
       if (outfitPreview) URL.revokeObjectURL(outfitPreview)
@@ -79,12 +71,12 @@ export function TryOnDemo() {
         setError(
           demoError.isRateLimit
             ? 'Daily demo limit reached. Sign up free to keep using try-on.'
-            : demoError.message || 'Failed to generate try-on'
+            : demoError.message || 'Failed to generate try-on',
         )
         setState('error')
       }
     },
-    [personFile]
+    [personFile],
   )
 
   const personDropzone = useDropzone({
@@ -111,80 +103,80 @@ export function TryOnDemo() {
   }
 
   return (
-    <EditorialPanel className="p-6 h-full flex flex-col">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="flex shrink-0 items-center">
-          <Wand2 className="h-5 w-5 text-paper-accent" />
+    <EditorialPanel fill="var(--cp-mint)" className="h-full">
+      <div className="mb-4 flex items-center gap-3">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--cp-mint)] text-[var(--cp-ink)] shadow-[0_0_0_2px_var(--cp-ink)]">
+          <Wand2 className="h-5 w-5" aria-hidden="true" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold tracking-tight text-paper-text">
+          <h3 className="cp-hand text-[28px] leading-none text-[var(--cp-ink)]">
             Virtual try-on
           </h3>
-          <p className="text-sm text-paper-text-3">
+          <p className="mt-1 text-xs font-medium text-[var(--cp-ink-3)]">
             See yourself in any outfit
           </p>
         </div>
       </div>
 
-      <div className="flex-1 min-h-[300px]">
-        {/* Step 1: Upload Person Photo */}
+      <div className="min-h-[300px] flex-1">
         {state === 'person' && (
           <div className="flex h-full flex-col gap-3">
-            <figure className="flex shrink-0 items-center gap-3 rounded-xl bg-paper-sunk/60 p-3">
+            <figure className="flex shrink-0 items-center gap-3 rounded-xl bg-[var(--cp-paper)] p-3 shadow-[0_0_0_2px_var(--cp-ink)]">
               <GeneratedImage
                 src="/generated/demo-beforeafter-base-4x3-640.webp"
                 alt=""
                 aria-hidden="true"
-                className="h-20 w-16 shrink-0 rounded-lg object-cover"
+                className="h-20 w-16 shrink-0 rounded-lg object-cover shadow-[0_0_0_1.5px_var(--cp-ink)]"
                 loading="lazy"
                 fallback="hide-figure"
               />
-              <figcaption className="text-xs leading-relaxed text-paper-text-3">
-                <span className="font-semibold text-paper-text">Example input.</span>{' '}
-                A clear full-body photo like this works best. Your result is generated from your own
-                photo.
+              <figcaption className="text-xs leading-relaxed text-[var(--cp-ink-3)]">
+                <span className="font-bold text-[var(--cp-ink)]">Example input.</span>{' '}
+                A clear full-body photo works best. Your result uses your own photo.
               </figcaption>
             </figure>
+
             <div
               {...personDropzone.getRootProps()}
               className={cn(
-                'flex min-h-0 flex-1 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-paper-edge bg-paper-sunk/60 p-8 text-center',
-                'transition-[border-color,background-color] duration-200 hover:border-paper-accent/60 hover:bg-paper-tint',
-                personDropzone.isDragActive && 'border-paper-accent bg-paper-tint'
+                'flex min-h-0 flex-1 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-[var(--cp-ink)] bg-[var(--cp-paper)] p-6 text-center',
+                'transition-colors duration-150 hover:bg-[var(--cp-surface-muted)]',
+                personDropzone.isDragActive && 'bg-[var(--cp-mint)]/30',
               )}
             >
               <input {...personDropzone.getInputProps({ 'aria-label': 'Upload your photo' })} />
-              <div className="mb-3 flex items-center justify-center">
-                <User className={cn('h-5 w-5 text-paper-accent transition-transform duration-200', personDropzone.isDragActive && 'scale-110')} />
-              </div>
-              <p className="text-paper-text-2 font-medium mb-1">
+              <User
+                className={cn(
+                  'mb-2.5 h-6 w-6 text-[var(--cp-orange-deep)] transition-transform duration-200',
+                  personDropzone.isDragActive && 'scale-110',
+                )}
+                aria-hidden="true"
+              />
+              <p className="mb-1 text-sm font-bold text-[var(--cp-ink)]">
                 Step 1: Upload your photo
               </p>
-              <p className="text-sm text-paper-text-3">
+              <p className="text-xs text-[var(--cp-ink-3)]">
                 A clear full-body or half-body photo works best
               </p>
             </div>
           </div>
         )}
 
-        {/* Step 2: Upload Outfit Photo */}
         {state === 'outfit' && (
-          <div className="h-full flex flex-col">
-            <div className="flex items-center gap-3 mb-4 p-3 bg-success-pale rounded-lg">
+          <div className="flex h-full flex-col">
+            <div className="mb-4 flex items-center gap-3 rounded-xl bg-[var(--cp-mint)] p-3 shadow-[0_0_0_2px_var(--cp-ink)]">
               {personPreview && (
                 <img
                   src={personPreview}
                   alt="You"
-                  className="w-12 h-12 rounded-lg object-cover"
+                  className="h-12 w-12 rounded-lg object-cover shadow-[0_0_0_1.5px_var(--cp-ink)]"
                 />
               )}
               <div className="flex-1">
-                <p className="text-sm font-medium text-success">
-                  Your photo uploaded
-                </p>
+                <p className="text-sm font-bold text-[var(--cp-ink)]">Your photo uploaded</p>
                 <button
                   type="button"
-                  className="text-xs text-success hover:underline"
+                  className="inline-flex min-h-11 items-center text-xs font-semibold text-[var(--cp-orange-deep)] hover:underline"
                   onClick={handleReset}
                 >
                   Change photo
@@ -195,90 +187,93 @@ export function TryOnDemo() {
             <div
               {...outfitDropzone.getRootProps()}
               className={cn(
-                'flex flex-1 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-paper-edge bg-paper-sunk/60 p-8 text-center',
-                'transition-[border-color,background-color] duration-200 hover:border-paper-accent/60 hover:bg-paper-tint',
-                outfitDropzone.isDragActive && 'border-paper-accent bg-paper-tint'
+                'flex flex-1 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-[var(--cp-ink)] bg-[var(--cp-paper)] p-6 text-center',
+                'transition-colors duration-150 hover:bg-[var(--cp-surface-muted)]',
+                outfitDropzone.isDragActive && 'bg-[var(--cp-mint)]/30',
               )}
             >
               <input {...outfitDropzone.getInputProps({ 'aria-label': 'Upload an outfit to try on' })} />
-              <div className="mb-3 flex items-center justify-center">
-                <Shirt className={cn('h-5 w-5 text-paper-accent transition-transform duration-200', outfitDropzone.isDragActive && 'scale-110')} />
-              </div>
-              <p className="text-paper-text-2 font-medium mb-1">
+              <Shirt
+                className={cn(
+                  'mb-2.5 h-6 w-6 text-[var(--cp-orange-deep)] transition-transform duration-200',
+                  outfitDropzone.isDragActive && 'scale-110',
+                )}
+                aria-hidden="true"
+              />
+              <p className="mb-1 text-sm font-bold text-[var(--cp-ink)]">
                 Step 2: Upload outfit to try on
               </p>
-              <p className="text-sm text-paper-text-3">
+              <p className="text-xs text-[var(--cp-ink-3)]">
                 Drop a clothing image or outfit photo
               </p>
             </div>
           </div>
         )}
 
-        {/* Processing State */}
         {state === 'processing' && (
-          <div className="h-full flex flex-col items-center justify-center">
+          <div className="flex h-full flex-col items-center justify-center text-center" role="status">
             <div className="mb-6 flex gap-4">
               {personPreview && (
                 <img
                   src={personPreview}
                   alt="You"
-                  className="h-20 w-20 rounded-lg object-cover shadow-slab"
+                  className="h-20 w-20 rounded-lg object-cover shadow-[0_0_0_2px_var(--cp-ink)]"
                 />
               )}
-              <span className="self-center text-2xl text-paper-text-3">+</span>
+              <span className="self-center text-2xl font-bold text-[var(--cp-ink-3)]">+</span>
               {outfitPreview && (
                 <img
                   src={outfitPreview}
                   alt="Outfit"
-                  className="h-20 w-20 rounded-lg object-cover shadow-slab"
+                  className="h-20 w-20 rounded-lg object-cover shadow-[0_0_0_2px_var(--cp-ink)]"
                 />
               )}
             </div>
-            <Loader2 className="w-8 h-8 text-paper-accent animate-spin mb-2" />
-            <p className="text-paper-text-2">
-              Creating your look...
-            </p>
-            <p className="text-xs text-paper-text-3 mt-1">
+            <Loader2 className="mb-2 h-8 w-8 animate-spin text-[var(--cp-orange)]" aria-hidden="true" />
+            <p className="font-semibold text-[var(--cp-ink-2)]">Creating your look...</p>
+            <p className="mt-1 text-xs text-[var(--cp-ink-3)]">
               Generation time can vary. You can keep exploring while this runs.
             </p>
           </div>
         )}
 
-        {/* Results State */}
         {state === 'results' && result && (
-          <div className="h-full flex flex-col">
-            <div className="flex-1 flex items-center justify-center mb-4">
+          <div className="flex h-full flex-col">
+            <div className="mb-4 flex flex-1 items-center justify-center">
               <img
                 src={`data:image/png;base64,${result.image_base64}`}
                 alt="Try-on result"
-                className="max-h-64 rounded-xl object-contain shadow-slab"
+                className="max-h-64 rounded-xl object-contain shadow-[0_0_0_2.5px_var(--cp-ink)]"
               />
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button variant="ghost" size="sm" onClick={handleReset}>
+              <CrayonButton variant="paper" size="sm" onClick={handleReset}>
                 Try Another
-              </Button>
-              <Button
+              </CrayonButton>
+              <CrayonButton
+                variant="orange"
                 size="sm"
                 className="flex-1"
                 onClick={() => setShowLoginModal(true)}
               >
-                Save & continue free
-                <ArrowRight className="w-4 h-4 ms-2" />
-              </Button>
+                Save &amp; continue free
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </CrayonButton>
             </div>
           </div>
         )}
 
-        {/* Error State */}
         {state === 'error' && (
-          <div className="h-full flex flex-col items-center justify-center text-center rounded-xl bg-error-pale p-6">
-            <AlertCircle className="w-10 h-10 text-error mb-4" />
-            <p className="text-error mb-4">{error}</p>
-            <Button variant="outline" onClick={handleReset}>
+          <div
+            role="alert"
+            className="flex h-full flex-col items-center justify-center rounded-xl bg-[var(--cp-pink)]/30 p-6 text-center shadow-[0_0_0_2px_var(--cp-ink)]"
+          >
+            <AlertCircle className="mb-3 h-9 w-9 text-[var(--cp-red)]" aria-hidden="true" />
+            <p className="mb-4 text-sm font-semibold text-[var(--cp-red)]">{error}</p>
+            <CrayonButton variant="dark" size="sm" onClick={handleReset}>
               Try Again
-            </Button>
+            </CrayonButton>
           </div>
         )}
       </div>

@@ -11,11 +11,9 @@ class TryOnRepository {
   ApiClient get _api => ApiClient.instance;
 
   Future<T> _guard<T>(Future<T> Function() call) async {
-    try {
+    return runDioRequest(() async {
       return await call();
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// The user's avatar URL, or null when none is set.

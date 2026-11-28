@@ -1438,3 +1438,194 @@ class SubscriptionService:
             subscription=subscription,
             usage=usage,
         )
+
+
+# =============================================================================
+# Subscription route queries (app/api/v1/subscription.py)
+# =============================================================================
+#
+# Every PostgREST query the subscription route ran directly. The route keeps
+# the Stripe calls, the settings reads, webhook signature checks, idempotency
+# decisions, error mapping, and response shaping. Each function returns the
+# raw Supabase response the route reads. Each query keeps the wrapper it had
+# in the route (asyncio.to_thread or a direct chain), so thread behavior is
+# unchanged.
+
+
+# -----------------------------------------------------------------------------
+# Checkout and portal
+# -----------------------------------------------------------------------------
+
+
+async def fetch_checkout_subscription_row(db: Any, user: Any) -> Any:
+    """Read the billing columns that checkout branches on (0 or 1 rows)."""
+    return await asyncio.to_thread(
+        db.table("subscriptions")
+        .select("stripe_customer_id,stripe_subscription_id,plan_type,status,billing_provider")
+        .eq("user_id", user["id"])
+        .maybe_single()
+        .execute
+    )
+
+
+async def set_checkout_customer_id(db: Any, user: Any, customer_id: str) -> Any:
+    """Store a newly created Stripe customer ID on the user's subscription row."""
+    return await asyncio.to_thread(db.table("subscriptions").update({
+        "stripe_customer_id": customer_id,
+    }).eq("user_id", user["id"]).execute)
+
+
+async def fetch_portal_customer_row(db: Any, user: Any) -> Any:
+    """Read the Stripe customer ID for the portal session (0 or 1 rows)."""
+    return await asyncio.to_thread(
+        db.table("subscriptions")
+        .select("stripe_customer_id")
+        .eq("user_id", user["id"])
+        .maybe_single()
+        .execute
+    )
+
+
+async def fetch_stripe_subscription_row(db: Any, user: Any) -> Any:
+    """Read the Stripe subscription ID for cancellation (0 or 1 rows)."""
+    return await asyncio.to_thread(
+        db.table("subscriptions")
+        .select("stripe_subscription_id")
+        .eq("user_id", user["id"])
+        .maybe_single()
+        .execute
+    )
+
+
+# -----------------------------------------------------------------------------
+# Stripe webhook: event ledger (stripe_webhook_events)
+# -----------------------------------------------------------------------------
+
+
+async def insert_webhook_event(db: Any, event_id: Any, event: Any, status: str) -> Any:
+    """Record one Stripe event as received."""
+    return await asyncio.to_thread(
+        db.table("stripe_webhook_events")
+        .insert({"event_id": event_id, "event_type": event["type"], "status": status})
+        .execute
+    )
+
+
+async def fetch_webhook_event_row(db: Any, event_id: Any) -> Any:
+    """Read the ledger row of one Stripe event (0 or 1 rows)."""
+    return await asyncio.to_thread(
+        db.table("stripe_webhook_events")
+        .select("event_id,event_type,status,processing_started_at,attempts")
+        .eq("event_id", event_id)
+        .maybe_single()
+        .execute
+    )
+
+
+async def claim_webhook_event(
+    db: Any,
+    event_id: Any,
+    status: str,
+    claim_started: Any,
+    previous_attempts: int,
+    previous_started: Any,
+) -> Any:
+    """Claim one Stripe event with a compare-and-swap on the observed lease.
+
+    The route passes the lease it observed. A None lease matches a row whose
+    processing_started_at is null.
+    """
+    query = (
+        db.table("stripe_webhook_events")
+        .update({
+            "status": status,
+            "processing_started_at": claim_started,
+            "attempts": previous_attempts + 1,
+        })
+        .eq("event_id", event_id)
+    )
+    if previous_started is not None:
+        query = query.eq("processing_started_at", previous_started)
+    else:
+        query = query.is_("processing_started_at", "null")
+    return await asyncio.to_thread(query.execute)
+
+
+async def mark_webhook_event_failed(
+    db: Any,
+    event_id: Any,
+    status: str,
+    error: Exception,
+    claim_started: Any,
+) -> Any:
+    """Record a failed processing attempt on the claimed Stripe event."""
+    return await asyncio.to_thread(
+        db.table("stripe_webhook_events")
+        .update({"status": status, "last_error": str(error)[:1000]})
+        .eq("event_id", event_id)
+        .eq("processing_started_at", claim_started)
+        .execute
+    )
+
+
+async def mark_webhook_event_processed(db: Any, event_id: Any, status: str, claim_started: Any) -> Any:
+    """Record a successful processing attempt on the claimed Stripe event."""
+    return await asyncio.to_thread(
+        db.table("stripe_webhook_events")
+        .update({"status": status, "processed_at": utcnow_iso(), "last_error": None})
+        .eq("event_id", event_id)
+        .eq("processing_started_at", claim_started)
+        .execute
+    )
+
+
+# -----------------------------------------------------------------------------
+# Stripe webhook: subscription lifecycle (subscriptions)
+# -----------------------------------------------------------------------------
+
+
+async def fetch_user_id_for_updated_subscription(db: Any, subscription: Any) -> Any:
+    """Find the owner of the local row for an updated Stripe subscription."""
+    return await asyncio.to_thread(
+        db.table("subscriptions")
+        .select("user_id")
+        .eq("stripe_subscription_id", subscription.get("id"))
+        .maybe_single()
+        .execute
+    )
+
+
+async def fetch_user_id_for_deleted_subscription(db: Any, subscription: Any) -> Any:
+    """Find the owner of the local row for a deleted Stripe subscription."""
+    return await asyncio.to_thread(
+        db.table("subscriptions")
+        .select("user_id")
+        .eq("stripe_subscription_id", subscription.get("id"))
+        .maybe_single()
+        .execute
+    )
+
+
+async def downgrade_user_to_free(db: Any, user_id: Any) -> Any:
+    """Reset the user's subscription row to the free plan."""
+    return await asyncio.to_thread(db.table("subscriptions").update({
+        "plan_type": "free",
+        "status": "active",
+        "stripe_subscription_id": None,
+        "current_period_end": None,
+        "cancel_at_period_end": False,
+    }).eq("user_id", user_id).execute)
+
+
+async def fetch_user_id_by_stripe_subscription_id(db: Any, subscription_id: Any) -> Any:
+    """Find the owner of the local row for a payment-failed subscription."""
+    return await asyncio.to_thread(db.table("subscriptions").select("user_id").eq(
+        "stripe_subscription_id", subscription_id
+    ).maybe_single().execute)
+
+
+async def mark_subscription_past_due(db: Any, result_data: Any) -> Any:
+    """Set the owning user's subscription row to past_due."""
+    return await asyncio.to_thread(db.table("subscriptions").update({
+        "status": "past_due",
+    }).eq("user_id", result_data["user_id"]).execute)

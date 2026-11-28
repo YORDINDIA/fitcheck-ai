@@ -187,7 +187,7 @@ def test_user_detail_returns_full_snapshot(client):
                 {"id": "job-1", "user_id": "user-1", "status": "completed", "job_type": "batch", "created_at": "2026-08-06T00:00:00"}
             ],
             "photoshoot_jobs": [
-                {"id": "job-2", "user_id": "user-1", "status": "complete", "use_case": "try-on", "created_at": "2026-08-06T01:00:00"}
+                {"id": "job-2", "user_id": "user-1", "status": "completed", "use_case": "try-on", "created_at": "2026-08-06T01:00:00"}
             ],
         }
     )

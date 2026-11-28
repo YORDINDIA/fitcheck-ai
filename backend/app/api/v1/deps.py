@@ -15,7 +15,9 @@ from app.core.security import verify_token, TokenData
 from app.core.exceptions import AuthenticationError, PermissionDeniedError
 from app.core import user_profile_cache
 from app.utils.datetime_util import utcnow_iso
-from app.utils.db import execute_with_reconnect, maybe_single_data
+from app.utils.db import maybe_single_data
+from app.services import user_service
+from app.services.profile_fields import profile_fields_from_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -96,10 +98,8 @@ def _embed_is_unsupported(error: Exception) -> bool:
 async def _select_user_row(db: Client, *, columns: str, user_id: str, operation: str) -> Any:
     """Select one ``users`` row, degrading gracefully if the embed is rejected."""
     try:
-        return await execute_with_reconnect(
-            lambda d: d.table("users").select(columns).eq("id", user_id).maybe_single().execute(),
-            db,
-            extra={"operation": operation, "user_id": user_id},
+        return await user_service.select_user_row_for_auth(
+            db, columns=columns, user_id=user_id, operation=operation,
         )
     except Exception as error:
         if not _embed_is_unsupported(error):
@@ -120,10 +120,8 @@ async def _select_user_row(db: Client, *, columns: str, user_id: str, operation:
         # missing column, which is a much worse trade.
         reduced = columns.replace(", language_explicit", "")
         try:
-            return await execute_with_reconnect(
-                lambda d: d.table("users").select(reduced).eq("id", user_id).maybe_single().execute(),
-                db,
-                extra={"operation": operation, "user_id": user_id, "embed": "reduced"},
+            return await user_service.select_user_row_reduced_embed(
+                db, columns=reduced, user_id=user_id, operation=operation,
             )
         except Exception as reduced_error:
             if not _embed_is_unsupported(reduced_error):
@@ -134,10 +132,8 @@ async def _select_user_row(db: Client, *, columns: str, user_id: str, operation:
                 extra={"operation": operation, "user_id": user_id},
             )
             plain_columns = columns.replace(_LANGUAGE_EMBED, "")
-            return await execute_with_reconnect(
-                lambda d: d.table("users").select(plain_columns).eq("id", user_id).maybe_single().execute(),
-                db,
-                extra={"operation": operation, "user_id": user_id, "embed": "none"},
+            return await user_service.select_user_row_no_embed(
+                db, columns=plain_columns, user_id=user_id, operation=operation,
             )
 
 
@@ -156,17 +152,7 @@ async def _provision_profile(token_data: TokenData, db: Client) -> Dict[str, Any
 
         user_metadata = auth_user.user.user_metadata or {}
         email = auth_user.user.email or token_data.email
-        full_name = (
-            user_metadata.get("full_name")
-            or user_metadata.get("name")
-            or ""
-        )[:255]
-        avatar_url = (
-            user_metadata.get("avatar_url")
-            or user_metadata.get("picture")
-        )
-        if avatar_url is not None:
-            avatar_url = avatar_url[:500]
+        full_name, avatar_url = profile_fields_from_metadata(user_metadata)
 
         now = utcnow_iso()
         profile = {
@@ -180,29 +166,14 @@ async def _provision_profile(token_data: TokenData, db: Client) -> Dict[str, Any
             "updated_at": now,
             "last_login_at": now,
         }
-        db.table("users").upsert(profile, on_conflict="id").execute()
+        user_service.upsert_user_profile(db, profile=profile)
 
         try:
-            db.table("user_preferences").upsert({
-                "user_id": token_data.sub,
-                "favorite_colors": [],
-                "preferred_styles": [],
-                "liked_brands": [],
-                "disliked_patterns": [],
-                "preferred_occasions": [],
-                "data_points_collected": 0,
-            }, on_conflict="user_id").execute()
+            user_service.upsert_default_preferences(db, token_data=token_data)
         except Exception:
             pass
         try:
-            db.table("user_settings").upsert({
-                "user_id": token_data.sub,
-                "language": "en",
-                "measurement_units": "imperial",
-                "notifications_enabled": True,
-                "email_marketing": False,
-                "dark_mode": False,
-            }, on_conflict="user_id").execute()
+            user_service.upsert_default_settings(db, token_data=token_data)
         except Exception:
             pass
         return profile

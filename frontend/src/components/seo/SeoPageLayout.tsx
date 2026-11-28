@@ -1,11 +1,10 @@
 import { Link } from 'react-router-dom'
-import { Button } from '@/components/ui/button'
-import { AnimatedSection } from '@/components/landing/AnimatedSection'
-import SEO from '@/components/seo/SEO'
-import { BreadcrumbJsonLd, buildFaqSchema } from '@/components/seo/JsonLd'
-import { SEO_CONFIG } from '@/components/seo/seo-config'
 import { ArrowRight, Check, Play } from 'lucide-react'
-import { cn } from '@/lib/utils'
+
+import { CrayonBox, CrayonLink, PaperCard } from '@/components/crayon/CrayonPrimitives'
+import { BreadcrumbJsonLd, buildFaqSchema } from '@/components/seo/JsonLd'
+import SEO from '@/components/seo/SEO'
+import { SEO_CONFIG } from '@/components/seo/seo-config'
 import { trialRegisterHref } from '@/lib/trial-offer'
 
 export interface SeoFaq {
@@ -39,7 +38,6 @@ export interface SeoPageContent {
   title: string
   description: string
   h1: string
-  /** Answer-first lede (40–80 words ideal) */
   lede: string
   breadcrumbs: Array<{ name: string; path: string }>
   sections: SeoSection[]
@@ -48,11 +46,8 @@ export interface SeoPageContent {
   keywords?: string
   ctaPrimary?: { label: string; href: string }
   ctaSecondary?: { label: string; href: string; external?: boolean }
-  /** Real product/industry numbers — the Princeton GEO "statistics" lever. */
   stats?: SeoStat[]
-  /** Cited sources rendered at the foot of the page — the GEO "citations" lever. */
   sources?: SeoSource[]
-  /** ISO date (YYYY-MM-DD) shown as "Last updated" for recency signals. */
   lastUpdated?: string
 }
 
@@ -85,222 +80,160 @@ export function SeoPageLayout({ content }: { content: SeoPageContent }) {
       />
       <BreadcrumbJsonLd items={breadcrumbItems} />
 
-      <div className="pt-20">
-        <section className="py-12 md:py-16 bg-stone-50 dark:bg-stone-950 border-b border-stone-200 dark:border-stone-800">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-            <nav className="mb-6 text-sm text-stone-500 dark:text-stone-400 flex flex-wrap gap-1.5">
-              {content.breadcrumbs.map((b, i) => (
-                <span key={b.path} className="flex items-center gap-1.5">
-                  {i > 0 && <span aria-hidden>/</span>}
-                  {i < content.breadcrumbs.length - 1 ? (
-                    <Link to={b.path} className="hover:text-indigo-600 dark:hover:text-indigo-400">
-                      {b.name}
-                    </Link>
-                  ) : (
-                    <span className="text-stone-700 dark:text-stone-300">{b.name}</span>
-                  )}
-                </span>
-              ))}
-            </nav>
+      <div className="cp-wrap">
+        <section className="cp-doc-head">
+          <nav className="cp-crumbs" aria-label="Breadcrumb">
+            {content.breadcrumbs.map((b, i) => (
+              <span key={b.path} className="flex items-center gap-1.5">
+                {i > 0 && <span aria-hidden>/</span>}
+                {i < content.breadcrumbs.length - 1 ? (
+                  <Link to={b.path}>{b.name}</Link>
+                ) : (
+                  <span className="text-[var(--cp-ink)]">{b.name}</span>
+                )}
+              </span>
+            ))}
+          </nav>
 
-            <AnimatedSection>
-              <h1 className="landing-display text-3xl sm:text-4xl md:text-5xl font-semibold text-stone-900 dark:text-stone-50 leading-tight">
-                {content.h1}
-              </h1>
-              <p className="mt-5 text-lg text-stone-600 dark:text-stone-400 leading-relaxed">
-                {content.lede}
-              </p>
-              {content.lastUpdated && (
-                <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">
-                  Last updated {formatLastUpdated(content.lastUpdated)}
-                </p>
-              )}
-              {content.stats && content.stats.length > 0 && (
-                <div className="mt-8 grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-xl">
-                  {content.stats.map((stat) => (
-                    <div
-                      key={stat.label}
-                      className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 px-4 py-3"
-                    >
-                      <p className="landing-display text-xl font-semibold text-stone-900 dark:text-stone-50">
-                        {stat.value}
-                      </p>
-                      <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
-                        {stat.label}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="mt-8 flex flex-col sm:flex-row gap-3">
-                <Button
-                  size="lg"
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white h-12 px-6"
-                  asChild
-                >
-                  <Link to={primary.href}>
-                    {primary.label}
-                    <ArrowRight className="ms-2 h-4 w-4" />
-                  </Link>
-                </Button>
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="h-12 px-6 border-stone-300 dark:border-stone-700"
-                  asChild
-                >
-                  {secondary.external ? (
-                    <a href={secondary.href} target="_blank" rel="noopener noreferrer">
-                      <Play className="me-2 h-4 w-4 fill-current" />
-                      {secondary.label}
-                    </a>
-                  ) : (
-                    <Link to={secondary.href}>{secondary.label}</Link>
-                  )}
-                </Button>
-              </div>
-              <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">
-                Free plan available. No credit card required to start.
-              </p>
-            </AnimatedSection>
+          <h1>{content.h1}</h1>
+          <p className="cp-lead">{content.lede}</p>
+          {content.lastUpdated && (
+            <p className="meta">Last updated {formatLastUpdated(content.lastUpdated)}</p>
+          )}
+
+          {content.stats && content.stats.length > 0 && (
+            <div className="mx-auto mt-8 grid max-w-2xl grid-cols-2 gap-3 sm:grid-cols-3">
+              {content.stats.map((stat) => (
+                <PaperCard key={stat.label} className="px-4 py-3 text-left">
+                  <p className="cp-hand text-3xl text-[var(--cp-orange-deep)]">{stat.value}</p>
+                  <p className="mt-1 text-xs font-semibold text-[var(--cp-ink-3)]">{stat.label}</p>
+                </PaperCard>
+              ))}
+            </div>
+          )}
+
+          <div className="cp-ctas">
+            <CrayonLink to={primary.href} variant="orange">
+              {primary.label}
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </CrayonLink>
+            {secondary.external ? (
+              <a
+                href={secondary.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="cp-btn dark cp-cr"
+              >
+                <span className="cp-solid" aria-hidden="true" />
+                <Play className="h-4 w-4 fill-current" aria-hidden="true" />
+                {secondary.label}
+              </a>
+            ) : (
+              <CrayonLink to={secondary.href} variant="dark">
+                {secondary.label}
+              </CrayonLink>
+            )}
           </div>
+          <p className="mt-4 text-sm font-medium text-[var(--cp-ink-3)]">
+            Free plan available. No credit card required to start.
+          </p>
         </section>
 
-        <article className="py-12 md:py-16 bg-white dark:bg-stone-950">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
-            {content.sections.map((section, idx) => (
-              <AnimatedSection key={section.heading} delay={idx * 30}>
-                <h2 className="text-2xl font-semibold text-stone-900 dark:text-stone-50 mb-4">
-                  {section.heading}
-                </h2>
+        <CrayonBox as="aside" className="cp-doc" radius={30}>
+          <article className="inner cp-prose">
+            {content.sections.map((section) => (
+              <div key={section.heading}>
+                <h2>{section.heading}</h2>
                 {Array.isArray(section.body) ? (
-                  section.body.map((p) => (
-                    <p
-                      key={p.slice(0, 40)}
-                      className="text-stone-600 dark:text-stone-400 leading-relaxed mb-3 [overflow-wrap:anywhere]"
-                    >
-                      {p}
-                    </p>
-                  ))
+                  section.body.map((p) => <p key={p.slice(0, 40)}>{p}</p>)
                 ) : (
-                  <p className="text-stone-600 dark:text-stone-400 leading-relaxed mb-3 [overflow-wrap:anywhere]">
-                    {section.body}
-                  </p>
+                  <p>{section.body}</p>
                 )}
                 {section.bullets && section.bullets.length > 0 && (
-                  <ul className="mt-4 space-y-2.5">
+                  <ul className="cp-wins mt-4 !grid">
                     {section.bullets.map((item) => (
-                      <li key={item} className="flex gap-3 text-stone-700 dark:text-stone-300">
-                        <Check className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
-                        <span>{item}</span>
-                      </li>
+                      <li key={item}>{item}</li>
                     ))}
                   </ul>
                 )}
-              </AnimatedSection>
+              </div>
             ))}
 
             {content.faqs.length > 0 && (
-              <AnimatedSection>
-                <h2 className="text-2xl font-semibold text-stone-900 dark:text-stone-50 mb-6">
-                  Frequently asked questions
-                </h2>
-                <div className="space-y-5">
-                  {content.faqs.map((faq) => (
-                    <div
-                      key={faq.question}
-                      className="border-b border-stone-200 dark:border-stone-800 pb-5"
-                    >
-                      <h3 className="font-medium text-stone-900 dark:text-stone-50 mb-2">
-                        {faq.question}
+              <div>
+                <h2>Frequently asked questions</h2>
+                <div className="mt-4 space-y-4">
+                  {content.faqs.map((faq, idx) => (
+                    <PaperCard key={faq.question} className="p-5">
+                      <h3 className="!mt-0 flex items-baseline gap-2 text-2xl">
+                        <span className="font-mono text-xs font-bold text-[var(--cp-orange-deep)]">
+                          {String(idx + 1).padStart(2, '0')}
+                        </span>
+                        <span>{faq.question}</span>
                       </h3>
-                      <p className="text-stone-600 dark:text-stone-400 leading-relaxed [overflow-wrap:anywhere]">
-                        {faq.answer}
-                      </p>
-                    </div>
+                      <p className="mt-2 text-base text-[var(--cp-ink-2)]">{faq.answer}</p>
+                    </PaperCard>
                   ))}
                 </div>
-              </AnimatedSection>
+              </div>
             )}
 
             {content.sources && content.sources.length > 0 && (
-              <AnimatedSection>
-                <h2 className="text-xl font-semibold text-stone-900 dark:text-stone-50 mb-4">
-                  Sources
-                </h2>
-                <ul className="space-y-2 text-sm">
+              <div>
+                <h2>Sources</h2>
+                <ul>
                   {content.sources.map((source) => (
                     <li key={source.url}>
-                      <a
-                        href={source.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-indigo-600 dark:text-indigo-400 hover:underline [overflow-wrap:anywhere]"
-                      >
+                      <a href={source.url} target="_blank" rel="noopener noreferrer">
                         {source.label}
                       </a>
                     </li>
                   ))}
                 </ul>
-              </AnimatedSection>
+              </div>
             )}
 
             {content.relatedLinks && content.relatedLinks.length > 0 && (
-              <AnimatedSection>
-                <h2 className="text-xl font-semibold text-stone-900 dark:text-stone-50 mb-4">
-                  Related
-                </h2>
-                <ul className="flex flex-wrap gap-3">
+              <div>
+                <h2>Related</h2>
+                <div className="flex flex-wrap gap-2.5 pt-2">
                   {content.relatedLinks.map((link) => (
-                    <li key={link.href}>
-                      <Link
-                        to={link.href}
-                        className={cn(
-                          'inline-flex min-h-11 items-center text-sm font-medium px-3 py-1.5 rounded-full',
-                          'bg-stone-100 dark:bg-stone-900 text-indigo-700 dark:text-indigo-300',
-                          'hover:bg-indigo-50 dark:hover:bg-indigo-950/50 transition-colors'
-                        )}
-                      >
-                        {link.label}
-                      </Link>
-                    </li>
+                    <Link
+                      key={link.href}
+                      to={link.href}
+                      className="cp-chip transition-transform hover:-translate-y-0.5"
+                    >
+                      <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                      {link.label}
+                    </Link>
                   ))}
-                </ul>
-              </AnimatedSection>
+                </div>
+              </div>
             )}
-          </div>
-        </article>
+          </article>
+        </CrayonBox>
 
-        <section className="py-14 md:py-20 bg-indigo-600 text-white">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-            <h2 className="landing-display text-2xl sm:text-3xl font-semibold leading-tight">
-              Ready to try FitCheck AI?
-            </h2>
-            <p className="mt-3 text-indigo-100 max-w-xl mx-auto">
-              Photograph a few pieces, build your digital closet, and see an outfit idea from clothes you own.
-            </p>
-            <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
-              <Button
-                size="lg"
-                className="bg-white text-indigo-700 hover:bg-stone-100 h-12 px-6"
-                asChild
-              >
-                <Link to={trialRegisterHref()}>
-                  Start free
-                  <ArrowRight className="ms-2 h-4 w-4" />
-                </Link>
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                className="h-12 px-6 border-white/40 text-white hover:bg-white/10 hover:text-white"
-                asChild
-              >
-                <Link to="/features">Explore features</Link>
-              </Button>
-            </div>
+        <CrayonBox
+          solid="var(--cp-yellow-banner)"
+          radius={30}
+          showLine={false}
+          className="cp-doc-cta mx-auto max-w-[820px]"
+        >
+          <h2>Ready to try FitCheck AI?</h2>
+          <p className="mx-auto max-w-xl text-base font-medium text-[var(--cp-ink-2)]">
+            Photograph a few pieces, build your digital closet, and see an outfit idea from clothes
+            you own.
+          </p>
+          <div className="cp-ctas">
+            <CrayonLink to={trialRegisterHref()} variant="dark">
+              Start free
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </CrayonLink>
+            <CrayonLink to="/features" variant="paper">
+              Explore features
+            </CrayonLink>
           </div>
-        </section>
+        </CrayonBox>
       </div>
     </>
   )
@@ -308,7 +241,6 @@ export function SeoPageLayout({ content }: { content: SeoPageContent }) {
 
 export default SeoPageLayout
 
-/** Renders an ISO date (YYYY-MM-DD) as e.g. "August 1, 2026". */
 export function formatLastUpdated(isoDate: string): string {
   const parsed = new Date(`${isoDate}T00:00:00Z`)
   if (Number.isNaN(parsed.getTime())) return isoDate

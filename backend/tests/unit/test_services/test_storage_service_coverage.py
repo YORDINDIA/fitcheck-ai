@@ -44,12 +44,10 @@ def _valid_png_bytes() -> bytes:
 
 
 def test_with_thumb_siblings_drops_falsy_and_duplicate_paths():
-    paths = ["u1/items/a.png", "", "u1/items/a.png", "u1/items/b.png", None]
+    paths = ["users/u1/items/a.png", "", "users/u1/items/a.png", "users/u1/items/b.png", None]
     expanded = _with_thumb_siblings(paths)
     # Falsy paths and the duplicate are dropped; each canonical path gets one
-    # _thumb sibling. Legacy fixture keys are mapped to their users/ home
-    # (migrate_key_to_users_layout) so deletes resolve the object where it
-    # now lives.
+    # _thumb sibling.
     assert expanded == [
         "users/u1/items/a.png",
         "users/u1/items/a_thumb.webp",
@@ -60,14 +58,13 @@ def test_with_thumb_siblings_drops_falsy_and_duplicate_paths():
 
 def test_with_thumb_siblings_never_derives_thumb_from_thumb():
     # A _thumb key itself has no sibling; it is passed through once.
-    expanded = _with_thumb_siblings(["u1/items/a.png", "u1/items/a_thumb.webp"])
+    expanded = _with_thumb_siblings(["users/u1/items/a.png", "users/u1/items/a_thumb.webp"])
     assert expanded == ["users/u1/items/a.png", "users/u1/items/a_thumb.webp"]
 
 
 def test_with_thumb_siblings_passes_thumbless_tmp_paths_through():
-    # tmp/ previews have no thumb sibling (thumb_key_for returns None); the
-    # legacy top-level preview is mapped to its users/ home.
-    assert _with_thumb_siblings(["tmp/u1/social-import/x.png"]) == [
+    # tmp/ previews have no thumb sibling (thumb_key_for returns None).
+    assert _with_thumb_siblings(["users/u1/tmp/social-import/x.png"]) == [
         "users/u1/tmp/social-import/x.png"
     ]
 
@@ -199,14 +196,14 @@ def test_key_from_path_resolves_legacy_preview_url(monkeypatch):
     monkeypatch.setattr("app.services.storage_service.settings.OBJECT_STORAGE_BUCKET", "bucket")
     user = str(uuid.uuid4())
     # A path-style URL from a bucket that is no longer the configured one,
-    # embedding the user in the SECOND segment under tmp/ — the legacy key
-    # maps to its users/ home.
+    # embedding the user in the SECOND segment under tmp/. The bucket segment
+    # is dropped and the legacy key is returned as stored.
     assert StorageService.key_from_path(
         f"https://old-storage.example/railway-bucket/tmp/{user}/social-import/x.png"
-    ) == f"users/{user}/tmp/social-import/x.png"
+    ) == f"tmp/{user}/social-import/x.png"
     assert StorageService.key_from_path(
         f"https://old-storage.example/some-bucket/generated/{user}/try-on/y.webp"
-    ) == f"users/{user}/generated/try-on/y.webp"
+    ) == f"generated/{user}/try-on/y.webp"
 
 
 def test_build_object_url(monkeypatch):
@@ -308,10 +305,9 @@ async def test_delete_image_tolerates_thumb_delete_failure():
     backend = _ThumbDeleteFailsBackend()
     with patch.object(storage_module, "get_storage_backend", return_value=backend):
         deleted = await StorageService.delete_image(
-            db=MagicMock(), storage_path="u1/items/abc.png"
+            db=MagicMock(), storage_path="users/u1/items/abc.png"
         )
     assert deleted is True
-    # The legacy canonical key is mapped to its users/ home before the delete.
     assert backend.deleted == ["users/u1/items/abc.png", "users/u1/items/abc_thumb.webp"]
 
 
@@ -335,11 +331,10 @@ async def test_delete_image_skips_thumb_for_non_canonical_key():
     backend = FakeS3Backend()
     with patch.object(storage_module, "get_storage_backend", return_value=backend):
         deleted = await StorageService.delete_image(
-            db=MagicMock(), storage_path="tmp/u1/social-import/x.png"
+            db=MagicMock(), storage_path="users/u1/tmp/social-import/x.png"
         )
     assert deleted is True
-    # Only the object itself: tmp previews have no _thumb sibling. The legacy
-    # top-level preview is mapped to its users/ home before the delete.
+    # Only the object itself: tmp previews have no _thumb sibling.
     assert backend.delete_calls == ["users/u1/tmp/social-import/x.png"]
 
 
@@ -482,22 +477,16 @@ async def test_resolve_owned_storage_paths_skips_child_queries_when_no_owned_ids
 
 
 @pytest.mark.asyncio
-async def test_resolve_owned_storage_paths_migrates_legacy_source_key():
-    """A pre-``users/``-layout source_image_storage_path (``{user}/items/...``)
-    is rejected by ``is_owned_storage_key`` -> ``parse_key`` (no users/ prefix),
-    so without reducing it through ``key_from_path`` first it would be dropped
-    from the cleanup set and orphaned on account deletion. The reduced
-    (migrated) key is what lands in storage_paths so the delete hits the
-    object where it now lives."""
+async def test_resolve_owned_storage_paths_includes_current_source_key():
+    """A current users/ source_image_storage_path is in the cleanup set."""
     db = FakeDB(
         rows={
             "items": [
                 {
                     "id": "item-1",
                     "user_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                    # Legacy bare key (no users/ prefix), hex name.
                     "source_image_storage_path": (
-                        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/items/"
+                        "users/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/items/"
                         "11111111111111111111111111111111.png"
                     ),
                 },
@@ -509,8 +498,6 @@ async def test_resolve_owned_storage_paths_migrates_legacy_source_key():
     result = await StorageService.resolve_owned_storage_paths(
         db, user_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     )
-    # The legacy key is migrated to its users/ home AND included in the
-    # cleanup set (not silently dropped by the ownership check).
     assert (
         "users/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/items/"
         "11111111111111111111111111111111.png"
@@ -518,21 +505,18 @@ async def test_resolve_owned_storage_paths_migrates_legacy_source_key():
 
 
 @pytest.mark.asyncio
-async def test_resolve_owned_storage_paths_migrates_legacy_child_storage_path():
-    """The child-table (item_images/outfit_images) ``storage_path`` column may
-    also hold a pre-migration bare key; it is reduced through ``key_from_path``
-    so the delete target matches the migrated object."""
+async def test_resolve_owned_storage_paths_includes_current_child_storage_path():
+    """The child-table (item_images/outfit_images) storage_path is in the cleanup set."""
     db = FakeDB(
         rows={
             "items": [
                 {"id": "item-1", "user_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"},
             ],
-            # Legacy bare key in the child row.
             "item_images": [
                 {
                     "item_id": "item-1",
                     "storage_path": (
-                        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/items/"
+                        "users/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/items/"
                         "22222222222222222222222222222222.png"
                     ),
                 }
@@ -547,6 +531,34 @@ async def test_resolve_owned_storage_paths_migrates_legacy_child_storage_path():
         "users/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/items/"
         "22222222222222222222222222222222.png"
     ) in result["storage_paths"]
+
+
+@pytest.mark.asyncio
+async def test_resolve_owned_storage_paths_skips_legacy_source_key():
+    """Legacy source keys are not remapped (app/core/storage_keys.py). The
+    ownership check rejects a bare ``{user}/items/...`` key, so its source photo
+    is left out of the cleanup set. Accepted failure, see the 2026-08-31 closet
+    404 RCA."""
+    db = FakeDB(
+        rows={
+            "items": [
+                {
+                    "id": "item-1",
+                    "user_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "source_image_storage_path": (
+                        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/items/"
+                        "11111111111111111111111111111111.png"
+                    ),
+                },
+            ],
+            "item_images": [],
+            "outfit_images": [],
+        }
+    )
+    result = await StorageService.resolve_owned_storage_paths(
+        db, user_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    )
+    assert result["storage_paths"] == []
 
 
 @pytest.mark.asyncio

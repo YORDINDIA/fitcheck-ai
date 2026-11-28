@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:dio/dio.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/exceptions/app_exceptions.dart';
@@ -11,12 +10,10 @@ class ProfileRepository {
 
   /// Get current user profile
   Future<Map<String, dynamic>> getProfile() async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.get('${ApiConstants.users}/me');
       return _extractData(response.data);
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Update user profile (full_name, avatar_url, gender, birth details).
@@ -35,7 +32,7 @@ class ProfileRepository {
     String? birthTime,
     String? birthPlace,
   }) async {
-    try {
+    return runDioRequest(() async {
       final data = <String, dynamic>{};
       if (fullName != null) data['full_name'] = fullName;
       if (avatarUrl != null) data['avatar_url'] = avatarUrl;
@@ -58,14 +55,12 @@ class ProfileRepository {
         return response.data as Map<String, dynamic>;
       }
       return <String, dynamic>{};
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   /// Upload avatar image
   Future<String> uploadAvatar(File imageFile) async {
-    try {
+    return runDioRequest(() async {
       final response = await _apiClient.upload(
         '${ApiConstants.users}/me/avatar',
         imageFile,
@@ -79,9 +74,7 @@ class ProfileRepository {
         );
       }
       return url;
-    } on DioException catch (e) {
-      throw handleDioException(e);
-    }
+    });
   }
 
   Map<String, dynamic> _extractData(dynamic payload) {

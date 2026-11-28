@@ -4,7 +4,6 @@ Subscription API endpoints for managing user subscriptions and billing.
 from datetime import timedelta
 from typing import Any, Dict, Optional
 
-import asyncio
 import stripe
 from fastapi import APIRouter, Depends, Request, HTTPException
 from supabase import Client
@@ -19,7 +18,23 @@ from app.models.subscription import (
     CheckoutSessionResponse,
     PortalSessionResponse,
 )
-from app.services.subscription_service import SubscriptionService
+from app.services.subscription_service import (
+    SubscriptionService,
+    claim_webhook_event,
+    downgrade_user_to_free,
+    fetch_checkout_subscription_row,
+    fetch_portal_customer_row,
+    fetch_stripe_subscription_row,
+    fetch_user_id_by_stripe_subscription_id,
+    fetch_user_id_for_deleted_subscription,
+    fetch_user_id_for_updated_subscription,
+    fetch_webhook_event_row,
+    insert_webhook_event,
+    mark_subscription_past_due,
+    mark_webhook_event_failed,
+    mark_webhook_event_processed,
+    set_checkout_customer_id,
+)
 from app.services.gift_service import GiftService
 from app.utils import maybe_single_data
 from app.utils.datetime_util import parse_utc_datetime, utcnow, utcnow_iso
@@ -162,16 +177,19 @@ async def get_plans():
         "monthly_extractions": settings.PLAN_FREE_MONTHLY_EXTRACTIONS,
         "monthly_generations": settings.PLAN_FREE_MONTHLY_GENERATIONS,
         "monthly_embeddings": settings.PLAN_FREE_MONTHLY_EMBEDDINGS,
+        "daily_photoshoot_images": settings.PLAN_FREE_DAILY_PHOTOSHOOT_IMAGES,
     }
     plus_limits = {
         "monthly_extractions": settings.PLAN_PLUS_MONTHLY_EXTRACTIONS,
         "monthly_generations": settings.PLAN_PLUS_MONTHLY_GENERATIONS,
         "monthly_embeddings": settings.PLAN_PLUS_MONTHLY_EMBEDDINGS,
+        "daily_photoshoot_images": settings.PLAN_PLUS_DAILY_PHOTOSHOOT_IMAGES,
     }
     pro_limits = {
         "monthly_extractions": settings.PLAN_PRO_MONTHLY_EXTRACTIONS,
         "monthly_generations": settings.PLAN_PRO_MONTHLY_GENERATIONS,
         "monthly_embeddings": settings.PLAN_PRO_MONTHLY_EMBEDDINGS,
+        "daily_photoshoot_images": settings.PLAN_PRO_DAILY_PHOTOSHOOT_IMAGES,
     }
 
     return {
@@ -320,13 +338,7 @@ async def create_checkout_session(
         # Read the raw billing state as well as the effective entitlement. A
         # stale paid row without a Stripe subscription ID is unsafe to treat
         # as a new checkout: it can create a second subscription for one user.
-        sub_result = await asyncio.to_thread(
-            db.table("subscriptions")
-            .select("stripe_customer_id,stripe_subscription_id,plan_type,status,billing_provider")
-            .eq("user_id", user["id"])
-            .maybe_single()
-            .execute
-        )
+        sub_result = await fetch_checkout_subscription_row(db, user)
         sub_data = maybe_single_data(sub_result) or {}
         stored_plan = PlanType(sub_data.get("plan_type", "free"))
         existing_subscription_id = sub_data.get("stripe_subscription_id")
@@ -425,9 +437,7 @@ async def create_checkout_session(
             customer_id = customer.id
 
             # Save customer ID
-            await asyncio.to_thread(db.table("subscriptions").update({
-                "stripe_customer_id": customer_id,
-            }).eq("user_id", user["id"]).execute)
+            await set_checkout_customer_id(db, user, customer_id)
 
         # Create checkout session
         checkout_session = stripe.checkout.Session.create(
@@ -483,13 +493,7 @@ async def create_portal_session(
     stripe.api_key = settings.STRIPE_SECRET_KEY
 
     # Get customer ID
-    sub_result = await asyncio.to_thread(
-        db.table("subscriptions")
-        .select("stripe_customer_id")
-        .eq("user_id", user["id"])
-        .maybe_single()
-        .execute
-    )
+    sub_result = await fetch_portal_customer_row(db, user)
 
     sub_data = maybe_single_data(sub_result)
     if not sub_data or not sub_data.get("stripe_customer_id"):
@@ -536,13 +540,7 @@ async def cancel_subscription(
         raise ValidationError("You don't have an active paid subscription")
 
     # If Stripe subscription exists, cancel it there too
-    sub_result = await asyncio.to_thread(
-        db.table("subscriptions")
-        .select("stripe_subscription_id")
-        .eq("user_id", user["id"])
-        .maybe_single()
-        .execute
-    )
+    sub_result = await fetch_stripe_subscription_row(db, user)
 
     sub_data = maybe_single_data(sub_result)
     if sub_data and sub_data.get("stripe_subscription_id") and settings.STRIPE_SECRET_KEY:
@@ -602,20 +600,10 @@ async def stripe_webhook(request: Request, db: Client = Depends(get_db)):
     if event_id:
         event_row = None
         try:
-            await asyncio.to_thread(
-                db.table("stripe_webhook_events")
-                .insert({"event_id": event_id, "event_type": event["type"], "status": _WEBHOOK_STATUS_PENDING})
-                .execute
-            )
+            await insert_webhook_event(db, event_id, event, _WEBHOOK_STATUS_PENDING)
         except Exception as exc:
             if "duplicate" in str(exc).lower() or "unique" in str(exc).lower():
-                existing = await asyncio.to_thread(
-                    db.table("stripe_webhook_events")
-                    .select("event_id,event_type,status,processing_started_at,attempts")
-                    .eq("event_id", event_id)
-                    .maybe_single()
-                    .execute
-                )
+                existing = await fetch_webhook_event_row(db, event_id)
                 event_row = maybe_single_data(existing)
                 # Preserve the old safe acknowledgement when a legacy table
                 # or a minimal test double cannot return the row.
@@ -644,20 +632,14 @@ async def stripe_webhook(request: Request, db: Client = Depends(get_db)):
         # makes the update atomic — the loser re-checks the predicate against
         # the freshly claimed row and matches nothing.
         claim_started = utcnow_iso()
-        claim_query = (
-            db.table("stripe_webhook_events")
-            .update({
-                "status": _WEBHOOK_STATUS_PROCESSING,
-                "processing_started_at": claim_started,
-                "attempts": previous_attempts + 1,
-            })
-            .eq("event_id", event_id)
+        claim = await claim_webhook_event(
+            db,
+            event_id,
+            _WEBHOOK_STATUS_PROCESSING,
+            claim_started,
+            previous_attempts,
+            previous_started,
         )
-        if previous_started is not None:
-            claim_query = claim_query.eq("processing_started_at", previous_started)
-        else:
-            claim_query = claim_query.is_("processing_started_at", "null")
-        claim = await asyncio.to_thread(claim_query.execute)
         claim_data = getattr(claim, "data", None)
         if claim_data is not None and not claim_data:
             return {"received": True, "duplicate": True}
@@ -755,13 +737,7 @@ async def stripe_webhook(request: Request, db: Client = Depends(get_db)):
             user_id = subscription.get("metadata", {}).get("user_id")
 
             if not user_id and subscription.get("id"):
-                lookup = await asyncio.to_thread(
-                    db.table("subscriptions")
-                    .select("user_id")
-                    .eq("stripe_subscription_id", subscription.get("id"))
-                    .maybe_single()
-                    .execute
-                )
+                lookup = await fetch_user_id_for_updated_subscription(db, subscription)
                 lookup_data = maybe_single_data(lookup)
                 user_id = lookup_data.get("user_id") if lookup_data else None
 
@@ -792,25 +768,13 @@ async def stripe_webhook(request: Request, db: Client = Depends(get_db)):
             user_id = subscription.get("metadata", {}).get("user_id")
 
             if not user_id and subscription.get("id"):
-                lookup = await asyncio.to_thread(
-                    db.table("subscriptions")
-                    .select("user_id")
-                    .eq("stripe_subscription_id", subscription.get("id"))
-                    .maybe_single()
-                    .execute
-                )
+                lookup = await fetch_user_id_for_deleted_subscription(db, subscription)
                 lookup_data = maybe_single_data(lookup)
                 user_id = lookup_data.get("user_id") if lookup_data else None
 
             if user_id:
                 # Downgrade to free
-                await asyncio.to_thread(db.table("subscriptions").update({
-                    "plan_type": "free",
-                    "status": "active",
-                    "stripe_subscription_id": None,
-                    "current_period_end": None,
-                    "cancel_at_period_end": False,
-                }).eq("user_id", user_id).execute)
+                await downgrade_user_to_free(db, user_id)
                 logger.info(f"Downgraded user {user_id} to free plan")
 
         elif event["type"] == "invoice.payment_failed":
@@ -818,15 +782,11 @@ async def stripe_webhook(request: Request, db: Client = Depends(get_db)):
 
             if subscription_id:
                 # Find user by subscription ID
-                result = await asyncio.to_thread(db.table("subscriptions").select("user_id").eq(
-                    "stripe_subscription_id", subscription_id
-                ).maybe_single().execute)
+                result = await fetch_user_id_by_stripe_subscription_id(db, subscription_id)
 
                 result_data = maybe_single_data(result)
                 if result_data:
-                    await asyncio.to_thread(db.table("subscriptions").update({
-                        "status": "past_due",
-                    }).eq("user_id", result_data["user_id"]).execute)
+                    await mark_subscription_past_due(db, result_data)
                     logger.info(f"Marked subscription as past_due for subscription {subscription_id}")
 
     except Exception as e:
@@ -839,13 +799,7 @@ async def stripe_webhook(request: Request, db: Client = Depends(get_db)):
         )
         if event_id:
             try:
-                await asyncio.to_thread(
-                    db.table("stripe_webhook_events")
-                    .update({"status": _WEBHOOK_STATUS_FAILED, "last_error": str(e)[:1000]})
-                    .eq("event_id", event_id)
-                    .eq("processing_started_at", claim_started)
-                    .execute
-                )
+                await mark_webhook_event_failed(db, event_id, _WEBHOOK_STATUS_FAILED, e, claim_started)
             except Exception:
                 logger.error("Failed to record Stripe webhook failure", extra={"event_id": event_id})
         raise HTTPException(
@@ -854,11 +808,5 @@ async def stripe_webhook(request: Request, db: Client = Depends(get_db)):
         )
 
     if event_id:
-        await asyncio.to_thread(
-            db.table("stripe_webhook_events")
-            .update({"status": _WEBHOOK_STATUS_PROCESSED, "processed_at": utcnow_iso(), "last_error": None})
-            .eq("event_id", event_id)
-            .eq("processing_started_at", claim_started)
-            .execute
-        )
+        await mark_webhook_event_processed(db, event_id, _WEBHOOK_STATUS_PROCESSED, claim_started)
     return {"received": True}

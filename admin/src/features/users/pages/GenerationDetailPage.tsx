@@ -102,7 +102,7 @@ export function GenerationDetailPage() {
           <Badge variant="secondary">{t(generationKindLabelKey(parsedKind))}</Badge>
           {status ? (
             <StatusBadge
-              status={status === 'complete' ? 'completed' : status}
+              status={status}
               label={t(generationStatusLabelKey(status), { defaultValue: status })}
             />
           ) : null}

@@ -14,6 +14,7 @@ import { apiClient, resetForcedLogoutFlag, setTokens } from '@/api/client'
 // The toast helpers come from the mock above; importing them here lets the
 // tests assert exactly how many times each fires for one logical failure.
 import { showApiError, showWarning, showNetworkError } from '@/lib/toast-utils'
+import { logger } from '@/lib/logger'
 
 describe('apiClient retry logic', () => {
   let mock: MockAdapter
@@ -349,6 +350,34 @@ describe('apiClient global error toasts — one toast per logical failure', () =
     // Exactly one request for the full path — no doubled prefix.
     expect(mock.history.get.length).toBe(1)
     expect(mock.history.get[0].url).toBe('/api/v1/items')
+  })
+})
+
+describe('apiClient DEV error log, one entry per failed request', () => {
+  let mock: MockAdapter
+  let logSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    mock = new MockAdapter(apiClient)
+    localStorage.clear()
+    logSpy = vi.spyOn(logger, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    mock.restore()
+    logSpy.mockRestore()
+  })
+
+  it('logs a non-retryable failure once, with the request url and method', async () => {
+    mock.onGet('/api/v1/items/42').reply(404, { error: 'Item not found', code: 'ITEM_NOT_FOUND' })
+
+    await expect(apiClient.get('/api/v1/items/42')).rejects.toBeTruthy()
+
+    expect(logSpy).toHaveBeenCalledTimes(1)
+    expect(logSpy).toHaveBeenCalledWith(
+      '[API Error]',
+      expect.objectContaining({ status: 404, code: 'ITEM_NOT_FOUND', url: '/api/v1/items/42', method: 'GET' }),
+    )
   })
 })
 

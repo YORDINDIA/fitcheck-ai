@@ -130,19 +130,16 @@ else
   missing_check "backend ruff" "backend/.venv/bin/ruff not found"
 fi
 
-if [[ -x "$ROOT/backend/.venv/bin/pytest" ]]; then
+# Call the venv interpreter, not its pytest launcher: the launcher can carry a
+# stale path from the checkout that created the venv.
+if "$ROOT/backend/.venv/bin/python" -c "import pytest" 2>/dev/null; then
   echo "== backend pytest =="
-  (
-    cd backend
-    # shellcheck disable=SC1091
-    source .venv/bin/activate
-    PYTHONPATH=. pytest -q
-  )
+  (cd backend && PYTHONPATH=. .venv/bin/python -m pytest -q)
 else
   if [[ "$ALLOW_NO_PYTEST" == "1" ]]; then
     echo "== backend pytest skipped (--allow-no-pytest; no backend/.venv) =="
   else
-    echo "== backend pytest failed: backend/.venv/bin/pytest not found. Install backend dependencies or pass --allow-no-pytest. ==" >&2
+    echo "== backend pytest failed: backend/.venv has no pytest. Install backend dependencies or pass --allow-no-pytest. ==" >&2
     exit 1
   fi
 fi

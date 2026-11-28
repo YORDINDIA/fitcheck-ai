@@ -41,7 +41,7 @@ export default function StoreBadges({
           target="_blank"
           rel="noopener noreferrer"
           onClick={() => trackLandingCta(location, { store: badge.store })}
-          className="rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="inline-flex min-h-11 items-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <img
             src={badge.src}

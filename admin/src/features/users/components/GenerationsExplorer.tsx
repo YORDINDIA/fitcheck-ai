@@ -236,7 +236,7 @@ function GenerationCard({ userId, item }: { userId: string; item: AdminUserGener
           </Badge>
           {status ? (
             <StatusBadge
-              status={status === 'complete' ? 'completed' : status}
+              status={status}
               label={t(generationStatusLabelKey(status), { defaultValue: status })}
             />
           ) : null}

@@ -30,6 +30,16 @@ from app.core.exceptions import DatabaseError
 from app.core.logging_config import get_context_logger
 from app.api.v1.deps import get_active_user_id
 from app.db.connection import get_db
+from app.services.gamification_service import (
+    count_all_streaks,
+    count_streaks_above,
+    get_profile_rows,
+    get_top_streak_rows,
+    get_user_achievement_rows,
+    get_user_current_streak_row,
+    get_user_streak_row,
+    upsert_user_streak_row,
+)
 
 logger = get_context_logger(__name__)
 
@@ -45,10 +55,6 @@ MILESTONES = [
     (100, "Century Streak", "century"),
     (365, "Yearly Legend", "year"),
 ]
-
-
-def _now() -> str:
-    return utcnow_iso()
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
@@ -145,10 +151,10 @@ async def get_streak(
         return _disabled_streak_payload()
 
     try:
-        result = await asyncio.to_thread(db.table("user_streaks").select("*").eq("user_id", user_id).maybe_single().execute)
+        result = await get_user_streak_row(db, user_id)
         row = result.data if result else None
         if not row:
-            now = _now()
+            now = utcnow_iso()
             insert = {
                 "user_id": user_id,
                 "current_streak": 0,
@@ -161,9 +167,7 @@ async def get_streak(
             # A4-19: upsert (user_id is the PK) instead of a plain insert, so
             # a concurrent first GET cannot race into a duplicate-key error -
             # the row is created exactly once.
-            insert_result = await asyncio.to_thread(
-                db.table("user_streaks").upsert(insert, on_conflict="user_id").execute
-            )
+            insert_result = await upsert_user_streak_row(db, insert)
             if insert_result is None or not insert_result.data:
                 raise DatabaseError("Failed to insert streak record")
             row = insert_result.data[0]
@@ -233,7 +237,7 @@ async def get_achievements(
         return enriched
 
     try:
-        result = await asyncio.to_thread(db.table("user_achievements").select("*").eq("user_id", user_id).order("earned_at", desc=True).execute)
+        result = await get_user_achievement_rows(db, user_id)
         earned_rows = enrich_earned(result.data if result else [])
         logger.debug(
             "Achievements retrieved",
@@ -263,24 +267,13 @@ async def get_leaderboard(
 
     try:
         # Minimal leaderboard by current streak
-        streaks_result = await asyncio.to_thread(
-            db.table("user_streaks")
-            .select("user_id,current_streak")
-            .order("current_streak", desc=True)
-            .limit(25)
-            .execute
-        )
+        streaks_result = await get_top_streak_rows(db)
         rows: List[Dict[str, Any]] = streaks_result.data if streaks_result else []
 
         user_ids = [r.get("user_id") for r in rows if r.get("user_id")]
         profiles: Dict[str, Dict[str, Any]] = {}
         if user_ids:
-            prof_result = await asyncio.to_thread(
-                db.table("users")
-                .select("id,full_name,avatar_url")
-                .in_("id", user_ids)
-                .execute
-            )
+            prof_result = await get_profile_rows(db, user_ids)
             prof_rows = prof_result.data if prof_result else []
             profiles = {str(p.get("id")): p for p in prof_rows if p.get("id")}
 
@@ -324,12 +317,12 @@ async def get_leaderboard(
         # User rank summary (best-effort)
         user_rank: Optional[Dict[str, Any]] = None
         try:
-            me_result = await asyncio.to_thread(db.table("user_streaks").select("current_streak").eq("user_id", user_id).maybe_single().execute)
+            me_result = await get_user_current_streak_row(db, user_id)
             me_row = me_result.data if me_result else None
             me_streak = _safe_int((me_row or {}).get("current_streak"), 0)
-            higher = await asyncio.to_thread(db.table("user_streaks").select("user_id", count="exact").gt("current_streak", me_streak).execute)
+            higher = await count_streaks_above(db, me_streak)
             higher_count = getattr(higher, "count", len(getattr(higher, "data", []) or [])) or 0
-            total = await asyncio.to_thread(db.table("user_streaks").select("user_id", count="exact").execute)
+            total = await count_all_streaks(db)
             total_users = getattr(total, "count", len(getattr(total, "data", []) or [])) or 0
             rank = int(higher_count) + 1
             points = _compute_points(me_streak)

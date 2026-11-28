@@ -2,7 +2,8 @@
  * Gamification API endpoints
  */
 
-import { apiClient, getApiError, skipToast } from './client'
+import { apiClient, skipToast } from './client'
+import { getApiError } from '@/lib/errors'
 import type { ApiEnvelope } from '../types'
 
 export interface NextMilestone {
