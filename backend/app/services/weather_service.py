@@ -132,7 +132,7 @@ class WeatherService:
                         location=location,
                         units=units,
                     )
-                    return self._parse_weather_response(response.json())
+                    return self._parse_weather_response(response.json(), units=units)
                 else:
                     logger.error(
                         "Weather API returned error",
@@ -209,7 +209,7 @@ class WeatherService:
                         lon=lon,
                         units=units,
                     )
-                    return self._parse_weather_response(response.json())
+                    return self._parse_weather_response(response.json(), units=units)
                 else:
                     logger.error(
                         "Weather API returned error",
@@ -337,11 +337,14 @@ class WeatherService:
             )
             raise WeatherServiceError(f"Failed to fetch forecast: {str(e)}")
 
-    def _parse_weather_response(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _parse_weather_response(
+        self, data: Dict[str, Any], units: str = "imperial"
+    ) -> Dict[str, Any]:
         """Parse OpenWeatherMap API response.
 
         Args:
             data: Raw API response
+            units: Temperature units used in the API response
 
         Returns:
             Standardized weather data
@@ -357,11 +360,10 @@ class WeatherService:
         description = weather.get("description", "")
         wind_speed = wind.get("speed", 0)
 
-        # Determine temperature category
-        temp_category = self._get_temp_category(temp)
-
-        # Determine weather state
-        weather_state = self._get_weather_state(condition, temp)
+        # Classification thresholds use Fahrenheit; keep response values unchanged.
+        temp_f = temp * 9 / 5 + 32 if units == "metric" else temp
+        temp_category = self._get_temp_category(temp_f)
+        weather_state = self._get_weather_state(condition, temp_f)
 
         return {
             "temperature": temp,
