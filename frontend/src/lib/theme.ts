@@ -74,9 +74,14 @@ export function applyTheme(theme: ResolvedTheme): void {
  */
 export function getStoredTheme(): Theme | null {
   if (typeof window === 'undefined') return null;
-  const stored = localStorage.getItem(THEME_STORAGE_KEY);
-  if (stored === 'light' || stored === 'dark' || stored === 'system') {
-    return stored;
+  try {
+    if (typeof window.localStorage?.getItem !== 'function') return null;
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === 'light' || stored === 'dark' || stored === 'system') {
+      return stored;
+    }
+  } catch {
+    return null;
   }
   return null;
 }
@@ -85,5 +90,12 @@ export function getStoredTheme(): Theme | null {
  * Store theme in localStorage
  */
 export function storeTheme(theme: Theme): void {
-  localStorage.setItem(THEME_STORAGE_KEY, theme);
+  if (typeof window === 'undefined') return;
+  try {
+    if (typeof window.localStorage?.setItem === 'function') {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    }
+  } catch {
+    // Ignore storage quota/privacy-mode errors.
+  }
 }

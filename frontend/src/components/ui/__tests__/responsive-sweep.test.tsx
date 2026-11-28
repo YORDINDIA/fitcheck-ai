@@ -152,9 +152,7 @@ describe('responsive sweep regression guards', () => {
         />
       </MemoryRouter>
     )
-    // The trust strip is the only section whose grid is a hairline (gap-px)
-    // composite; its section wrapper must carry the page padding ladder.
-    const strip = document.querySelector('section .gap-px')?.closest('section')
+    const strip = document.querySelector('[data-testid="feature-trust-strip"]')?.closest('section')
     expect(strip).toHaveClass('px-4')
     expect(strip).toHaveClass('sm:px-6')
     expect(strip).toHaveClass('lg:px-8')

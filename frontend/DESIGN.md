@@ -216,14 +216,14 @@ Keep the red at full saturation so primary actions stay loud against dark.
 All-sans in the app, like Pinterest. Use **Inter** for UI/body text and **Manrope** for
 display tiers, declared with `@font-face` in `src/index.css`. No serif in the app.
 
-**Exception, the public landing (2026-10-01):** the landing, Navbar and Footer use
-the paper studio type of the mobile app: **Basteleur** Bold for display and
-Basteleur Moonlight for section heads (Velvetyne, SIL OFL; the self-hosted Latin
-subsets in `public/fonts/` are renamed "Paper Studio" because the OFL reserves
-the "Basteleur" name; metric-matched Georgia fallbacks), and `system-ui` for body.
-Figures (prices, limits, temperatures) stay in the body face with `tabular-nums`:
-Basteleur has a slashed zero and no `₹`. See §08 "Paper studio landing". Steep hierarchy: display drops straight to
-16px body with no intermediate display tier.
+**Exception, public marketing site (2026-11-28):** the landing page, `Navbar`,
+`Footer`, and all public marketing/SEO/feature/blog/legal routes use the
+Snaptitle-inspired crayon-and-paper system (`frontend/src/styles/crayon.css`):
+**Gaegu** (700, `gaegu-700-latin.woff2` + `Gaegu Fallback`) for handwritten
+display headings, **Inter** (`inter-latin-var.woff2`) for body/UI, and
+**JetBrains Mono** (`jetbrains-mono-latin-var.woff2`) for metadata, filenames,
+and FAQ indices. See §08 "Crayon & paper public site". Steep hierarchy:
+display drops straight to 16px body with no intermediate display tier.
 
 | Role | Size / Weight / lh | Tracking | Use |
 |------|---------------------|----------|-----|
@@ -417,31 +417,32 @@ safe. These live in the primitives, not per call site:
 - **Tab indicator pop** — BottomNav's active pill replays a 200ms scale-in on
   activation (remount-by-key), never on hover.
 
-### Paper studio landing (2026-10-01)
+### Crayon & paper public site (2026-11-28)
 
-The public landing (`/`) now uses the mobile paper-cut system
-(`flutter/DESIGN.md` §01–§03), scoped to the landing, Navbar and Footer. The
-logged-in app keeps clay. Plan: `docs/exec-plans/active/2026-10-01-paper-studio-landing.md`.
+All public routes inside `PublicLayout` (`/` landing, `Navbar`, `Footer`,
+`/features/*`, `/about`, `/faq`, `/support`, `/privacy`, `/terms`, `/tools/*`,
+`/blog/*`, and SEO intent pages) use the Snaptitle-inspired `.cp` crayon-and-paper
+system (`frontend/src/styles/crayon.css`), while the logged-in app keeps Clay.
 
-- **Stocks.** Each section sits on one paper stock (`.stock-ink|clay|moss|marigold|stone`,
-  values copied from `flutter/lib/core/theme/paper_tokens.dart`, light and dark). Components
-  read them through the `paper-*` Tailwind colours, so a sheet follows its section.
-  The footer is its own deep-moss floor (`.paper-floor`).
-- **Surfaces.** `.paper-section` = stock colour + grain tile (`public/paper/grain-*.webp`)
-  behind content. `.paper-tear` = torn top edge from one seamless 240px tile
-  (`public/paper/tear.svg`), with the slab colour as the paper's thickness.
-  `.paper-sheet` = card colour on a solid tinted slab (`1.5px 3px 0`), never a blur.
-- **Actions.** One red `.paper-btn` per view; it presses onto its slab on `:active` and
-  only changes colour on hover. Secondary actions are `.paper-btn-sheet` or text links.
-  Never a filled + outlined pair.
-- **Signature.** The hero is "Snap your closet once" (`components/landing/Hero.tsx`,
-  data in `signature-data.ts`): a pile photo, six cut-outs with labels, the outfit. Real
-  pipeline output, captioned as an example. The default render is the finished frame;
-  on wide screens with scroll timelines the stage sticks and plays from the big photo
-  to that frame (transform, z-index and colour only, see `.sig-*` in `index.css`).
-- **Openers.** No tracked-caps kickers. Sections open with a Basteleur sentence.
-- **Kept from below.** CSS-only motion, no opacity gating, verified facts only,
-  aligned pricing rows.
+- **Palette & Dark Mode.** Scoped under `.cp` (`#fffdf8` warm grain paper,
+  `#ffffff` surface, `#121214` ink, `#ff5a14` orange, `#ffd23f` yellow, pastel
+  crayon fills `--cp-sky|mint|lilac|peach|pink`, `#2b2f6b` navy privacy showcase,
+  `#1b1f45` indigo wax footer) with full `.dark .cp` counterparts (`#141418`
+  charcoal paper, `#1d1d23` surface, `#f7f4ec` warm-cream ink, muted chalk
+  crayon fills).
+- **SVG Filters (`CrayonFilters.tsx`).** `#cp-line` (hand-drawn 4px borders and
+  wavy navbar divider), `#cp-scribble` (diagonal crayon fills), and `#cp-wax`
+  (chalky wax texture on pill `.cp-btn` buttons, dark navy block, yellow CTA
+  banners, and footer).
+- **Surfaces.** `.cp-paper` cards (`2.5px` ink outline + `4px 5px 0` hard offset
+  shadow) and `.cp-cr` crayon-framed containers with `.cp-fill` / `.cp-solid` /
+  `.cp-line` layers.
+- **Interactive Proof.** Hero extraction window (`Hero.tsx`), clickable
+  `ClosetStage`, 1-click batch-extract toggle (`Features.tsx`), occasion/vibe
+  switcher with Finder-style blue flash (`StylePreview.tsx`), live API-backed
+  demos (`DemoSection.tsx`), and numbered `01–13` FAQ accordions (`FAQ.tsx`).
+- **Kept from below.** CSS-first motion, zero `opacity: 0` gating, verified facts
+  only, and aligned comparison tables.
 
 ### Enterprise landing guidance (updated 2026-08-27, partly superseded by the paper studio landing above)
 

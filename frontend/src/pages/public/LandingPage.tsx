@@ -1,10 +1,12 @@
 import Hero from '@/components/landing/Hero'
-import DemoSection from '@/components/landing/DemoSection'
+import CaptureSources from '@/components/landing/CaptureSources'
+import ClosetStage from '@/components/landing/ClosetStage'
 import Features from '@/components/landing/Features'
-import PhotoshootShowcase from '@/components/landing/PhotoshootShowcase'
+import StylePreview from '@/components/landing/StylePreview'
+import DemoSection from '@/components/landing/DemoSection'
 import WhoItsFor from '@/components/landing/WhoItsFor'
-import GuidesStrip from '@/components/landing/GuidesStrip'
 import Pricing from '@/components/landing/Pricing'
+import GuidesStrip from '@/components/landing/GuidesStrip'
 import FAQ, { LANDING_FAQS } from '@/components/landing/FAQ'
 import CTASection from '@/components/landing/CTASection'
 import SEO from '@/components/seo/SEO'
@@ -70,13 +72,9 @@ export default function LandingPage() {
     steps: HOW_TO_STEPS,
   })
   const featureListSchema = buildFeatureItemListSchema(FEATURE_LIST)
-  // The VideoObject is declared once globally in index.html (it is the same
-  // promo video for the whole site), so the landing page does not re-declare
-  // it — that would duplicate the block both in the static HTML and again
-  // after client hydration.
 
   return (
-    <div className="paper-landing">
+    <div>
       <SEO
         title={PAGE_SEO.landing.title}
         description={PAGE_SEO.landing.description}
@@ -85,8 +83,10 @@ export default function LandingPage() {
         jsonLd={[faqSchema, howToSchema, featureListSchema]}
       />
       <Hero />
+      <CaptureSources />
+      <ClosetStage />
       <Features />
-      <PhotoshootShowcase />
+      <StylePreview />
       <DemoSection />
       <WhoItsFor />
       <Pricing />

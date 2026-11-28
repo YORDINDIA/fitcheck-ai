@@ -150,11 +150,7 @@ describe('PR regression guards', () => {
     expect(
       screen.getByRole('table', { name: 'FitCheck plan and usage limit comparison' })
     ).toBeInTheDocument()
-    expect(screen.getByTestId('mobile-pricing-rail')).toHaveClass('snap-x')
-    expect(screen.getByTestId('mobile-pricing-rail').parentElement).toHaveClass(
-      '[contain:paint]'
-    )
-    expect(screen.getByTestId('mobile-pricing-rail').parentElement).toHaveClass('lg:hidden')
+    expect(screen.getByRole('radiogroup', { name: 'Choose a plan' })).toBeInTheDocument()
 
     // The trial-offer promo rides along on plan CTAs (trial-offer.ts); the
     // regression guard is that plan_type + cadence survive in the link.

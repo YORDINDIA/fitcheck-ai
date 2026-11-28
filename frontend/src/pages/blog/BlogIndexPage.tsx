@@ -1,16 +1,26 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { trialRegisterHref } from '@/lib/trial-offer'
-import { Badge } from '@/components/ui/badge'
-import { AnimatedSection } from '@/components/landing/AnimatedSection'
+import { ArrowRight, Calendar, Clock } from 'lucide-react'
+
 import { BlogImage } from '@/components/blog/BlogImage'
+import { CrayonBox, CrayonButton, CrayonLink } from '@/components/crayon/CrayonPrimitives'
+import { AnimatedSection } from '@/components/landing/AnimatedSection'
 import SEO from '@/components/seo/SEO'
-import { formatDate } from '@/i18n'
-import { cn } from '@/lib/utils'
-import { Calendar, Clock, ArrowRight } from 'lucide-react'
+import { InfiniteScrollSentinel } from '@/components/ui/infinite-scroll-sentinel'
 import { useBlogCategories } from '@/hooks/useBlog'
 import { useInfiniteBlogPosts } from '@/hooks/useInfiniteBlogPosts'
-import { InfiniteScrollSentinel } from '@/components/ui/infinite-scroll-sentinel'
+import { formatDate } from '@/i18n'
+import { trialRegisterHref } from '@/lib/trial-offer'
+import { cn } from '@/lib/utils'
+
+const CARD_FILLS = [
+  'var(--cp-sky)',
+  'var(--cp-mint)',
+  'var(--cp-peach)',
+  'var(--cp-lilac)',
+  'var(--cp-yellow-banner)',
+  'var(--cp-pink)',
+]
 
 export default function BlogIndexPage() {
   const { category } = useParams<{ category: string }>()
@@ -80,261 +90,239 @@ export default function BlogIndexPage() {
         keywords="wardrobe blog, AI fashion tips, digital closet guides, outfit planning"
       />
 
-      <div className="pt-20">
-        {/* Hero Section */}
-        <section className="py-16 md:py-24 bg-stone-50 dark:bg-stone-950">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <AnimatedSection>
-              <div className="text-center max-w-3xl mx-auto">
-                <Badge className="mb-4 bg-secondary text-secondary-foreground border-0">
-                  {category ? categoryFilter || category : 'Blog'}
-                </Badge>
-                <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 dark:text-white mb-6">
-                  {category ? `${categoryFilter || category} Articles` : 'Fashion, AI & Style Tips'}
-                </h1>
-                <p className="text-lg md:text-xl text-gray-600 dark:text-gray-300 mb-8">
-                  {category
-                    ? `Explore our latest articles on ${categoryFilter || category}`
-                    : 'Discover how AI is transforming wardrobe management and get expert style advice'}
-                </p>
+      <div className="cp-wrap">
+        <section className="cp-doc-head">
+          <p className="cp-eyebrow">{category ? categoryFilter || category : 'BLOG'}</p>
+          <h1>{category ? `${categoryFilter || category} Articles` : 'Fashion, AI & Style Tips'}</h1>
+          <p className="cp-lead">
+            {category
+              ? `Explore our latest articles on ${categoryFilter || category}`
+              : 'Discover how AI is transforming wardrobe management and get expert style advice'}
+          </p>
 
-                <form onSubmit={handleSearchSubmit} className="mx-auto flex max-w-xl flex-col gap-2 sm:flex-row" role="search">
-                  <label htmlFor="blog-search" className="sr-only">Search blog posts</label>
-                  <input
-                    id="blog-search"
-                    name="search"
-                    autoComplete="off"
-                    type="search"
-                    value={searchValue}
-                    onChange={(event) => setSearchValue(event.target.value)}
-                    placeholder="Search articles…"
-                    className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-4 py-3 text-base text-gray-900 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                  />
-                  <div className="flex gap-2">
-                    <button type="submit" className="flex-1 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary-pressed sm:flex-none">
-                      Search
-                    </button>
-                    {searchQuery && (
-                      <button type="button" onClick={handleClearSearch} className="flex-1 rounded-lg border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 sm:flex-none dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                </form>
-
-                {/* Category Pills — the container is always rendered, but its
-                    reserved min-height (which holds the posts grid steady while
-                    categories fetch, avoiding CLS) applies only while loading or
-                    when categories exist, so an error or empty list leaves no
-                    blank band. */}
-                <div
-                  className={cn(
-                    'flex flex-wrap justify-center gap-2',
-                    // Stepped reservation: pills wrap to ~3 rows on phones
-                    // (~156px at the 44px pill height), 1–2 rows on tablets,
-                    // 1 row on desktop. Keeps the CLS guard honest if the
-                    // pill count changes.
-                    (isLoadingCategories || (categories?.length ?? 0) > 0) &&
-                      'min-h-[9.75rem] xs:min-h-[8rem] sm:min-h-[6.5rem] md:min-h-11'
-                  )}
-                >
-                  {isLoadingCategories ? (
-                    // Skeleton pills fill the reserved space (same 44px pill
-                    // height + wrap) instead of an empty band.
-                    Array.from({ length: 6 }).map((_, i) => (
-                      <span
-                        key={i}
-                        aria-hidden="true"
-                        className="h-11 w-20 rounded-full bg-stone-200 dark:bg-stone-800 animate-pulse"
-                      />
-                    ))
-                  ) : (
-                    categories &&
-                    categories.length > 0 && (
-                      <>
-                        <Link
-                          to="/blog"
-                          className={`inline-flex min-h-11 items-center px-4 py-2 rounded-full text-sm font-medium transition-colors border ${!category
-                            ? 'bg-stone-900 text-white border-stone-900 dark:bg-white dark:text-stone-900 dark:border-white'
-                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-stone-800 hover:text-primary dark:hover:text-primary border-gray-200 dark:border-gray-700'
-                            }`}
-                        >
-                          All
-                        </Link>
-                        {categories.map((cat) => {
-                          const catSlug = slugifyCategory(cat)
-                          const isActive = category === catSlug
-                          return (
-                            <Link
-                              key={cat}
-                              to={`/blog/category/${catSlug}`}
-                              className={`inline-flex min-h-11 items-center px-4 py-2 rounded-full text-sm font-medium transition-colors border ${isActive
-                                ? 'bg-stone-900 text-white border-stone-900 dark:bg-white dark:text-stone-900 dark:border-white'
-                                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-stone-800 hover:text-primary dark:hover:text-primary border-gray-200 dark:border-gray-700'
-                                }`}
-                            >
-                              {cat}
-                            </Link>
-                          )
-                        })}
-                      </>
-                    )
-                  )}
-                </div>
-              </div>
-            </AnimatedSection>
-          </div>
-        </section>
-
-        {/* Blog Posts Grid */}
-        <section className="py-16 md:py-24 bg-white dark:bg-gray-950">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            {categoryIsResolving || isLoadingPosts ? (
-              <div className="grid gap-6 md:grid-cols-2 md:gap-8 lg:grid-cols-3 mb-12" role="status" aria-live="polite" aria-busy="true">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="rounded-2xl overflow-hidden border border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-900"
-                  >
-                    <div className="aspect-[16/9] bg-stone-200 dark:bg-stone-800 animate-pulse" />
-                    <div className="p-6 space-y-3">
-                      <div className="h-4 w-1/3 bg-stone-200 dark:bg-stone-800 rounded animate-pulse" />
-                      <div className="h-6 w-full bg-stone-200 dark:bg-stone-800 rounded animate-pulse" />
-                      <div className="h-4 w-2/3 bg-stone-200 dark:bg-stone-800 rounded animate-pulse" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : categoryIsInvalid ? (
-              <div className="text-center py-20 space-y-4" role="alert">
-                <p className="text-stone-600 dark:text-stone-400">
-                  {categoriesError ? 'Unable to load blog categories.' : 'That blog category was not found.'}
-                </p>
-                <Link to="/blog" className="text-primary hover:underline inline-block">
-                  View all posts
-                </Link>
-              </div>
-            ) : postsError ? (
-              <div className="text-center py-20 space-y-4" role="alert">
-                <p className="text-stone-600 dark:text-stone-400">
-                  Failed to load blog posts. Please try again.
-                </p>
-                <button
+          <form
+            onSubmit={handleSearchSubmit}
+            className="mx-auto mt-8 flex max-w-xl flex-col gap-2.5 sm:flex-row"
+            role="search"
+          >
+            <label htmlFor="blog-search" className="sr-only">
+              Search blog posts
+            </label>
+            <input
+              id="blog-search"
+              name="search"
+              autoComplete="off"
+              type="search"
+              value={searchValue}
+              onChange={(event) => setSearchValue(event.target.value)}
+              placeholder="Search articles…"
+              className="min-w-0 flex-1 rounded-xl border-2 border-[var(--cp-ink)] bg-[var(--cp-surface)] px-4 py-3 text-base text-[var(--cp-ink)] shadow-[3px_4px_0_var(--cp-shadow-ink)] placeholder:text-[var(--cp-ink-3)]"
+            />
+            <div className="flex gap-2">
+              <CrayonButton type="submit" variant="orange" size="sm" className="flex-1 sm:flex-none">
+                Search
+              </CrayonButton>
+              {searchQuery && (
+                <CrayonButton
                   type="button"
-                  onClick={() => refetchPosts()}
-                  className="inline-flex items-center px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-pressed"
+                  variant="paper"
+                  size="sm"
+                  onClick={handleClearSearch}
+                  className="flex-1 sm:flex-none"
                 >
-                  Try again
-                </button>
-              </div>
-            ) : posts.length === 0 ? (
-              <div className="text-center py-20">
-                <p className="text-stone-600 dark:text-stone-400">
-                  No blog posts found{category ? ` in ${categoryFilter || category}` : ''}{searchQuery ? ` matching “${searchQuery}”` : ''}. Check back soon!
-                </p>
-                {category && (
-                  <Link to="/blog" className="text-primary hover:underline mt-4 inline-block">
-                    View all posts
-                  </Link>
-                )}
-              </div>
-            ) : (
-              <>
-                <div className="grid gap-6 md:grid-cols-2 md:gap-8 lg:grid-cols-3 mb-12">
-                  {posts.map((post, index) => (
-                    <AnimatedSection key={post.slug} delay={index * 100}>
-                      <Link to={`/blog/${post.slug}`} className="group block h-full">
-                        <article className="flex h-full flex-col overflow-hidden rounded-lg border border-gray-100 bg-gray-50 transition-[border-color] duration-300 dark:border-gray-800 dark:bg-gray-900">
-                          {/* Image Placeholder */}
-                          <div className="aspect-[16/9] bg-stone-200 dark:bg-stone-800 flex items-center justify-center relative overflow-hidden">
-                            <BlogImage
-                              src={post.featured_image_url}
-                              alt={post.title}
-                              emoji={post.emoji}
-                              emojiClassName="text-6xl md:text-7xl transform group-hover:scale-110 transition-transform duration-300"
-                              imgClassName="transform group-hover:scale-105 transition-transform duration-500"
-                              sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
-                              widths={[320, 480, 640, 800]}
-                              width={640}
-                              height={360}
-                              // The first card's image is the LCP element on
-                              // mobile and desktop: eager + high priority so
-                              // the preload scanner starts it immediately in
-                              // the prerendered HTML, before any JS runs.
-                              priority={index === 0}
-                            />
-                          </div>
+                  Clear
+                </CrayonButton>
+              )}
+            </div>
+          </form>
 
-                          <div className="p-6 flex-1 flex flex-col">
-                            {/* Meta */}
-                            <div className="flex items-center gap-3 mb-3 text-sm">
-                              <span className="font-medium text-stone-600 dark:text-stone-400 bg-stone-100 dark:bg-stone-800 px-2.5 py-1 rounded">
-                                {post.category}
-                              </span>
-                              <span className="flex items-center text-gray-500 dark:text-gray-400">
-                                <Clock className="w-3.5 h-3.5 me-1" />
-                                {post.read_time}
-                              </span>
-                            </div>
-
-                            {/* Title */}
-                            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-3 group-hover:text-primary dark:group-hover:text-primary transition-colors line-clamp-2">
-                              {post.title}
-                            </h2>
-
-                            {/* Excerpt */}
-                            <p className="text-gray-600 dark:text-gray-400 text-sm flex-1 line-clamp-3 mb-4">
-                              {post.excerpt}
-                            </p>
-
-                            {/* Footer */}
-                            <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-800">
-                              <span className="flex items-center text-sm text-gray-500 dark:text-gray-400">
-                                <Calendar className="w-3.5 h-3.5 me-1.5" />
-                                {formatDate(post.date)}
-                              </span>
-                              <span className="text-sm font-medium text-primary dark:text-primary flex items-center">
-                                Read more
-                                <ArrowRight className="w-4 h-4 ms-1 transform group-hover:translate-x-1 transition-transform" />
-                              </span>
-                            </div>
-                          </div>
-                        </article>
-                      </Link>
-                    </AnimatedSection>
-                  ))}
-                </div>
-
-                {/* Infinite scroll */}
-                <InfiniteScrollSentinel
-                  onLoadMore={fetchNextPage}
-                  hasMore={hasNextPage}
-                  isLoading={isFetchingNextPage}
+          {/* Category Pills directly below search form */}
+          <div
+            className={cn(
+              'mt-5 flex flex-wrap justify-center gap-2',
+              (isLoadingCategories || (categories?.length ?? 0) > 0) &&
+                'min-h-[9.75rem] xs:min-h-[8rem] sm:min-h-[6.5rem] md:min-h-11',
+            )}
+          >
+            {isLoadingCategories ? (
+              Array.from({ length: 6 }).map((_, i) => (
+                <span
+                  key={i}
+                  aria-hidden="true"
+                  className="h-11 w-20 animate-pulse rounded-full bg-[var(--cp-surface-muted)] shadow-[0_0_0_2px_var(--cp-ink)]"
                 />
-              </>
+              ))
+            ) : (
+              categories &&
+              categories.length > 0 && (
+                <>
+                  <Link
+                    to="/blog"
+                    className={cn(
+                      'inline-flex min-h-11 items-center rounded-full px-4 py-2 text-sm font-bold shadow-[0_0_0_2px_var(--cp-ink)] transition-colors',
+                      !category
+                        ? 'bg-[var(--cp-ink)] text-[var(--cp-paper)]'
+                        : 'bg-[var(--cp-surface)] text-[var(--cp-ink)] hover:bg-[var(--cp-yellow-banner)]',
+                    )}
+                  >
+                    All
+                  </Link>
+                  {categories.map((cat) => {
+                    const catSlug = slugifyCategory(cat)
+                    const isActive = category === catSlug
+                    return (
+                      <Link
+                        key={cat}
+                        to={`/blog/category/${catSlug}`}
+                        className={cn(
+                          'inline-flex min-h-11 items-center rounded-full px-4 py-2 text-sm font-bold shadow-[0_0_0_2px_var(--cp-ink)] transition-colors',
+                          isActive
+                            ? 'bg-[var(--cp-ink)] text-[var(--cp-paper)]'
+                            : 'bg-[var(--cp-surface)] text-[var(--cp-ink)] hover:bg-[var(--cp-yellow-banner)]',
+                        )}
+                      >
+                        {cat}
+                      </Link>
+                    )
+                  })}
+                </>
+              )
             )}
           </div>
         </section>
 
-        {/* CTA Section */}
-        <section className="py-16 md:py-24 bg-stone-900">
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-            <AnimatedSection>
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-                Ready to transform your wardrobe?
-              </h2>
-              <p className="text-lg text-stone-300 mb-8 md:text-xl">
-                Join thousands using AI to organize, plan, and optimize their style
+        <section className="cp-sec">
+          {categoryIsResolving || isLoadingPosts ? (
+            <div
+              className="mb-12 grid gap-6 md:grid-cols-2 lg:grid-cols-3"
+              role="status"
+              aria-live="polite"
+              aria-busy="true"
+            >
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="cp-paper overflow-hidden p-4"
+                >
+                  <div className="aspect-[16/9] animate-pulse rounded-xl bg-[var(--cp-surface-muted)]" />
+                  <div className="mt-4 space-y-3">
+                    <div className="h-4 w-1/3 animate-pulse rounded bg-[var(--cp-surface-muted)]" />
+                    <div className="h-6 w-full animate-pulse rounded bg-[var(--cp-surface-muted)]" />
+                    <div className="h-4 w-2/3 animate-pulse rounded bg-[var(--cp-surface-muted)]" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : categoryIsInvalid ? (
+            <div className="space-y-4 py-20 text-center" role="alert">
+              <p className="text-[var(--cp-ink-2)]">
+                {categoriesError ? 'Unable to load blog categories.' : 'That blog category was not found.'}
               </p>
-              <Link
-                to={trialRegisterHref()}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-on-image px-8 py-4 text-lg font-semibold text-on-image-foreground hover:opacity-90 transition-opacity"
-              >
-                Get Started Free
-                <ArrowRight className="w-5 h-5" />
+              <Link to="/blog" className="inline-block font-bold text-[var(--cp-orange-deep)] hover:underline">
+                View all posts
               </Link>
-            </AnimatedSection>
-          </div>
+            </div>
+          ) : postsError ? (
+            <div className="space-y-4 py-20 text-center" role="alert">
+              <p className="text-[var(--cp-ink-2)]">Failed to load blog posts. Please try again.</p>
+              <CrayonButton type="button" variant="orange" size="sm" onClick={() => refetchPosts()}>
+                Try again
+              </CrayonButton>
+            </div>
+          ) : posts.length === 0 ? (
+            <div className="py-20 text-center">
+              <p className="text-[var(--cp-ink-2)]">
+                No blog posts found{category ? ` in ${categoryFilter || category}` : ''}
+                {searchQuery ? ` matching “${searchQuery}”` : ''}. Check back soon!
+              </p>
+              {category && (
+                <Link
+                  to="/blog"
+                  className="mt-4 inline-block font-bold text-[var(--cp-orange-deep)] hover:underline"
+                >
+                  View all posts
+                </Link>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="mb-12 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {posts.map((post, index) => (
+                  <AnimatedSection key={post.slug} delay={index * 60}>
+                    <Link to={`/blog/${post.slug}`} className="group block h-full">
+                      <CrayonBox
+                        as="article"
+                        fill={CARD_FILLS[index % CARD_FILLS.length]}
+                        radius={26}
+                        className="cp-post h-full"
+                      >
+                        <div className="relative flex aspect-[16/9] items-center justify-center overflow-hidden rounded-xl bg-[var(--cp-surface-muted)] shadow-[0_0_0_2px_var(--cp-ink)]">
+                          <BlogImage
+                            src={post.featured_image_url}
+                            alt={post.title}
+                            emoji={post.emoji}
+                            emojiClassName="text-6xl md:text-7xl transform group-hover:scale-110 transition-transform duration-300"
+                            imgClassName="transform group-hover:scale-105 transition-transform duration-500"
+                            sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
+                            widths={[320, 480, 640, 800]}
+                            width={640}
+                            height={360}
+                            priority={index === 0}
+                          />
+                        </div>
+
+                        <div className="mt-4 flex flex-1 flex-col">
+                          <div className="mb-2 flex items-center gap-3 text-xs font-bold">
+                            <span className="kind">{post.category}</span>
+                            <span className="flex items-center font-mono text-[var(--cp-ink-3)]">
+                              <Clock className="me-1 h-3.5 w-3.5" />
+                              {post.read_time}
+                            </span>
+                          </div>
+
+                          <h2 className="cp-hand mt-1 line-clamp-2 text-[28px] leading-[1.02] text-[var(--cp-ink)] group-hover:text-[var(--cp-orange-deep)]">
+                            {post.title}
+                          </h2>
+
+                          <p className="post-box line-clamp-3">{post.excerpt}</p>
+
+                          <div className="mt-4 flex items-center justify-between text-xs font-bold text-[var(--cp-ink-2)]">
+                            <span className="flex items-center">
+                              <Calendar className="me-1.5 h-3.5 w-3.5" />
+                              {formatDate(post.date)}
+                            </span>
+                            <span className="flex items-center text-[var(--cp-orange-deep)]">
+                              Read more
+                              <ArrowRight className="ms-1 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                            </span>
+                          </div>
+                        </div>
+                      </CrayonBox>
+                    </Link>
+                  </AnimatedSection>
+                ))}
+              </div>
+
+              <InfiniteScrollSentinel
+                onLoadMore={fetchNextPage}
+                hasMore={hasNextPage}
+                isLoading={isFetchingNextPage}
+              />
+            </>
+          )}
+
+          <CrayonBox solid="var(--cp-yellow-banner)" radius={32} showLine={false} className="cp-doc-cta">
+            <h2>Ready to transform your wardrobe?</h2>
+            <p className="mx-auto max-w-xl text-base font-medium text-[var(--cp-ink-2)]">
+              Join thousands using AI to organize, plan, and optimize their style.
+            </p>
+            <div className="cp-ctas">
+              <CrayonLink to={trialRegisterHref()} variant="dark">
+                Get Started Free
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </CrayonLink>
+            </div>
+          </CrayonBox>
         </section>
       </div>
     </>

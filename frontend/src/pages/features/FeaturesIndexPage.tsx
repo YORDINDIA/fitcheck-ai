@@ -1,19 +1,19 @@
 import { Link } from 'react-router-dom'
-import { trialRegisterHref } from '@/lib/trial-offer'
-import SEO from '@/components/seo/SEO'
-import { BreadcrumbJsonLd } from '@/components/seo/JsonLd'
-import { PAGE_SEO, SEO_CONFIG } from '@/components/seo/seo-config'
-import { AnimatedSection } from '@/components/landing/AnimatedSection'
-import { Button } from '@/components/ui/button'
 import {
   ArrowRight,
+  BarChart3,
   Camera,
   Shirt,
   Sparkles,
   Sun,
-  BarChart3,
   User,
 } from 'lucide-react'
+
+import { CrayonBox, CrayonLink } from '@/components/crayon/CrayonPrimitives'
+import { BreadcrumbJsonLd } from '@/components/seo/JsonLd'
+import SEO from '@/components/seo/SEO'
+import { PAGE_SEO, SEO_CONFIG } from '@/components/seo/seo-config'
+import { trialRegisterHref } from '@/lib/trial-offer'
 
 const features = [
   {
@@ -23,6 +23,7 @@ const features = [
       'Photograph clothes and review detected items, colors, and categories before saving a digital closet.',
     href: '/features/ai-wardrobe-extraction',
     keyword: 'AI wardrobe organizer',
+    fill: 'var(--cp-peach-deep)',
   },
   {
     icon: User,
@@ -31,6 +32,7 @@ const features = [
       'See outfits on yourself with AI visualization before you leave the house or buy something new.',
     href: '/features/virtual-try-on',
     keyword: 'AI virtual try-on',
+    fill: 'var(--cp-mint)',
   },
   {
     icon: Sparkles,
@@ -39,6 +41,7 @@ const features = [
       'Create LinkedIn, dating, and social-ready images from your selfies without a studio session.',
     href: '/features/ai-photoshoot-generator',
     keyword: 'AI photoshoot',
+    fill: 'var(--cp-lilac)',
   },
   {
     icon: Sun,
@@ -47,6 +50,7 @@ const features = [
       'Daily “what to wear” ideas from clothes you own, with weather and occasion context.',
     href: '/features/outfit-recommendations',
     keyword: 'AI outfit planner',
+    fill: 'var(--cp-sky)',
   },
   {
     icon: BarChart3,
@@ -55,6 +59,7 @@ const features = [
       'Cost-per-wear style insights and utilization so you buy less and wear more of what you own.',
     href: '/features/wardrobe-analytics',
     keyword: 'wardrobe analytics',
+    fill: 'var(--cp-yellow-banner)',
   },
 ]
 
@@ -74,93 +79,66 @@ export default function FeaturesIndexPage() {
       />
       <BreadcrumbJsonLd items={breadcrumbs} />
 
-      <div className="pt-20">
-        <section className="py-14 md:py-20 bg-stone-50 dark:bg-stone-950 border-b border-stone-200 dark:border-stone-800">
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-            <AnimatedSection>
-              <div className="inline-flex items-center gap-2 text-sm text-primary mb-4">
-                <Shirt className="w-4 h-4" />
-                Product features
-              </div>
-              <h1 className="landing-display text-3xl sm:text-4xl md:text-5xl font-semibold text-stone-900 dark:text-stone-50 leading-tight">
-                Everything in your AI virtual closet
-              </h1>
-              <p className="mt-5 text-lg text-stone-600 dark:text-stone-400 max-w-2xl mx-auto leading-relaxed">
-                {SEO_CONFIG.positioning} Explore each capability below — then start free with a few
-                photos of clothes you already own.
-              </p>
-              <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
-                <Button
-                  size="lg"
-                  className="bg-primary hover:bg-primary-pressed text-white h-12 px-6"
-                  asChild
-                >
-                  <Link to={trialRegisterHref()}>
-                    Start free
-                    <ArrowRight className="ms-2 h-4 w-4" />
-                  </Link>
-                </Button>
-                <Button size="lg" variant="outline" className="h-12 px-6" asChild>
-                  <Link to="/best/virtual-closet-apps">Compare virtual closet apps</Link>
-                </Button>
-              </div>
-            </AnimatedSection>
+      <div className="cp-wrap">
+        <section className="cp-doc-head">
+          <p className="cp-eyebrow inline-flex items-center justify-center gap-2">
+            <Shirt className="h-4 w-4" aria-hidden="true" />
+            PRODUCT FEATURES
+          </p>
+          <h1>Everything in your AI virtual closet.</h1>
+          <p className="cp-lead">
+            {SEO_CONFIG.positioning} Explore each capability below — then start free with a few
+            photos of clothes you already own.
+          </p>
+          <div className="cp-ctas">
+            <CrayonLink to={trialRegisterHref()} variant="orange">
+              Start free
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </CrayonLink>
+            <CrayonLink to="/best/virtual-closet-apps" variant="dark">
+              Compare virtual closet apps
+            </CrayonLink>
           </div>
         </section>
 
-        <section className="py-14 md:py-20 bg-white dark:bg-stone-950">
-          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid md:grid-cols-2 gap-6">
-              {features.map((feature, i) => (
-                <AnimatedSection key={feature.href} delay={i * 40}>
-                  <Link
-                    to={feature.href}
-                    className="block h-full rounded-2xl border border-stone-200 dark:border-stone-800 p-6 hover:border-primary/40 transition-colors bg-stone-50/50 dark:bg-stone-900/40"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center mb-4">
-                      <feature.icon className="w-5 h-5 text-primary" />
-                    </div>
-                    <h2 className="text-xl font-semibold text-stone-900 dark:text-stone-50">
-                      {feature.title}
-                    </h2>
-                    <p className="mt-2 text-sm text-primary/80">
-                      {feature.keyword}
-                    </p>
-                    <p className="mt-3 text-stone-600 dark:text-stone-400 leading-relaxed">
-                      {feature.description}
-                    </p>
-                    <span className="mt-4 inline-flex min-h-11 items-center text-sm font-medium text-primary">
-                      Learn more
-                      <ArrowRight className="ms-1 w-4 h-4" />
+        <section className="cp-sec">
+          <div className="cp-posts">
+            {features.map((feature) => (
+              <Link key={feature.href} to={feature.href} className="block">
+                <CrayonBox fill={feature.fill} radius={26} className="cp-post h-full">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="kind">{feature.keyword}</span>
+                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--cp-surface)] text-[var(--cp-ink)] shadow-[0_0_0_2px_var(--cp-ink)]">
+                      <feature.icon className="h-4 w-4" aria-hidden="true" />
                     </span>
-                  </Link>
-                </AnimatedSection>
-              ))}
-            </div>
-
-            <div className="mt-14 rounded-2xl border border-stone-200 dark:border-stone-800 p-6 text-center md:p-8">
-              <h2 className="text-xl font-semibold text-stone-900 dark:text-stone-50">
-                Guides & comparisons
-              </h2>
-              <p className="mt-2 text-stone-600 dark:text-stone-400 max-w-xl mx-auto">
-                Researching the category? Start here before you commit a full wardrobe to any app.
-              </p>
-              <div className="mt-6 flex flex-wrap justify-center gap-3">
-                <Button variant="outline" asChild>
-                  <Link to="/guides/how-to-digitize-your-wardrobe">Digitize your wardrobe</Link>
-                </Button>
-                <Button variant="outline" asChild>
-                  <Link to="/guides/what-to-wear-today">What to wear today</Link>
-                </Button>
-                <Button variant="outline" asChild>
-                  <Link to="/compare/fitcheck-vs-acloset">FitCheck vs Acloset</Link>
-                </Button>
-                <Button variant="outline" asChild>
-                  <Link to="/for/busy-professionals">For professionals</Link>
-                </Button>
-              </div>
-            </div>
+                  </div>
+                  <h3>{feature.title}</h3>
+                  <p className="post-box">{feature.description}</p>
+                  <span className="go">
+                    Learn more <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                </CrayonBox>
+              </Link>
+            ))}
           </div>
+
+          <CrayonBox solid="var(--cp-yellow-banner)" radius={30} showLine={false} className="cp-doc-cta">
+            <h2>Guides &amp; comparisons</h2>
+            <p className="mx-auto max-w-xl text-base font-medium text-[var(--cp-ink-2)]">
+              Researching the category? Start here before you commit a full wardrobe to any app.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <CrayonLink to="/guides/how-to-digitize-your-wardrobe" variant="paper" size="sm">
+                Digitize your wardrobe
+              </CrayonLink>
+              <CrayonLink to="/compare/fitcheck-vs-acloset" variant="paper" size="sm">
+                FitCheck vs Acloset
+              </CrayonLink>
+              <CrayonLink to="/tools/cost-per-wear-calculator" variant="dark" size="sm">
+                Cost-per-wear calculator
+              </CrayonLink>
+            </div>
+          </CrayonBox>
         </section>
       </div>
     </>

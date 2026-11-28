@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ArrowUpRight } from 'lucide-react'
 
+import { CrayonBox, CrayonLink } from '@/components/crayon/CrayonPrimitives'
 import { GeneratedImage } from '@/components/ui/generated-image'
 import { PLAN_LIMITS } from '@/lib/plan-limits'
 
@@ -13,7 +14,6 @@ const facts = [
   },
 ]
 
-/* Two example prints, laid on the clay sheet at a slight angle. */
 const PRINTS = [
   {
     src: '/generated/lifestyle-jaipur-3x4-640.webp',
@@ -21,7 +21,7 @@ const PRINTS = [
     alt: 'Golden-hour portrait example in a rust slip dress on a market street',
     width: 900,
     height: 1200,
-    frame: 'sm:-rotate-2 sm:translate-y-6',
+    frame: 'sm:-rotate-2 sm:translate-y-4',
   },
   {
     src: '/generated/photoshoot-studio-3x4-640.webp',
@@ -38,38 +38,44 @@ export default function PhotoshootShowcase() {
     <section
       id="photoshoot-showcase"
       aria-labelledby="photoshoot-showcase-heading"
-      className="paper-section paper-tear stock-clay pb-24 pt-20 md:pb-32 md:pt-28"
+      className="cp-wrap cp-sec"
     >
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <h2
-          id="photoshoot-showcase-heading"
-          className="paper-display text-[clamp(2.4rem,5.2vw,4.5rem)] text-paper-text"
-        >
-          See it before you wear it.
-        </h2>
-        <div className="mt-10 grid grid-cols-1 gap-14 lg:mt-14 lg:grid-cols-12 lg:items-center lg:gap-16">
-          <div className="min-w-0 lg:col-span-5">
-            <p className="max-w-md text-base leading-relaxed text-paper-text-2 sm:text-[17px]">
+      <CrayonBox fill="var(--cp-peach)" radius={32} className="bg-[var(--cp-surface)] p-6 sm:p-10">
+        <div className="grid grid-cols-1 gap-10 lg:grid-cols-12 lg:items-center lg:gap-12">
+          <div className="cp-left min-w-0 lg:col-span-5">
+            <p className="cp-eyebrow">TRY-ON &amp; PHOTOSHOOT</p>
+            <h2 id="photoshoot-showcase-heading" className="cp-h2">
+              See it before you wear it.
+            </h2>
+            <p className="cp-sub">
               Preview an outfit on yourself, or shoot it like a campaign. The pictures on the right
               are AI-generated examples.
             </p>
-            <dl className="mt-8 grid gap-4">
+            <dl className="mt-6 grid gap-3">
               {facts.map((fact) => (
-                <div key={fact.term} className="grid grid-cols-[7rem_minmax(0,1fr)] gap-4">
-                  <dt className="paper-head text-xl text-paper-accent">{fact.term}</dt>
-                  <dd className="pt-1 text-[15px] leading-relaxed text-paper-text-2">{fact.detail}</dd>
+                <div
+                  key={fact.term}
+                  className="cp-paper grid grid-cols-[6.5rem_minmax(0,1fr)] gap-3 p-3.5"
+                >
+                  <dt className="cp-hand text-xl text-[var(--cp-orange-deep)]">{fact.term}</dt>
+                  <dd className="text-sm leading-relaxed text-[var(--cp-ink-2)]">{fact.detail}</dd>
                 </div>
               ))}
             </dl>
-            <Link to="/features/ai-photoshoot-generator" className="paper-btn-sheet mt-9">
+            <CrayonLink
+              to="/features/ai-photoshoot-generator"
+              variant="dark"
+              size="sm"
+              className="mt-7"
+            >
               Explore Photoshoot Studio
               <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
-            </Link>
+            </CrayonLink>
           </div>
 
-          <div className="grid min-w-0 grid-cols-2 gap-4 sm:gap-8 lg:col-span-7">
+          <div className="grid min-w-0 grid-cols-2 gap-4 sm:gap-6 lg:col-span-7">
             {PRINTS.map((print) => (
-              <figure key={print.src} className={`paper-sheet min-w-0 p-2 sm:p-3 ${print.frame}`}>
+              <figure key={print.src} className={`cp-paper min-w-0 p-2 sm:p-3 ${print.frame}`}>
                 <GeneratedImage
                   src={print.src}
                   srcSet={print.srcSet}
@@ -82,15 +88,20 @@ export default function PhotoshootShowcase() {
                   height={print.height}
                   fallback="hide-figure"
                 />
-                <figcaption className="flex items-baseline justify-between gap-2 px-1 pb-1 pt-3 text-xs text-paper-text-3 sm:text-[13px]">
-                  <span className="font-semibold text-paper-text-2">Example result</span>
-                  <span>AI-generated</span>
+                <figcaption className="flex items-baseline justify-between gap-2 px-1 pb-1 pt-2.5 text-xs text-[var(--cp-ink-3)]">
+                  <span className="font-bold text-[var(--cp-ink-2)]">Example result</span>
+                  <Link
+                    to="/features/ai-photoshoot-generator"
+                    className="font-mono text-[11px] hover:underline"
+                  >
+                    AI-generated
+                  </Link>
                 </figcaption>
               </figure>
             ))}
           </div>
         </div>
-      </div>
+      </CrayonBox>
     </section>
   )
 }

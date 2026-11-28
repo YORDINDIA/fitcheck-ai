@@ -1,41 +1,42 @@
 /**
  * PhotoshootDemo Component
- *
- * Landing page demo for AI Photoshoot Generator.
- * - Single photo upload
- * - Generates 2 free aesthetic-style images for anonymous users
- * - IP-based rate limiting (2 images/day)
- * - Job-based: POST returns a job_id, the card polls status every ~2.5s and
- *   shows partial images as they complete (no long-held HTTP request).
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { useDropzone } from 'react-dropzone';
-import { Camera, Loader2, Download, AlertCircle, CheckCircle2, ArrowRight, AlertTriangle, RotateCcw } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { cn, downloadBlob } from '@/lib/utils';
-import { isPhotoshootComplete } from '@/lib/photoshoot-status';
-import { logger } from '@/lib/logger';
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { useDropzone } from 'react-dropzone'
+import {
+  Camera,
+  Loader2,
+  Download,
+  AlertCircle,
+  CheckCircle2,
+  ArrowRight,
+  AlertTriangle,
+  RotateCcw,
+} from 'lucide-react'
+import { CrayonButton } from '@/components/crayon/CrayonPrimitives'
+import { cn, downloadBlob } from '@/lib/utils'
+import { isPhotoshootComplete } from '@/lib/photoshoot-status'
+import { logger } from '@/lib/logger'
 import { GeneratedImage } from '@/components/ui/generated-image'
-import { EditorialPanel } from './EditorialPanel';
-import { LoginPromptModal } from './LoginPromptModal';
+import { EditorialPanel } from './EditorialPanel'
+import { LoginPromptModal } from './LoginPromptModal'
 import {
   demoPhotoshoot,
   getDemoPhotoshootStatus,
   DemoPhotoshootResult,
   DemoPhotoshootStatus,
   DemoApiError,
-} from '@/api/demo';
-import { ensureSessionRecording, trackEvent } from '@/lib/analytics';
+} from '@/api/demo'
+import { ensureSessionRecording, trackEvent } from '@/lib/analytics'
 
-type DemoState = 'idle' | 'processing' | 'results' | 'error';
+type DemoState = 'idle' | 'processing' | 'results' | 'error'
 
-const DEMO_POLL_INTERVAL_MS = 2500;
-const DEMO_POLL_MAX_ATTEMPTS = 120; // ~5 minutes
+const DEMO_POLL_INTERVAL_MS = 2500
+const DEMO_POLL_MAX_ATTEMPTS = 120
 
-/** True when two image lists hold the same images in the same order (id-based). */
 function sameImageList(a: Array<{ id: string }>, b: Array<{ id: string }>) {
-  return a.length === b.length && a.every((img, i) => img.id === b[i]?.id);
+  return a.length === b.length && a.every((img, i) => img.id === b[i]?.id)
 }
 
 function isDemoApiError(err: unknown): err is DemoApiError {
@@ -44,15 +45,15 @@ function isDemoApiError(err: unknown): err is DemoApiError {
     err !== null &&
     'message' in err &&
     typeof (err as DemoApiError).message === 'string'
-  );
+  )
 }
 
 async function handleDownload(imageData: string, index: number) {
   try {
-    const response = await fetch(imageData);
-    downloadBlob(await response.blob(), `photoshoot_demo_${index + 1}.png`);
+    const response = await fetch(imageData)
+    downloadBlob(await response.blob(), `photoshoot_demo_${index + 1}.png`)
   } catch (e) {
-    logger.error('Download failed:', e);
+    logger.error('Download failed:', e)
   }
 }
 
@@ -62,109 +63,110 @@ function getImageSrc(img: { image_url?: string; image_base64?: string }) {
   return ''
 }
 
-/**
- * Poll a demo job until a terminal state, streaming partial images via onProgress.
- * Pass an AbortSignal to stop polling (and the in-flight request) on unmount/reset.
- */
 async function pollDemoJob(
   jobId: string,
   onProgress: (status: DemoPhotoshootStatus) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<DemoPhotoshootStatus> {
   for (let attempt = 0; attempt < DEMO_POLL_MAX_ATTEMPTS; attempt++) {
-    const status = await getDemoPhotoshootStatus(jobId, signal);
-    onProgress(status);
-    if (isPhotoshootComplete(status.status) || status.status === 'failed' || status.status === 'cancelled') {
-      return status;
+    const status = await getDemoPhotoshootStatus(jobId, signal)
+    onProgress(status)
+    if (
+      isPhotoshootComplete(status.status) ||
+      status.status === 'failed' ||
+      status.status === 'cancelled'
+    ) {
+      return status
     }
-    await new Promise((resolve) => setTimeout(resolve, DEMO_POLL_INTERVAL_MS));
-    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    await new Promise((resolve) => setTimeout(resolve, DEMO_POLL_INTERVAL_MS))
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
   }
-  throw new Error('Demo generation timed out. Please try again.');
+  throw new Error('Demo generation timed out. Please try again.')
 }
 
 export function PhotoshootDemo() {
-  const [state, setState] = useState<DemoState>('idle');
-  const [photo, setPhoto] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-  const [result, setResult] = useState<DemoPhotoshootResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [showLoginModal, setShowLoginModal] = useState(false);
-  const [retryingFailedIndex, setRetryingFailedIndex] = useState<number | null>(null);
-  // Live progress while the job runs: partial images + count.
-  const [partialImages, setPartialImages] = useState<DemoPhotoshootStatus['images']>([]);
-  // Guards a stale poll from overwriting a newer run's state.
-  const runIdRef = useRef(0);
-  // Aborts the in-flight poll's network requests on reset/unmount.
-  const abortRef = useRef<AbortController | null>(null);
+  const [state, setState] = useState<DemoState>('idle')
+  const [photo, setPhoto] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [result, setResult] = useState<DemoPhotoshootResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [showLoginModal, setShowLoginModal] = useState(false)
+  const [retryingFailedIndex, setRetryingFailedIndex] = useState<number | null>(null)
+  const [partialImages, setPartialImages] = useState<DemoPhotoshootStatus['images']>([])
+  const runIdRef = useRef(0)
+  const abortRef = useRef<AbortController | null>(null)
 
-  // Cleanup object URL + stop any in-flight poll when photo changes or component unmounts
   useEffect(() => {
     return () => {
-      abortRef.current?.abort();
+      abortRef.current?.abort()
       if (photoPreview) {
-        URL.revokeObjectURL(photoPreview);
+        URL.revokeObjectURL(photoPreview)
       }
-    };
-  }, [photoPreview]);
-
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (file) {
-      // Revoke previous URL if exists
-      if (photoPreview) {
-        URL.revokeObjectURL(photoPreview);
-      }
-      setPhoto(file);
-      setPhotoPreview(URL.createObjectURL(file));
-      setError(null);
     }
-  }, [photoPreview]);
+  }, [photoPreview])
+
+  const onDrop = useCallback(
+    (acceptedFiles: File[]) => {
+      const file = acceptedFiles[0]
+      if (file) {
+        if (photoPreview) {
+          URL.revokeObjectURL(photoPreview)
+        }
+        setPhoto(file)
+        setPhotoPreview(URL.createObjectURL(file))
+        setError(null)
+      }
+    },
+    [photoPreview],
+  )
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: { 'image/*': ['.png', '.jpg', '.jpeg', '.webp', '.heic', '.heif', '.bmp', '.tif', '.tiff'] },
     maxFiles: 1,
     disabled: state === 'processing',
-  });
+  })
 
   const handleGenerate = async () => {
-    if (!photo) return;
+    if (!photo) return
 
-    const runId = ++runIdRef.current;
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setState('processing');
-    setError(null);
-    setPartialImages([]);
-    ensureSessionRecording();
+    const runId = ++runIdRef.current
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    setState('processing')
+    setError(null)
+    setPartialImages([])
+    ensureSessionRecording()
     trackEvent('photoshoot_session_started', {
       use_case: 'aesthetic',
       num_images: 2,
       photo_count: 1,
       source: 'web_demo',
-    });
+    })
 
     try {
-      const start = await demoPhotoshoot(photo);
+      const start = await demoPhotoshoot(photo)
 
-      const final = await pollDemoJob(start.job_id, (status) => {
-        if (runIdRef.current !== runId) return; // stale run
-        // Skip no-op updates so unchanged ticks don't re-render the card.
-        setPartialImages((prev) => {
-          const next = status.images ?? [];
-          return sameImageList(prev, next) ? prev : next;
-        });
-      }, controller.signal);
+      const final = await pollDemoJob(
+        start.job_id,
+        (status) => {
+          if (runIdRef.current !== runId) return
+          setPartialImages((prev) => {
+            const next = status.images ?? []
+            return sameImageList(prev, next) ? prev : next
+          })
+        },
+        controller.signal,
+      )
 
-      if (runIdRef.current !== runId) return;
+      if (runIdRef.current !== runId) return
 
       if (final.status === 'failed') {
-        throw new Error(final.error ?? 'Generation failed');
+        throw new Error(final.error ?? 'Generation failed')
       }
 
-      const failedIndices = final.failed_indices ?? [];
+      const failedIndices = final.failed_indices ?? []
       const response: DemoPhotoshootResult = {
         session_id: final.job_id,
         status: isPhotoshootComplete(final.status) ? 'completed' : 'failed',
@@ -175,10 +177,10 @@ export function PhotoshootDemo() {
         partial_success: final.partial_success,
         remaining_today: start.remaining_today,
         signup_cta: start.signup_cta,
-      };
+      }
 
-      setResult(response);
-      setState('results');
+      setResult(response)
+      setState('results')
       trackEvent('photoshoot_session_completed', {
         session_id: response.session_id,
         use_case: 'aesthetic',
@@ -187,76 +189,65 @@ export function PhotoshootDemo() {
         failed_count: response.failed_count ?? 0,
         partial_success: Boolean(response.partial_success),
         source: 'web_demo',
-      });
+      })
     } catch (err) {
-      if (runIdRef.current !== runId || controller.signal.aborted) return;
+      if (runIdRef.current !== runId || controller.signal.aborted) return
       const errorMessage = isDemoApiError(err)
         ? err.isRateLimit
           ? 'Daily demo limit reached. Sign up for 10 free images per day!'
           : err.message || 'Failed to generate images'
-        : 'Failed to generate images';
-      setError(errorMessage);
-      setState('error');
+        : 'Failed to generate images'
+      setError(errorMessage)
+      setState('error')
       trackEvent('photoshoot_session_failed', {
         use_case: 'aesthetic',
         num_images: 2,
         error_message: errorMessage,
         is_rate_limit: isDemoApiError(err) ? Boolean(err.isRateLimit) : false,
         source: 'web_demo',
-      });
+      })
     }
-  };
+  }
 
   const handleReset = () => {
-    runIdRef.current++; // invalidate any in-flight poll
-    abortRef.current?.abort(); // ...and stop its network requests
-    // Revoke object URL before clearing
+    runIdRef.current++
+    abortRef.current?.abort()
     if (photoPreview) {
-      URL.revokeObjectURL(photoPreview);
+      URL.revokeObjectURL(photoPreview)
     }
-    setState('idle');
-    setPhoto(null);
-    setPhotoPreview(null);
-    setResult(null);
-    setError(null);
-    setRetryingFailedIndex(null);
-    setPartialImages([]);
-  };
+    setState('idle')
+    setPhoto(null)
+    setPhotoPreview(null)
+    setResult(null)
+    setError(null)
+    setRetryingFailedIndex(null)
+    setPartialImages([])
+  }
 
-  const failedIndices = result?.image_failures?.map((f) => f.index).sort((a, b) => a - b) ?? [];
-  const failedCount = result?.failed_count ?? 0;
+  const failedIndices = result?.image_failures?.map((f) => f.index).sort((a, b) => a - b) ?? []
+  const failedCount = result?.failed_count ?? 0
 
   const retryFailedSlot = async (failedIndex: number) => {
-    if (!photo) return;
+    if (!photo) return
 
-    const runId = ++runIdRef.current;
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setRetryingFailedIndex(failedIndex);
-    setError(null);
+    const runId = ++runIdRef.current
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    setRetryingFailedIndex(failedIndex)
+    setError(null)
 
     try {
-      const start = await demoPhotoshoot(photo);
+      const start = await demoPhotoshoot(photo)
+      const final = await pollDemoJob(start.job_id, () => {}, controller.signal)
+      if (runIdRef.current !== runId) return
 
-      const final = await pollDemoJob(
-        start.job_id,
-        () => {
-          // No live progress needed for the single-slot retry.
-        },
-        controller.signal
-      );
-
-      if (runIdRef.current !== runId) return;
-
-      const replacement = (final.images ?? []).sort((a, b) => a.index - b.index)[0];
-
+      const replacement = (final.images ?? []).sort((a, b) => a.index - b.index)[0]
       if (replacement && result) {
         const nextImages = [...result.images, { ...replacement, index: failedIndex }]
           .filter((img, i, arr) => arr.findIndex((x) => x.index === img.index) === i)
-          .sort((a, b) => a.index - b.index);
-
-        const nextFailed = failedIndices.filter((i) => i !== failedIndex);
+          .sort((a, b) => a.index - b.index)
+        const nextFailed = failedIndices.filter((i) => i !== failedIndex)
 
         setResult({
           ...result,
@@ -265,96 +256,97 @@ export function PhotoshootDemo() {
           partial_success: nextFailed.length > 0,
           image_failures: nextFailed.map((index) => ({ index, error: '' })),
           remaining_today: start.remaining_today,
-        });
+        })
       } else {
-        setError('Could not generate replacement image');
+        setError('Could not generate replacement image')
       }
     } catch (err) {
-      if (runIdRef.current !== runId || controller.signal.aborted) return;
+      if (runIdRef.current !== runId || controller.signal.aborted) return
       const errorMessage = isDemoApiError(err)
         ? err.isRateLimit
           ? 'Daily demo limit reached. Sign up for 10 free images per day!'
           : err.message || 'Retry failed'
-        : 'Retry failed';
-      setError(errorMessage);
-      setState('error');
+        : 'Retry failed'
+      setError(errorMessage)
+      setState('error')
     } finally {
-      setRetryingFailedIndex(null);
+      setRetryingFailedIndex(null)
     }
-  };
+  }
 
   return (
-    <EditorialPanel className="p-6 h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-4">
-        <div className="flex shrink-0 items-center">
-          <Camera className="h-5 w-5 text-paper-accent" />
+    <EditorialPanel fill="var(--cp-lilac)" className="h-full">
+      <div className="mb-4 flex items-center gap-3">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--cp-lilac)] text-[var(--cp-ink)] shadow-[0_0_0_2px_var(--cp-ink)]">
+          <Camera className="h-5 w-5" aria-hidden="true" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold tracking-tight text-paper-text">AI photoshoot</h3>
-          <p className="text-sm text-paper-text-3">2 free images</p>
+          <h3 className="cp-hand text-[28px] leading-none text-[var(--cp-ink)]">
+            AI photoshoot
+          </h3>
+          <p className="mt-1 text-xs font-medium text-[var(--cp-ink-3)]">2 free images</p>
         </div>
       </div>
 
-      <div className="flex-1 min-h-[300px]">
-        {/* Idle State - No Photo */}
+      <div className="min-h-[300px] flex-1">
         {state === 'idle' && !photo && (
           <div className="flex h-full flex-col gap-3">
-          <figure className="flex shrink-0 items-center gap-3 rounded-xl bg-paper-sunk/60 p-3">
-            <GeneratedImage
-              src="/generated/photoshoot-studio-3x4-640.webp"
-              alt="Example result: a studio-style portrait in a navy blazer"
-              width={640}
-              height={853}
-              loading="lazy"
-              decoding="async"
-              className="h-20 w-16 shrink-0 rounded-lg object-cover object-top"
-              fallback="hide-figure"
-            />
-            <figcaption className="text-xs leading-relaxed text-paper-text-3">
-              <span className="font-semibold text-paper-text">Example result.</span> One selfie in,
-              studio-style portraits out. AI-generated.
-            </figcaption>
-          </figure>
-          <div
-            {...getRootProps()}
-            className={cn(
-              'flex min-h-0 flex-1 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-paper-edge bg-paper-sunk/60 p-8 text-center',
-              'transition-[border-color,background-color] duration-200 hover:border-paper-accent/60 hover:bg-paper-tint',
-              isDragActive && 'border-paper-accent bg-paper-tint'
-            )}
-          >
-            <input {...getInputProps({ 'aria-label': 'Upload your photo' })} />
-            <div className="mb-3 flex items-center justify-center">
-              <Camera className={cn('h-5 w-5 text-paper-accent transition-transform duration-200', isDragActive && 'scale-110')} />
+            <figure className="flex shrink-0 items-center gap-3 rounded-xl bg-[var(--cp-paper)] p-3 shadow-[0_0_0_2px_var(--cp-ink)]">
+              <GeneratedImage
+                src="/generated/photoshoot-studio-3x4-640.webp"
+                alt="Example result: a studio-style portrait in a navy blazer"
+                width={640}
+                height={853}
+                loading="lazy"
+                decoding="async"
+                className="h-20 w-16 shrink-0 rounded-lg object-cover object-top shadow-[0_0_0_1.5px_var(--cp-ink)]"
+                fallback="hide-figure"
+              />
+              <figcaption className="text-xs leading-relaxed text-[var(--cp-ink-3)]">
+                <span className="font-bold text-[var(--cp-ink)]">Example result.</span> One selfie
+                in, studio-style portraits out. AI-generated.
+              </figcaption>
+            </figure>
+
+            <div
+              {...getRootProps()}
+              className={cn(
+                'flex min-h-0 flex-1 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-[var(--cp-ink)] bg-[var(--cp-paper)] p-6 text-center',
+                'transition-colors duration-150 hover:bg-[var(--cp-surface-muted)]',
+                isDragActive && 'bg-[var(--cp-lilac)]/30',
+              )}
+            >
+              <input {...getInputProps({ 'aria-label': 'Upload your photo' })} />
+              <Camera
+                className={cn(
+                  'mb-2.5 h-6 w-6 text-[var(--cp-orange-deep)] transition-transform duration-200',
+                  isDragActive && 'scale-110',
+                )}
+                aria-hidden="true"
+              />
+              <p className="mb-1 text-sm font-bold text-[var(--cp-ink)]">
+                {isDragActive ? 'Drop your photo here' : 'Upload your photo'}
+              </p>
+              <p className="text-xs text-[var(--cp-ink-3)]">
+                Clear face photo for best results
+              </p>
             </div>
-            <p className="text-paper-text-2 font-medium mb-1">
-              {isDragActive ? 'Drop your photo here' : 'Upload your photo'}
-            </p>
-            <p className="text-sm text-paper-text-3">
-              Clear face photo for best results
-            </p>
-          </div>
           </div>
         )}
 
-        {/* Idle State - With Photo */}
         {state === 'idle' && photo && photoPreview && (
-          <div className="h-full flex flex-col">
-            {/* Success banner showing uploaded photo */}
-            <div className="mb-4 flex items-center gap-3 rounded-lg bg-success-pale p-3">
+          <div className="flex h-full flex-col">
+            <div className="mb-4 flex items-center gap-3 rounded-xl bg-[var(--cp-mint)] p-3 shadow-[0_0_0_2px_var(--cp-ink)]">
               <img
                 src={photoPreview}
                 alt=""
-                className="h-12 w-12 rounded-lg object-cover"
+                className="h-12 w-12 rounded-lg object-cover shadow-[0_0_0_1.5px_var(--cp-ink)]"
               />
               <div className="flex-1">
-                <p className="text-sm font-medium text-success">
-                  Photo uploaded
-                </p>
+                <p className="text-sm font-bold text-[var(--cp-ink)]">Photo uploaded</p>
                 <button
                   type="button"
-                  className="text-xs text-success hover:underline"
+                  className="inline-flex min-h-11 items-center text-xs font-semibold text-[var(--cp-orange-deep)] hover:underline"
                   onClick={handleReset}
                 >
                   Change photo
@@ -362,145 +354,146 @@ export function PhotoshootDemo() {
               </div>
             </div>
 
-            {/* Generate Button - centered in remaining space */}
-            <div className="flex-1 flex flex-col items-center justify-center">
-              <p className="text-paper-text-2 mb-4 text-center">
+            <div className="flex flex-1 flex-col items-center justify-center">
+              <p className="mb-4 text-center text-sm font-medium text-[var(--cp-ink-2)]">
                 Ready to generate 2 AI-styled photos
               </p>
-              <Button onClick={handleGenerate}>Generate 2 Images</Button>
+              <CrayonButton variant="orange" size="sm" onClick={handleGenerate}>
+                Generate 2 Images
+              </CrayonButton>
             </div>
           </div>
         )}
 
-      {/* Processing State: live progress + partial images */}
-      {state === 'processing' && (
-        <div className="h-full flex flex-col items-center justify-center">
-          {photoPreview && (
-            <img
-              src={photoPreview}
-              alt="Preview"
-              className="max-h-40 rounded-lg mb-4 object-contain"
-            />
-          )}
-          <Loader2 className="w-8 h-8 text-paper-accent animate-spin mb-2" />
-          <p className="text-paper-text-2">
-            {partialImages.length > 0 ? `${partialImages.length}/2 images ready…` : 'Creating your AI photos...'}
-          </p>
-          <p className="text-xs text-paper-text-3 mt-1">
-            Generation time can vary. You can keep exploring while this runs.
-          </p>
+        {state === 'processing' && (
+          <div className="flex h-full flex-col items-center justify-center text-center" role="status">
+            {photoPreview && (
+              <img
+                src={photoPreview}
+                alt="Preview"
+                className="mb-4 max-h-40 rounded-lg object-contain shadow-[0_0_0_2px_var(--cp-ink)]"
+              />
+            )}
+            <Loader2 className="mb-2 h-8 w-8 animate-spin text-[var(--cp-orange)]" aria-hidden="true" />
+            <p className="font-semibold text-[var(--cp-ink-2)]">
+              {partialImages.length > 0
+                ? `${partialImages.length}/2 images ready…`
+                : 'Creating your AI photos...'}
+            </p>
+            <p className="mt-1 text-xs text-[var(--cp-ink-3)]">
+              Generation time can vary. You can keep exploring while this runs.
+            </p>
 
-          {partialImages.length > 0 && (
-            <div className="grid grid-cols-2 gap-2 mt-4 w-full max-w-xs">
-              {partialImages.map((img) => (
-                <img
-                  key={img.id}
-                  src={getImageSrc(img)}
-                  alt="Generated preview"
-                  className="aspect-[3/4] w-full rounded-lg object-cover shadow-slab"
-                />
+            {partialImages.length > 0 && (
+              <div className="mt-4 grid w-full max-w-xs grid-cols-2 gap-2">
+                {partialImages.map((img) => (
+                  <img
+                    key={img.id}
+                    src={getImageSrc(img)}
+                    alt="Generated preview"
+                    className="aspect-[3/4] w-full rounded-lg object-cover shadow-[0_0_0_2px_var(--cp-ink)]"
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {state === 'results' && result && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-[var(--cp-green)]" role="status">
+              <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+              <span className="text-sm font-bold">{result.images.length} images generated!</span>
+            </div>
+
+            {result.partial_success && failedCount > 0 && (
+              <div className="flex items-start gap-2 rounded-xl bg-[var(--cp-yellow-note)] p-3 text-[var(--cp-ink)] shadow-[0_0_0_2px_var(--cp-ink)]">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--cp-orange-deep)]" aria-hidden="true" />
+                <p className="text-xs font-medium">
+                  {failedCount} slot{failedCount > 1 ? 's' : ''} failed. Retry each failed slot.
+                </p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              {result.images.map((img, idx) => (
+                <div key={img.id} className="group relative">
+                  <img
+                    src={getImageSrc(img)}
+                    alt={`Generated ${idx + 1}`}
+                    className="aspect-[3/4] w-full rounded-lg object-cover shadow-[0_0_0_2px_var(--cp-ink)]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleDownload(getImageSrc(img), idx)}
+                    aria-label={`Download image ${idx + 1}`}
+                    className="touch-target absolute bottom-2 end-2 grid min-h-11 min-w-11 place-items-center rounded-full bg-on-image/90 p-2 opacity-100 focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                  >
+                    <Download className="h-4 w-4 text-on-image-foreground" aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+
+              {failedIndices.map((failedIndex) => (
+                <div
+                  key={`demo-failed-${failedIndex}`}
+                  className="flex aspect-[3/4] flex-col justify-between rounded-lg border-2 border-dashed border-[var(--cp-ink)] bg-[var(--cp-yellow-note)] p-3"
+                >
+                  <div>
+                    <div className="mb-2 inline-flex rounded-full bg-[var(--cp-surface)] px-2 py-0.5 text-xs font-bold text-[var(--cp-ink)] shadow-[0_0_0_1.5px_var(--cp-ink)]">
+                      Failed #{failedIndex + 1}
+                    </div>
+                    <p className="text-xs text-[var(--cp-ink-2)]">Retry to generate this slot.</p>
+                  </div>
+                  <CrayonButton
+                    size="sm"
+                    variant="paper"
+                    disabled={retryingFailedIndex !== null}
+                    onClick={() => void retryFailedSlot(failedIndex)}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                    {retryingFailedIndex === failedIndex ? 'Retrying...' : 'Retry'}
+                  </CrayonButton>
+                </div>
               ))}
             </div>
-          )}
-        </div>
-      )}
 
-      {/* Results State */}
-      {state === 'results' && result && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 text-success">
-            <CheckCircle2 className="w-5 h-5" />
-            <span className="text-sm font-medium">{result.images.length} images generated!</span>
-          </div>
-
-          {result.partial_success && failedCount > 0 && (
-            <div className="flex items-start gap-2 rounded-lg border border-tint-amber bg-tint-amber-pale p-3 text-tint-amber">
-              <AlertTriangle className="mt-0.5 h-4 w-4" />
-              <p className="text-xs">
-                {failedCount} slot{failedCount > 1 ? 's' : ''} failed. Retry each failed slot.
-              </p>
-            </div>
-          )}
-
-          {/* Image Grid */}
-          <div className="grid grid-cols-2 gap-3">
-            {result.images.map((img, idx) => (
-              <div key={img.id} className="relative group">
-                <img
-                  src={getImageSrc(img)}
-                  alt={`Generated ${idx + 1}`}
-                  className="aspect-[3/4] w-full rounded-lg object-cover shadow-slab"
-                />
-                <button
-                  type="button"
-                  onClick={() => handleDownload(getImageSrc(img), idx)}
-                  aria-label={`Download image ${idx + 1}`}
-                  className="absolute bottom-2 end-2 p-2 bg-on-image/90 rounded-full opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100"
-                >
-                  <Download className="w-4 h-4 text-on-image-foreground" />
-                </button>
-              </div>
-            ))}
-
-            {failedIndices.map((failedIndex) => (
-              <div
-                key={`demo-failed-${failedIndex}`}
-                className="flex aspect-[3/4] flex-col justify-between rounded-lg border border-dashed border-tint-amber bg-tint-amber-pale/60 p-3"
+            <div className="flex flex-wrap gap-2">
+              <CrayonButton variant="paper" size="sm" onClick={handleReset}>
+                Try Another
+              </CrayonButton>
+              <CrayonButton
+                variant="orange"
+                size="sm"
+                className="flex-1"
+                onClick={() => setShowLoginModal(true)}
               >
-                <div>
-                  <div className="mb-2 inline-flex rounded-full border border-paper-edge bg-paper-card px-2 py-1 text-xs font-medium text-tint-amber">
-                    Failed #{failedIndex + 1}
-                  </div>
-                  <p className="text-xs text-tint-amber">Retry to generate this slot.</p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={retryingFailedIndex !== null}
-                  onClick={() => void retryFailedSlot(failedIndex)}
-                >
-                  <RotateCcw className="w-4 h-4 me-2" />
-                  {retryingFailedIndex === failedIndex ? 'Retrying...' : 'Retry'}
-                </Button>
-              </div>
-            ))}
+                Get More Images
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </CrayonButton>
+            </div>
           </div>
+        )}
 
-          {/* Action Buttons */}
-          <div className="flex flex-wrap gap-2">
-            <Button variant="ghost" size="sm" onClick={handleReset}>
-              Try Another
-            </Button>
-            <Button
-              size="sm"
-              className="flex-1"
-              onClick={() => setShowLoginModal(true)}
-            >
-              Get More Images
-              <ArrowRight className="w-4 h-4 ms-2" />
-            </Button>
+        {state === 'error' && (
+          <div
+            role="alert"
+            className="flex h-full flex-col items-center justify-center rounded-xl bg-[var(--cp-pink)]/30 p-6 text-center shadow-[0_0_0_2px_var(--cp-ink)]"
+          >
+            <AlertCircle className="mb-3 h-9 w-9 text-[var(--cp-red)]" aria-hidden="true" />
+            <p className="mb-4 text-sm font-semibold text-[var(--cp-red)]">{error}</p>
+            <CrayonButton variant="dark" size="sm" onClick={handleReset}>
+              Try Again
+            </CrayonButton>
           </div>
-        </div>
-      )}
-
-      {/* Error State */}
-      {state === 'error' && (
-        <div className="h-full flex flex-col items-center justify-center text-center rounded-xl bg-error-pale p-6">
-          <AlertCircle className="w-10 h-10 text-error mb-4" />
-          <p className="text-error mb-4">{error}</p>
-          <Button variant="outline" onClick={handleReset}>
-            Try Again
-          </Button>
-        </div>
-      )}
+        )}
       </div>
 
-      {/* Login Modal */}
       <LoginPromptModal
         isOpen={showLoginModal}
         onClose={() => setShowLoginModal(false)}
         feature="get 10 free AI photoshoot images per day"
       />
     </EditorialPanel>
-  );
+  )
 }
